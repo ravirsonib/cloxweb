@@ -13,6 +13,8 @@ import {
   formatDateTime,
   formatLeadStatus,
   formatLeadType,
+  getPayloadEntries,
+  resolveLeadLocation,
 } from '@/lib/leads';
 import { LeadStatus } from '@/shared/types';
 
@@ -32,6 +34,7 @@ export function LeadDetailPage() {
   });
 
   const lead = leadQuery.data;
+  const payloadEntries = getPayloadEntries(lead?.payload);
 
   useEffect(() => {
     if (lead) {
@@ -102,12 +105,18 @@ export function LeadDetailPage() {
                 <div>
                   <dt className="text-slate-500">{t('admin.location')}</dt>
                   <dd className="text-white">
-                    {[lead.state, lead.territory].filter(Boolean).join(' · ') || t('dash')}
+                    {resolveLeadLocation(lead) || t('dash')}
                   </dd>
                 </div>
                 <div>
                   <dt className="text-slate-500">{t('admin.source')}</dt>
-                  <dd className="text-white">{lead.source || t('dash')}</dd>
+                  <dd className="break-all text-white">
+                    {lead.source ||
+                      (typeof lead.payload?.source === 'string'
+                        ? lead.payload.source
+                        : null) ||
+                      t('dash')}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-slate-500">{t('admin.created')}</dt>
@@ -121,10 +130,42 @@ export function LeadDetailPage() {
             </section>
 
             <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
-              <h2 className="text-lg font-semibold">{t('admin.payload')}</h2>
-              <pre className="mt-3 max-h-96 overflow-x-auto overflow-y-auto rounded-xl bg-slate-950/80 p-3 text-xs text-slate-300 whitespace-pre-wrap break-words sm:whitespace-pre">
-                {JSON.stringify(lead.payload ?? {}, null, 2)}
-              </pre>
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <h2 className="text-lg font-semibold">{t('admin.payload')}</h2>
+                <p className="text-xs text-slate-500">{t('admin.payloadHint')}</p>
+              </div>
+              {payloadEntries.length === 0 ? (
+                <p className="mt-3 text-sm text-slate-500">{t('admin.payloadEmpty')}</p>
+              ) : (
+                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {payloadEntries.map((entry) => (
+                    <article
+                      key={entry.key}
+                      className="rounded-xl border border-white/10 bg-slate-950/50 p-3.5"
+                    >
+                      <h3 className="text-[0.7rem] font-semibold uppercase tracking-wide text-slate-500">
+                        {entry.label}
+                      </h3>
+                      {entry.items && entry.items.length > 0 ? (
+                        <ul className="mt-2 flex flex-wrap gap-1.5">
+                          {entry.items.map((item) => (
+                            <li
+                              key={`${entry.key}-${item}`}
+                              className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs leading-snug text-slate-100"
+                            >
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-relaxed text-white">
+                          {entry.value}
+                        </p>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
             </section>
 
             <section className="rounded-2xl border border-white/10 bg-white/5 p-5">

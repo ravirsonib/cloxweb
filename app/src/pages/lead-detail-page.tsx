@@ -1,13 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   fieldClassName,
   primaryButtonClassName,
   secondaryButtonClassName,
 } from '@/components/admin-shell';
-import { addLeadNote, getErrorDetail, getLead, updateLead } from '@/lib/api';
+import { ConfirmDialog } from '@/components/confirm-dialog';
+import { addLeadNote, deleteLead, getErrorDetail, getLead, updateLead } from '@/lib/api';
 import {
   LEAD_STATUS_KEYS,
   formatDateTime,
@@ -21,11 +22,13 @@ import { LeadStatus } from '@/shared/types';
 export function LeadDetailPage() {
   const { t } = useTranslation('common');
   const { id = '' } = useParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const [status, setStatus] = useState<LeadStatus | ''>('');
   const [priority, setPriority] = useState(false);
   const [note, setNote] = useState('');
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const leadQuery = useQuery({
     queryKey: ['admin', 'lead', id],
@@ -61,6 +64,16 @@ export function LeadDetailPage() {
     onSuccess: () => {
       setNote('');
       void queryClient.invalidateQueries({ queryKey: ['admin', 'lead', id] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteLead(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'leads'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'audit'] });
+      navigate('/leads');
     },
   });
 
@@ -282,11 +295,50 @@ export function LeadDetailPage() {
               </ul>
             </section>
 
+            <button
+              type="button"
+              className="w-full rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm font-semibold text-red-300 hover:bg-red-500/15 disabled:opacity-50"
+              disabled={deleteMutation.isPending}
+              onClick={() => {
+                deleteMutation.reset();
+                setConfirmDeleteOpen(true);
+              }}
+            >
+              {t('admin.deleteLead')}
+            </button>
+
             <Link to="/leads" className={`${secondaryButtonClassName} w-full`}>
               {t('admin.backToQueue')}
             </Link>
           </div>
         </div>
+      ) : null}
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title={t('admin.confirmDeleteTitle')}
+        body={
+          lead
+            ? t('admin.confirmDeleteBody', {
+                name: lead.companyName || lead.email,
+              })
+            : null
+        }
+        confirmLabel={t('admin.deleteLead')}
+        confirming={deleteMutation.isPending}
+        onCancel={() => {
+          if (!deleteMutation.isPending) {
+            deleteMutation.reset();
+            setConfirmDeleteOpen(false);
+          }
+        }}
+        onConfirm={() => deleteMutation.mutate()}
+      />
+
+      {deleteMutation.isError ? (
+        <p className="mt-4 rounded-xl bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          {getErrorDetail(deleteMutation.error)}
+        </p>
       ) : null}
     </div>
   );

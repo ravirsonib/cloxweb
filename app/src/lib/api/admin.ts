@@ -88,6 +88,12 @@ export function updateLead(
     .then((res) => res.data);
 }
 
+export function deleteLead(id: string, options?: { signal?: AbortSignal }) {
+  return http
+    .delete<{ ok: true }>(`/admin/leads/${id}`, { signal: options?.signal })
+    .then((res) => res.data);
+}
+
 export function addLeadNote(
   id: string,
   payload: CreateLeadNoteInput,

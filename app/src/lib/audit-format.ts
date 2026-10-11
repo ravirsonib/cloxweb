@@ -6,6 +6,7 @@ const ACTION_I18N: Record<string, string> = {
   'lead.status_changed': 'admin.actionLabels.lead_status_changed',
   'lead.updated': 'admin.actionLabels.lead_updated',
   'lead.note_added': 'admin.actionLabels.lead_note_added',
+  'lead.deleted': 'admin.actionLabels.lead_deleted',
   'auth.otp_requested': 'admin.actionLabels.auth_otp_requested',
   'auth.otp_verified': 'admin.actionLabels.auth_otp_verified',
   'auth.otp_failed': 'admin.actionLabels.auth_otp_failed',
@@ -26,6 +27,7 @@ const META_LABEL_I18N: Record<string, string> = {
   duplicateLeadIds: 'admin.metaLabels.duplicateLeadIds',
   companyName: 'admin.metaLabels.companyName',
   status: 'admin.metaLabels.status',
+  deletedLeadId: 'admin.metaLabels.deletedLeadId',
 };
 
 export type AuditDetailRow = {

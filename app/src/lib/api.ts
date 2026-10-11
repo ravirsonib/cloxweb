@@ -3,6 +3,7 @@ export { http } from '@/lib/http';
 export { refreshSession, requestOtp, verifyOtp } from '@/lib/api/auth';
 export {
   addLeadNote,
+  deleteLead,
   exportLeadsCsv,
   getDashboardStats,
   getLead,

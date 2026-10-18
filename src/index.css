@@ -1,0 +1,609 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --clox-navy: #1a2f4c;
+    --clox-navy-ink: #10192b;
+    --clox-navy-soft: #233f63;
+    --clox-orange: #f26e22;
+    --clox-orange-deep: #c6551a;
+    --clox-orange-tint: #fde7da;
+    --clox-wine: #7a2e3b;
+    --clox-wine-tint: #f5e4e7;
+    --clox-wine-deep: #5c1f29;
+    --clox-teal: #2a7d6f;
+    --clox-teal-tint: #e2f1ee;
+    --clox-teal-deep: #1e5c51;
+    --clox-moss: #5b7a2e;
+    --clox-moss-tint: #eaf1de;
+    --clox-moss-deep: #41591f;
+    --clox-aqua: #0e7c86;
+    --clox-aqua-tint: #e3f3f4;
+    --clox-aqua-deep: #0b616a;
+    --clox-steel: #3d5875;
+    --clox-steel-tint: #e7edf4;
+
+    --clox-bg: #f3f5f9;
+    --clox-surface: #ffffff;
+    --clox-surface-alt: #eef1f6;
+    --clox-border: #dce2ec;
+    --clox-border-soft: #e9ecf3;
+    --clox-ink: #10192b;
+    --clox-text: #17233b;
+    --clox-mute: #5b6b84;
+    --clox-faint: #93a0b4;
+
+    /* Default accent = marketplace orange; role themes override */
+    --clox-accent: var(--clox-orange);
+    --clox-accent-tint: var(--clox-orange-tint);
+    --clox-accent-deep: var(--clox-orange-deep);
+    --clox-accent-fg: #ffffff;
+
+    --status-ok: #1d7a4c;
+    --status-ok-bg: #e3f4ea;
+    --status-ok-bd: #bee3cc;
+    --status-warn: #9c6a0a;
+    --status-warn-bg: #fcf0d8;
+    --status-warn-bd: #f0d397;
+    --status-danger: #b93a2b;
+    --status-danger-bg: #fbe8e5;
+    --status-danger-bd: #f0c4bc;
+    --status-info: #6547a8;
+    --status-info-bg: #efe9f9;
+    --status-info-bd: #d6c7f0;
+    --status-neutral: #5b6b84;
+    --status-neutral-bg: #eef1f6;
+    --status-neutral-bd: #dce2ec;
+
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    --shadow-1: 0 1px 2px rgba(16, 25, 43, 0.06), 0 1px 1px rgba(16, 25, 43, 0.04);
+    --shadow-2: 0 8px 24px rgba(16, 25, 43, 0.1), 0 2px 6px rgba(16, 25, 43, 0.06);
+
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-body: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+    --cab-bg: #0e1826;
+    --cab-surface: #182740;
+    --cab-surface-2: #1f3252;
+    --cab-border: #2c4066;
+    --cab-text: #f4f7fc;
+    --cab-text-mute: #93a5c4;
+    --cab-green: #3ed689;
+    --cab-amber: #ffc24b;
+    --cab-red: #ff5d52;
+
+    color: var(--clox-text);
+    background-color: var(--clox-bg);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  [data-role='super'] {
+    --clox-accent: var(--clox-wine);
+    --clox-accent-tint: var(--clox-wine-tint);
+    --clox-accent-deep: var(--clox-wine-deep);
+  }
+
+  [data-role='state'] {
+    --clox-accent: var(--clox-teal);
+    --clox-accent-tint: var(--clox-teal-tint);
+    --clox-accent-deep: var(--clox-teal-deep);
+  }
+
+  [data-role='local'] {
+    --clox-accent: var(--clox-moss);
+    --clox-accent-tint: var(--clox-moss-tint);
+    --clox-accent-deep: var(--clox-moss-deep);
+  }
+
+  [data-role='sender'] {
+    --clox-accent: var(--clox-aqua);
+    --clox-accent-tint: var(--clox-aqua-tint);
+    --clox-accent-deep: var(--clox-aqua-deep);
+  }
+
+  [data-role='carrier'] {
+    --clox-accent: var(--clox-orange);
+    --clox-accent-tint: var(--clox-orange-tint);
+    --clox-accent-deep: var(--clox-orange-deep);
+  }
+
+  [data-role='driver'],
+  [data-theme='cab'] {
+    --clox-accent: var(--clox-orange);
+    --clox-accent-tint: rgba(242, 110, 34, 0.18);
+    --clox-accent-deep: var(--clox-orange-deep);
+    --clox-bg: var(--cab-bg);
+    --clox-surface: var(--cab-surface);
+    --clox-surface-alt: var(--cab-surface-2);
+    --clox-border: var(--cab-border);
+    --clox-border-soft: #243552;
+    --clox-ink: var(--cab-text);
+    --clox-text: var(--cab-text);
+    --clox-mute: var(--cab-text-mute);
+    --clox-faint: #6f82a3;
+    color-scheme: dark;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-body);
+    background: var(--clox-bg);
+    color: var(--clox-text);
+  }
+
+  ::selection {
+    background: var(--clox-orange-tint);
+    color: var(--clox-navy-ink);
+  }
+
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: var(--font-display);
+  }
+}
+
+@layer components {
+  .clox-field-control {
+    @apply w-full border bg-clox-surface px-3 py-2.5 text-sm text-clox-text outline-none transition;
+    border-color: var(--clox-border);
+    border-radius: 8px;
+    font-family: var(--font-body);
+  }
+
+  .clox-field-control::placeholder {
+    color: var(--clox-faint);
+  }
+
+  .clox-field-control:focus {
+    border-color: var(--clox-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--clox-accent) 18%, transparent);
+  }
+
+  .clox-field-control[aria-invalid='true'] {
+    border-color: var(--status-danger);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-danger) 16%, transparent);
+  }
+
+  .clox-field-control:disabled {
+    @apply cursor-not-allowed opacity-60;
+    background: var(--clox-surface-alt);
+  }
+
+  .clox-select-trigger {
+    @apply flex items-center gap-2 text-left;
+    padding-right: 10px;
+    cursor: pointer;
+  }
+
+  .clox-select-trigger-open {
+    border-color: var(--clox-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--clox-accent) 18%, transparent);
+  }
+
+  .clox-select-chevron {
+    flex-shrink: 0;
+    color: var(--clox-faint);
+    transition: transform 0.15s ease;
+  }
+
+  .clox-select-chevron-open {
+    transform: rotate(180deg);
+    color: var(--clox-accent);
+  }
+
+  .clox-select-popover {
+    position: absolute;
+    z-index: 40;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    max-height: 16rem;
+    overflow-y: auto;
+    padding: 4px;
+    border: 1px solid var(--clox-border);
+    border-radius: 8px;
+    background: var(--clox-surface);
+    box-shadow: var(--shadow-2);
+  }
+
+  .clox-select-option {
+    @apply flex w-full items-center gap-2 px-2.5 py-2 text-left text-sm text-clox-text;
+    border-radius: 6px;
+    border: 0;
+    background: transparent;
+    font-family: var(--font-body);
+    cursor: pointer;
+  }
+
+  .clox-select-option:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+
+  .clox-select-option-active {
+    background: var(--clox-surface-alt);
+  }
+
+  .clox-select-option-selected {
+    color: var(--clox-ink);
+    font-weight: 600;
+  }
+
+  .clox-select-check {
+    flex-shrink: 0;
+    color: var(--clox-accent);
+  }
+
+  [data-theme='cab'] .clox-select-popover {
+    background: var(--clox-surface);
+    border-color: var(--clox-border);
+  }
+
+  .clox-toast-viewport {
+    position: fixed;
+    z-index: 80;
+    right: 16px;
+    bottom: 16px;
+    display: flex;
+    width: min(22rem, calc(100vw - 32px));
+    flex-direction: column-reverse;
+    gap: 8px;
+    pointer-events: none;
+  }
+
+  .clox-toast {
+    @apply flex items-start gap-3;
+    pointer-events: auto;
+    box-shadow: var(--shadow-2);
+    animation: clox-toast-in 0.18s ease-out;
+  }
+
+  .clox-toast-dismiss {
+    @apply -mr-1 -mt-0.5 inline-flex shrink-0 items-center justify-center rounded-md p-1;
+    color: inherit;
+    opacity: 0.7;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+  }
+
+  .clox-toast-dismiss:hover {
+    opacity: 1;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+
+  @keyframes clox-toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .clox-radio-card {
+    @apply flex w-full flex-col items-start gap-1 border px-3.5 py-3 text-left transition;
+    border-color: var(--clox-border);
+    border-radius: 10px;
+    background: var(--clox-surface);
+    color: var(--clox-text);
+    font-family: var(--font-body);
+    cursor: pointer;
+  }
+
+  .clox-radio-card:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--clox-accent) 55%, var(--clox-border));
+  }
+
+  .clox-radio-card:focus-visible {
+    outline: none;
+    border-color: var(--clox-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--clox-accent) 18%, transparent);
+  }
+
+  .clox-radio-card-selected {
+    border-color: var(--clox-accent);
+    background: color-mix(in srgb, var(--clox-accent) 10%, var(--clox-surface));
+  }
+
+  .clox-radio-card-disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+
+  .clox-radio-card-title {
+    @apply text-sm font-semibold text-clox-ink;
+    font-family: var(--font-display);
+  }
+
+  .clox-radio-card-desc {
+    @apply text-[12px] leading-snug text-clox-mute;
+  }
+
+  .clox-step-chips {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .clox-step-chip {
+    @apply inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium;
+    background: var(--clox-surface);
+    color: var(--clox-faint);
+    border: 1px solid var(--clox-border);
+  }
+
+  .clox-step-chip-active {
+    background: var(--clox-accent);
+    color: var(--clox-accent-fg);
+    border-color: transparent;
+  }
+
+  .clox-step-chip-done {
+    background: var(--status-ok-bg);
+    color: var(--status-ok);
+    border-color: var(--status-ok-bd);
+  }
+
+  .clox-btn {
+    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap border text-sm font-semibold transition;
+    border-radius: 8px;
+    padding: 9px 16px;
+    font-family: var(--font-body);
+  }
+
+  .clox-btn:disabled {
+    @apply cursor-not-allowed;
+    background: var(--clox-surface-alt);
+    color: var(--clox-faint);
+    border-color: var(--clox-border);
+  }
+
+  .clox-btn-primary {
+    background: var(--clox-accent);
+    color: var(--clox-accent-fg);
+    border-color: transparent;
+  }
+
+  .clox-btn-primary:hover:not(:disabled) {
+    background: var(--clox-accent-deep);
+  }
+
+  .clox-btn-secondary {
+    background: var(--clox-surface);
+    color: var(--clox-navy);
+    border-color: var(--clox-border);
+  }
+
+  .clox-btn-secondary:hover:not(:disabled) {
+    background: var(--clox-surface-alt);
+  }
+
+  .clox-btn-ghost {
+    background: transparent;
+    color: var(--clox-mute);
+    border-color: transparent;
+  }
+
+  .clox-btn-ghost:hover:not(:disabled) {
+    background: var(--clox-surface-alt);
+    color: var(--clox-text);
+  }
+
+  .clox-btn-destructive {
+    background: var(--clox-surface);
+    color: var(--status-danger);
+    border-color: var(--status-danger-bd);
+  }
+
+  .clox-btn-cta {
+    background: var(--clox-orange);
+    color: #fff;
+    border-color: transparent;
+  }
+
+  .clox-btn-cta:hover:not(:disabled) {
+    background: var(--clox-orange-deep);
+  }
+
+  .clox-card {
+    background: var(--clox-surface);
+    border: 1px solid var(--clox-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-1);
+  }
+
+  .clox-panel {
+    @apply rounded-clox-md border bg-clox-surface;
+    border-color: var(--clox-border);
+  }
+
+  .clox-kpi {
+    @apply rounded-clox-md border bg-clox-surface p-4;
+    border-color: var(--clox-border);
+  }
+
+  .clox-kpi .clox-kpi-label {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    text-transform: uppercase;
+    color: var(--clox-mute);
+  }
+
+  .clox-kpi .clox-kpi-value {
+    font-family: var(--font-display);
+    font-size: 1.625rem;
+    font-weight: 600;
+    color: var(--clox-ink);
+    margin-top: 0.35rem;
+  }
+
+  .clox-notice {
+    @apply flex gap-3 rounded-[10px] px-3.5 py-3 text-sm leading-relaxed;
+  }
+
+  .clox-notice-info {
+    background: var(--clox-surface-alt);
+    border: 1px solid var(--clox-border);
+    color: var(--clox-mute);
+  }
+
+  .clox-notice-warn {
+    background: var(--status-warn-bg);
+    border: 1px solid var(--status-warn-bd);
+    color: #7a550a;
+  }
+
+  .clox-notice-error {
+    background: var(--status-danger-bg);
+    border: 1px solid var(--status-danger-bd);
+    color: var(--status-danger);
+  }
+
+  .clox-notice-success {
+    background: var(--status-ok-bg);
+    border: 1px solid var(--status-ok-bd);
+    color: var(--status-ok);
+  }
+
+  .clox-status {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium;
+    font-family: var(--font-mono);
+    border: 1px solid transparent;
+  }
+
+  .clox-status::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .clox-status-ok {
+    color: var(--status-ok);
+    background: var(--status-ok-bg);
+    border-color: var(--status-ok-bd);
+  }
+
+  .clox-status-warn {
+    color: var(--status-warn);
+    background: var(--status-warn-bg);
+    border-color: var(--status-warn-bd);
+  }
+
+  .clox-status-danger {
+    color: var(--status-danger);
+    background: var(--status-danger-bg);
+    border-color: var(--status-danger-bd);
+  }
+
+  .clox-status-info {
+    color: var(--status-info);
+    background: var(--status-info-bg);
+    border-color: var(--status-info-bd);
+  }
+
+  .clox-status-neutral {
+    color: var(--status-neutral);
+    background: var(--status-neutral-bg);
+    border-color: var(--status-neutral-bd);
+  }
+
+  .clox-cta {
+    @apply clox-btn clox-btn-cta;
+  }
+
+  .clox-cta-secondary {
+    @apply clox-btn clox-btn-secondary;
+  }
+
+  /* Driver cab shell */
+  .cab-shell {
+    background: var(--cab-bg);
+    color: var(--cab-text);
+    min-height: 100dvh;
+  }
+
+  .cab-tabbar {
+    height: 66px;
+    background: var(--cab-surface);
+    border-top: 1px solid var(--cab-border);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  .cab-tab {
+    @apply flex flex-1 flex-col items-center justify-center gap-0.5;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--cab-text-mute);
+  }
+
+  .cab-tab[aria-current='page'],
+  .cab-tab.is-active {
+    color: var(--clox-orange);
+  }
+
+  .cab-btn {
+    display: block;
+    width: 100%;
+    text-align: center;
+    padding: 15px;
+    border-radius: 12px;
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 14.5px;
+  }
+
+  .cab-btn-primary {
+    background: var(--clox-orange);
+    color: #fff;
+  }
+
+  .cab-btn-locked {
+    background: #26314a;
+    color: #5c6c8a;
+  }
+
+  [data-theme='cab'] .clox-notice-warn {
+    background: rgba(255, 194, 75, 0.12);
+    border-color: rgba(255, 194, 75, 0.35);
+    color: var(--cab-amber);
+  }
+
+  [data-theme='cab'] .clox-notice-error {
+    background: rgba(255, 93, 82, 0.12);
+    border-color: rgba(255, 93, 82, 0.35);
+    color: var(--cab-red);
+  }
+
+  [data-theme='cab'] .clox-notice-success {
+    background: rgba(62, 214, 137, 0.12);
+    border-color: rgba(62, 214, 137, 0.35);
+    color: var(--cab-green);
+  }
+
+  [data-theme='cab'] .clox-notice-info {
+    background: var(--cab-surface);
+    border-color: var(--cab-border);
+    color: var(--cab-text-mute);
+  }
+}

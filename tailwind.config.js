@@ -1,0 +1,57 @@
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  theme: {
+    extend: {
+      colors: {
+        clox: {
+          navy: 'var(--clox-navy)',
+          'navy-ink': 'var(--clox-navy-ink)',
+          'navy-soft': 'var(--clox-navy-soft)',
+          orange: 'var(--clox-orange)',
+          'orange-deep': 'var(--clox-orange-deep)',
+          'orange-tint': 'var(--clox-orange-tint)',
+          wine: 'var(--clox-wine)',
+          'wine-tint': 'var(--clox-wine-tint)',
+          'wine-deep': 'var(--clox-wine-deep)',
+          teal: 'var(--clox-teal)',
+          'teal-tint': 'var(--clox-teal-tint)',
+          moss: 'var(--clox-moss)',
+          'moss-tint': 'var(--clox-moss-tint)',
+          aqua: 'var(--clox-aqua)',
+          'aqua-tint': 'var(--clox-aqua-tint)',
+          steel: 'var(--clox-steel)',
+          'steel-tint': 'var(--clox-steel-tint)',
+          bg: 'var(--clox-bg)',
+          surface: 'var(--clox-surface)',
+          'surface-alt': 'var(--clox-surface-alt)',
+          border: 'var(--clox-border)',
+          'border-soft': 'var(--clox-border-soft)',
+          ink: 'var(--clox-ink)',
+          text: 'var(--clox-text)',
+          mute: 'var(--clox-mute)',
+          faint: 'var(--clox-faint)',
+          accent: 'var(--clox-accent)',
+          'accent-tint': 'var(--clox-accent-tint)',
+          'accent-deep': 'var(--clox-accent-deep)',
+          'accent-fg': 'var(--clox-accent-fg)',
+        },
+      },
+      fontFamily: {
+        display: ['var(--font-display)', 'sans-serif'],
+        body: ['var(--font-body)', 'sans-serif'],
+        mono: ['var(--font-mono)', 'ui-monospace', 'monospace'],
+      },
+      borderRadius: {
+        'clox-sm': 'var(--radius-sm)',
+        'clox-md': 'var(--radius-md)',
+        'clox-lg': 'var(--radius-lg)',
+      },
+      boxShadow: {
+        'clox-1': 'var(--shadow-1)',
+        'clox-2': 'var(--shadow-2)',
+      },
+    },
+  },
+  plugins: [],
+};

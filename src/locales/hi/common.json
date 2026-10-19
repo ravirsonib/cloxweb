@@ -68,7 +68,7 @@
     "carrierOnboarding": "कैरियर ऑनबोर्डिंग",
     "driverOnboarding": "ड्राइवर ऑनबोर्डिंग",
     "compliance": "Compliance कतार",
-    "qaUpload": "QA: अपलोड और सबमिट",
+    "qaUpload": "अपलोड और सबमिट",
     "account": "खाता और सेशन",
     "navigate": "नेविगेट करें",
     "platformPwa": "Platform PWA",
@@ -297,7 +297,7 @@
     "signedInAs": "साइन इन",
     "complianceTitle": "Compliance कतार",
     "complianceHint": "केस सूची / निर्णय (Local = केवल escalate)",
-    "qaTitle": "QA: अपलोड और सबमिट",
+    "qaTitle": "अपलोड और सबमिट",
     "qaHint": "दस्तावेज़ अपलोड → compliance सबमिट (M2 demo)",
     "senderOnboardingTitle": "सेंडर ऑनबोर्डिंग",
     "senderOnboardingHint": "M3 wizard → Ops → payment → active",
@@ -705,7 +705,7 @@
     "current": "· वर्तमान"
   },
   "qa": {
-    "title": "QA: अपलोड और सबमिट",
+    "title": "अपलोड और सबमिट",
     "subtitle": "एक दस्तावेज़ अपलोड करें और compliance केस सबमिट करें।",
     "documentType": "दस्तावेज़ प्रकार",
     "fileLabel": "फ़ाइल",

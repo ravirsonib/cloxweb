@@ -68,7 +68,7 @@
     "carrierOnboarding": "Carrier onboarding",
     "driverOnboarding": "Driver onboarding",
     "compliance": "Compliance queue",
-    "qaUpload": "QA: upload & submit",
+    "qaUpload": "Upload & submit",
     "account": "Account & sessions",
     "navigate": "Navigate",
     "platformPwa": "Platform PWA",
@@ -297,7 +297,7 @@
     "signedInAs": "Signed in as",
     "complianceTitle": "Compliance queue",
     "complianceHint": "List / decide cases (Local = escalate only)",
-    "qaTitle": "QA: upload & submit",
+    "qaTitle": "Upload & submit",
     "qaHint": "Document upload → compliance submit (M2 demo)",
     "senderOnboardingTitle": "Sender onboarding",
     "senderOnboardingHint": "M3 wizard → Ops → payment → active",
@@ -705,7 +705,7 @@
     "current": "· current"
   },
   "qa": {
-    "title": "QA: upload & submit",
+    "title": "Upload & submit",
     "subtitle": "Upload a document and submit a compliance case.",
     "documentType": "Document type",
     "fileLabel": "File",

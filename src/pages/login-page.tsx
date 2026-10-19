@@ -15,15 +15,6 @@ import { useAuthStore } from '@/stores/auth-store';
 type EmailForm = { email: string };
 type OtpForm = { code: string };
 
-const QA_HINTS = [
-  'cloxadmin@yopmail.com — Super',
-  'state.vic@yopmail.com — State VIC',
-  'local.mel@yopmail.com — Local MEL',
-  'sender.qa@yopmail.com — Sender',
-  'carrier.qa@yopmail.com — Carrier',
-  'driver.qa@yopmail.com — Driver',
-];
-
 export function LoginPage() {
   const { t } = useTranslation('common');
   const navigate = useNavigate();
@@ -123,14 +114,6 @@ export function LoginPage() {
         <p className="mt-3 text-sm text-clox-mute">
           {step === 'email' ? t('login.emailHint') : t('login.otpHint')}
         </p>
-
-        <Notice tone="info" className="mt-4" title={t('login.qaSeeds')}>
-          <ul className="mt-1 space-y-0.5 font-mono text-[11.5px]">
-            {QA_HINTS.map((hint) => (
-              <li key={hint}>{hint}</li>
-            ))}
-          </ul>
-        </Notice>
 
         {step === 'email' ? (
           <form

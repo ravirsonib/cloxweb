@@ -8,7 +8,10 @@ import {
   getComplianceCase,
   getErrorDetail,
   listComplianceCases,
+  openDocumentContent,
+  type ComplianceCaseDocument,
 } from '@/lib/api';
+import { formatDateTime } from '@/lib/leads';
 import {
   Button,
   DataCardList,
@@ -16,8 +19,10 @@ import {
   Notice,
   ResponsiveDataView,
   Select,
+  StatusPill,
   TextArea,
   dataCardClassName,
+  useConfirm,
   useToast,
 } from '@/components/ui';
 import { useAuthStore } from '@/stores/auth-store';
@@ -134,7 +139,14 @@ export function ComplianceQueuePage() {
                 t('compliance.colType'),
                 t('compliance.colStatus'),
                 t('compliance.colRegion'),
-                '',
+                t('compliance.colAction'),
+              ]}
+              headerClassNames={[
+                'w-[32%]',
+                'w-[18%]',
+                'w-[18%]',
+                'w-[12%]',
+                'w-[20%] text-right',
               ]}
             >
               {rows.map((row) => (
@@ -168,8 +180,10 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
   const role = useAuthStore((s) => s.role);
   const qc = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
   const [note, setNote] = useState('');
   const [noteError, setNoteError] = useState<string | null>(null);
+  const [openingDocId, setOpeningDocId] = useState<string | null>(null);
 
   const query = useQuery({
     queryKey: ['compliance', 'case', caseId],
@@ -190,7 +204,7 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
   const canDecide = role === AdminRole.SUPER_ADMIN || role === AdminRole.STATE_MASTER;
   const canEscalate = role === AdminRole.LOCAL_BDE;
 
-  function runDecision(action: 'approve' | 'reject' | 'request-info' | 'escalate') {
+  async function runDecision(action: 'approve' | 'reject' | 'request-info' | 'escalate') {
     const trimmed = note.trim();
     if (action === 'reject' && !trimmed) {
       setNoteError(t('validation.noteRejectRequired'));
@@ -200,8 +214,47 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
       setNoteError(t('validation.noteInfoRequired'));
       return;
     }
+    const prompts = {
+      approve: {
+        title: t('confirm.approveTitle'),
+        description: t('confirm.approveBody'),
+        confirmLabel: t('compliance.approve'),
+        tone: 'default' as const,
+      },
+      reject: {
+        title: t('confirm.rejectTitle'),
+        description: t('confirm.rejectBody'),
+        confirmLabel: t('compliance.reject'),
+        tone: 'destructive' as const,
+      },
+      'request-info': {
+        title: t('confirm.requestInfoTitle'),
+        description: t('confirm.requestInfoBody'),
+        confirmLabel: t('compliance.requestInfo'),
+        tone: 'default' as const,
+      },
+      escalate: {
+        title: t('confirm.escalateTitle'),
+        description: t('confirm.escalateBody'),
+        confirmLabel: t('compliance.escalate'),
+        tone: 'default' as const,
+      },
+    } as const;
+    const ok = await confirm(prompts[action]);
+    if (!ok) return;
     setNoteError(null);
     decide.mutate(action);
+  }
+
+  async function viewDocument(documentId: string) {
+    setOpeningDocId(documentId);
+    try {
+      await openDocumentContent(documentId);
+    } catch (err) {
+      toast.error(getErrorDetail(err));
+    } finally {
+      setOpeningDocId(null);
+    }
   }
 
   if (query.isLoading) {
@@ -236,15 +289,90 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
 
       <section className="mt-6">
         <h2 className="font-display text-lg font-semibold">{t('compliance.docsTitle')}</h2>
-        <ul className="mt-2 space-y-2">
-          {c.documents.map((d) => (
-            <li key={d.id} className="rounded-clox-md border border-clox-border px-3 py-2 text-sm">
-              <span className="font-mono text-xs text-clox-orange">{d.docType}</span>{' '}
-              <span className="text-clox-mute">{d.status}</span>
-              <span className="ml-2 text-clox-faint">{d.originalFilename}</span>
-            </li>
-          ))}
-        </ul>
+        {c.infoRequestedAt ? (
+          <p className="mt-1 text-xs text-clox-mute">
+            {t('compliance.docsInfoRequestedAt', {
+              date: formatDateTime(c.infoRequestedAt),
+            })}
+          </p>
+        ) : null}
+        {(() => {
+          const hasSplit = Boolean(c.infoRequestedAt);
+          const newDocs = hasSplit
+            ? c.documents.filter((d) => d.isNewSinceInfoRequest)
+            : [];
+          const priorDocs = hasSplit
+            ? c.documents.filter((d) => !d.isNewSinceInfoRequest)
+            : c.documents;
+
+          const renderDoc = (d: ComplianceCaseDocument) => {
+            const canView = d.status !== 'UPLOAD_PENDING';
+            return (
+              <li
+                key={d.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-clox-md border border-clox-border px-3 py-2 text-sm"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs text-clox-orange">{d.docType}</span>
+                    <span className="text-clox-mute">{d.status}</span>
+                    {d.isNewSinceInfoRequest ? (
+                      <StatusPill tone="warn">{t('compliance.docsNewBadge')}</StatusPill>
+                    ) : null}
+                  </div>
+                  <p className="mt-0.5 truncate text-clox-faint">{d.originalFilename}</p>
+                  <p className="mt-0.5 text-xs text-clox-mute">
+                    {t('compliance.docsUploadedAt', {
+                      date: formatDateTime(d.createdAt),
+                    })}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="shrink-0"
+                  disabled={!canView || openingDocId === d.id}
+                  onClick={() => void viewDocument(d.id)}
+                >
+                  {openingDocId === d.id
+                    ? t('compliance.openingDocument')
+                    : t('compliance.viewDocument')}
+                </Button>
+              </li>
+            );
+          };
+
+          if (!hasSplit) {
+            return <ul className="mt-2 space-y-2">{c.documents.map(renderDoc)}</ul>;
+          }
+
+          return (
+            <div className="mt-3 space-y-5">
+              <div>
+                <h3 className="text-sm font-semibold text-clox-ink">
+                  {t('compliance.docsNewSinceRequest')}
+                  <span className="ml-2 font-normal text-clox-mute">({newDocs.length})</span>
+                </h3>
+                {newDocs.length > 0 ? (
+                  <ul className="mt-2 space-y-2">{newDocs.map(renderDoc)}</ul>
+                ) : (
+                  <p className="mt-2 text-sm text-clox-mute">{t('compliance.docsNoneInGroup')}</p>
+                )}
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-clox-ink">
+                  {t('compliance.docsPreviouslySubmitted')}
+                  <span className="ml-2 font-normal text-clox-mute">({priorDocs.length})</span>
+                </h3>
+                {priorDocs.length > 0 ? (
+                  <ul className="mt-2 space-y-2">{priorDocs.map(renderDoc)}</ul>
+                ) : (
+                  <p className="mt-2 text-sm text-clox-mute">{t('compliance.docsNoneInGroup')}</p>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </section>
 
       <section className="mt-8 max-w-xl">
@@ -267,7 +395,7 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
                 type="button"
                 variant="primary"
                 disabled={decide.isPending}
-                onClick={() => runDecision('approve')}
+                onClick={() => void runDecision('approve')}
               >
                 {t('compliance.approve')}
               </Button>
@@ -275,7 +403,7 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
                 type="button"
                 variant="secondary"
                 disabled={decide.isPending}
-                onClick={() => runDecision('request-info')}
+                onClick={() => void runDecision('request-info')}
               >
                 {t('compliance.requestInfo')}
               </Button>
@@ -283,7 +411,7 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
                 type="button"
                 variant="destructive"
                 disabled={decide.isPending}
-                onClick={() => runDecision('reject')}
+                onClick={() => void runDecision('reject')}
               >
                 {t('compliance.reject')}
               </Button>
@@ -294,7 +422,7 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
               type="button"
               variant="cta"
               disabled={decide.isPending}
-              onClick={() => runDecision('escalate')}
+              onClick={() => void runDecision('escalate')}
             >
               {t('compliance.escalate')}
             </Button>

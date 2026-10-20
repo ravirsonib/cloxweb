@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LoadingBlock } from '@/components/status-blocks';
 import { KeyValueList } from '@/components/identity-summary';
-import { Button, Notice, Select, TextArea, Timeline, useToast } from '@/components/ui';
-import { addLeadNote, getErrorDetail, getLead, updateLead } from '@/lib/api';
+import { Button, Notice, Select, TextArea, Timeline, useConfirm, useToast } from '@/components/ui';
+import { addLeadNote, deleteLead, getErrorDetail, getLead, updateLead } from '@/lib/api';
 import { formatAuditAction } from '@/lib/audit-format';
 import {
   LEAD_STATUS_KEYS,
@@ -18,8 +18,10 @@ import { LeadStatus } from '@/shared/types';
 export function LeadDetailPage() {
   const { t } = useTranslation('common');
   const { id = '' } = useParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
 
   const [status, setStatus] = useState<LeadStatus | ''>('');
   const [priority, setPriority] = useState(false);
@@ -65,11 +67,45 @@ export function LeadDetailPage() {
     onError: (err) => toast.error(getErrorDetail(err)),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteLead(id),
+    onSuccess: async () => {
+      toast.success(t('admin.deleteLeadSuccess'));
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'leads'] });
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] });
+      navigate('/leads', { replace: true });
+    },
+    onError: (err) => toast.error(getErrorDetail(err)),
+  });
+
   return (
     <div>
-      <Link to="/leads" className="text-sm font-medium text-clox-orange hover:underline">
-        ← {t('admin.leadsTitle')}
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link to="/leads" className="text-sm font-medium text-clox-orange hover:underline">
+          ← {t('admin.leadsTitle')}
+        </Link>
+        {lead ? (
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            disabled={deleteMutation.isPending}
+            onClick={() => {
+              void (async () => {
+                const ok = await confirm({
+                  title: t('confirm.deleteLeadTitle'),
+                  description: t('confirm.deleteLeadBody'),
+                  confirmLabel: t('admin.deleteLead'),
+                  tone: 'destructive',
+                });
+                if (ok) deleteMutation.mutate();
+              })();
+            }}
+          >
+            {t('admin.deleteLead')}
+          </Button>
+        ) : null}
+      </div>
 
       {leadQuery.isLoading ? (
         <div className="mt-6">
@@ -212,7 +248,16 @@ export function LeadDetailPage() {
                   variant="cta"
                   size="block"
                   disabled={updateMutation.isPending}
-                  onClick={() => updateMutation.mutate()}
+                  onClick={() => {
+                    void (async () => {
+                      const ok = await confirm({
+                        title: t('confirm.saveLeadStatusTitle'),
+                        description: t('confirm.saveLeadStatusBody'),
+                        confirmLabel: t('admin.saveStatus'),
+                      });
+                      if (ok) updateMutation.mutate();
+                    })();
+                  }}
                 >
                   {updateMutation.isPending ? t('loading') : t('admin.saveStatus')}
                 </Button>

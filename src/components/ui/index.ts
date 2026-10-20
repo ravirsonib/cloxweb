@@ -1,5 +1,11 @@
 export { Button, type ButtonProps } from './button';
 export {
+  ConfirmProvider,
+  useConfirm,
+  type ConfirmOptions,
+  type ConfirmTone,
+} from './confirm-dialog';
+export {
   CardCollection,
   DataCard,
   DataCardList,

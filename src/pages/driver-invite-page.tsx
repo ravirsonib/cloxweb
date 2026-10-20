@@ -2,23 +2,11 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { acceptDriverInvite, getErrorDetail, logout, peekDriverInvite } from '@/lib/api';
+import { acceptDriverInvite, getErrorDetail, peekDriverInvite } from '@/lib/api';
+import { clearBrowserSession } from '@/lib/auth-session';
 import { BrandLogo } from '@/components/brand-logo';
 import { Button, Notice } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
-import { useAuthStore } from '@/stores/auth-store';
-
-/** Drop any prior Ops/carrier/sender session so Accept → login is not redirected away. */
-async function clearInviteBrowserSession() {
-  const { accessToken, refreshToken, clearSession } = useAuthStore.getState();
-  if (!accessToken && !refreshToken) return;
-  try {
-    await logout({ refreshToken: refreshToken ?? undefined, allDevices: false });
-  } catch {
-    // still clear local session
-  }
-  clearSession();
-}
 
 export function DriverInvitePage() {
   const { t } = useTranslation('common');
@@ -26,7 +14,7 @@ export function DriverInvitePage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    void clearInviteBrowserSession();
+    void clearBrowserSession();
   }, []);
 
   const peek = useQuery({
@@ -37,7 +25,7 @@ export function DriverInvitePage() {
 
   const accept = useMutation({
     mutationFn: async () => {
-      await clearInviteBrowserSession();
+      await clearBrowserSession();
       return acceptDriverInvite(token);
     },
     onSuccess: (data) => {

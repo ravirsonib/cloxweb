@@ -65,6 +65,9 @@ export function DashboardPage() {
           <Link to="/leads" className="clox-btn clox-btn-primary">
             {t('admin.openQueue')}
           </Link>
+          <Link to="/companies" className="clox-btn clox-btn-secondary">
+            {t('nav.companies')}
+          </Link>
           <Link to="/surcharges" className="clox-btn clox-btn-secondary">
             {t('surcharges.opsTitle')}
           </Link>

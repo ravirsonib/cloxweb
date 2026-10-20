@@ -74,6 +74,7 @@ export const AuditAction = {
   LEAD_STATUS_CHANGED: 'lead.status_changed',
   LEAD_UPDATED: 'lead.updated',
   LEAD_NOTE_ADDED: 'lead.note_added',
+  LEAD_DELETED: 'lead.deleted',
   AUTH_OTP_REQUESTED: 'auth.otp_requested',
   AUTH_OTP_VERIFIED: 'auth.otp_verified',
   AUTH_OTP_FAILED: 'auth.otp_failed',
@@ -94,6 +95,8 @@ export const AuditAction = {
   COMPLIANCE_ESCALATED: 'compliance.escalated',
   COMPLIANCE_DOC_EXPIRED: 'compliance.doc_expired',
   COMPANY_SUSPENDED: 'company.suspended',
+  COMPANY_REACTIVATED: 'company.reactivated',
+  COMPANY_DELETED: 'company.deleted',
   SENDER_REGISTERED: 'sender.registered',
   SENDER_PROFILE_UPDATED: 'sender.profile_updated',
   SENDER_PAYMENT_SETUP: 'sender.payment_setup',
@@ -428,3 +431,51 @@ export const adminLeadExportQuerySchema = z.object({
 });
 
 export type AdminLeadExportQuery = z.infer<typeof adminLeadExportQuerySchema>;
+
+export const CompanyType = {
+  SENDER: 'SENDER',
+  CARRIER: 'CARRIER',
+} as const;
+export type CompanyType = (typeof CompanyType)[keyof typeof CompanyType];
+
+export const CompanyStatus = {
+  DRAFT: 'DRAFT',
+  PENDING_VERIFICATION: 'PENDING_VERIFICATION',
+  PENDING_REVIEW: 'PENDING_REVIEW',
+  INFO_REQUESTED: 'INFO_REQUESTED',
+  PENDING_PAYMENT: 'PENDING_PAYMENT',
+  PENDING_COMPLIANCE_DOCS: 'PENDING_COMPLIANCE_DOCS',
+  PENDING_SETTLEMENT_SETUP: 'PENDING_SETTLEMENT_SETUP',
+  PENDING_FLEET_READINESS: 'PENDING_FLEET_READINESS',
+  ACTIVE: 'ACTIVE',
+  BID_ELIGIBLE: 'BID_ELIGIBLE',
+  SUSPENDED: 'SUSPENDED',
+  REJECTED: 'REJECTED',
+} as const;
+export type CompanyStatus = (typeof CompanyStatus)[keyof typeof CompanyStatus];
+
+export const COMPANY_STATUS_KEYS = Object.values(CompanyStatus);
+
+export const adminCompanyListQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  type: z.enum(['SENDER', 'CARRIER']).optional(),
+  status: z.enum([
+    'DRAFT',
+    'PENDING_VERIFICATION',
+    'PENDING_REVIEW',
+    'INFO_REQUESTED',
+    'PENDING_PAYMENT',
+    'PENDING_COMPLIANCE_DOCS',
+    'PENDING_SETTLEMENT_SETUP',
+    'PENDING_FLEET_READINESS',
+    'ACTIVE',
+    'BID_ELIGIBLE',
+    'SUSPENDED',
+    'REJECTED',
+  ]).optional(),
+  regionCode: z.string().trim().max(16).optional(),
+  q: z.string().trim().max(200).optional(),
+});
+
+export type AdminCompanyListQuery = z.infer<typeof adminCompanyListQuerySchema>;

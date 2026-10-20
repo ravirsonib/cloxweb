@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { BrandLogo } from '@/components/brand-logo';
 import { LanguageSwitcher } from '@/components/language-switcher';
-import { Button, RoleBadge } from '@/components/ui';
+import { Button, RoleBadge, useConfirm } from '@/components/ui';
 import { logout } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { isCabTheme, prefersCabShell, roleThemeFromRole } from '@/lib/role-theme';
@@ -81,6 +81,9 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           <NavLink to="/leads" className={navItemClass} onClick={onNavigate}>
             {t('nav.leads')}
           </NavLink>
+          <NavLink to="/companies" className={navItemClass} onClick={onNavigate}>
+            {t('nav.companies')}
+          </NavLink>
           <NavLink to="/audit" className={navItemClass} onClick={onNavigate}>
             {t('nav.audit')}
           </NavLink>
@@ -92,8 +95,8 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
         </NavLink>
       ) : null}
       {isMarketplace ? (
-        <NavLink to="/qa/upload" className={navItemClass} onClick={onNavigate}>
-          {t('nav.qaUpload')}
+        <NavLink to="/documents/upload" className={navItemClass} onClick={onNavigate}>
+          {role === AppRole.DRIVER ? t('nav.driverDocs') : t('nav.documentsUpload')}
         </NavLink>
       ) : null}
       <NavLink to="/account" className={navItemClass} onClick={onNavigate}>
@@ -131,6 +134,7 @@ function CabTab({
 function DriverCabShell({ children }: { children?: ReactNode }) {
   const { t } = useTranslation('common');
   const navigate = useNavigate();
+  const confirm = useConfirm();
   const email = useAuthStore((state) => state.email);
   const displayName = useAuthStore((state) => state.displayName);
   const role = useAuthStore((state) => state.role);
@@ -139,6 +143,13 @@ function DriverCabShell({ children }: { children?: ReactNode }) {
   const title = displayName || email || t('userFallback');
 
   async function signOut() {
+    const ok = await confirm({
+      title: t('confirm.signOutTitle'),
+      description: t('confirm.signOutBody'),
+      confirmLabel: t('signOut'),
+      tone: 'destructive',
+    });
+    if (!ok) return;
     try {
       await logout({ allDevices: false });
     } catch {
@@ -187,6 +198,7 @@ function DriverCabShell({ children }: { children?: ReactNode }) {
 function OpsShell({ children }: { children?: ReactNode }) {
   const { t } = useTranslation('common');
   const navigate = useNavigate();
+  const confirm = useConfirm();
   const email = useAuthStore((state) => state.email);
   const displayName = useAuthStore((state) => state.displayName);
   const role = useAuthStore((state) => state.role);
@@ -196,6 +208,13 @@ function OpsShell({ children }: { children?: ReactNode }) {
   const theme = roleThemeFromRole(role);
 
   async function signOut() {
+    const ok = await confirm({
+      title: t('confirm.signOutTitle'),
+      description: t('confirm.signOutBody'),
+      confirmLabel: t('signOut'),
+      tone: 'destructive',
+    });
+    if (!ok) return;
     try {
       await logout({ allDevices: false });
     } catch {

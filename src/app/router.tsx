@@ -1,15 +1,16 @@
 import type { ReactNode } from 'react';
-import { Navigate, Route, Routes, useParams } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { AdminShell } from '@/components/admin-shell';
 import { useAuthStore } from '@/stores/auth-store';
-import { AdminRole } from '@/shared/types';
+import { AdminRole, AppRole } from '@/shared/types';
 import { HomePage } from '@/pages/home-page';
 import { AuditPage } from '@/pages/audit-page';
 import { LeadDetailPage } from '@/pages/lead-detail-page';
+import { CompaniesPage } from '@/pages/companies-page';
 import { LeadsPage } from '@/pages/leads-page';
 import { LoginPage } from '@/pages/login-page';
 import { ComplianceCasePage, ComplianceQueuePage } from '@/pages/compliance-pages';
-import { QaUploadPage } from '@/pages/qa-upload-page';
+import { DocumentsUploadPage } from '@/pages/documents-upload-page';
 import { AccountPage } from '@/pages/account-page';
 import { CarrierRegisterPage } from '@/pages/carrier-register-page';
 import { CarrierOnboardingPage } from '@/pages/carrier-onboarding-page';
@@ -26,8 +27,27 @@ import { SurchargesPage } from '@/pages/surcharges-page';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const accessToken = useAuthStore((state) => state.accessToken);
+  const location = useLocation();
   if (!accessToken) {
-    return <Navigate to="/login" replace />;
+    const next = encodeURIComponent(`${location.pathname}${location.search}`);
+    return <Navigate to={`/login?next=${next}`} replace />;
+  }
+  return children;
+}
+
+/** Marketplace routes: wrong role (e.g. Super Admin) → login with switch + return path. */
+function RequireRoles({
+  roles,
+  children,
+}: {
+  roles: readonly AppRole[];
+  children: ReactNode;
+}) {
+  const role = useAuthStore((s) => s.role);
+  const location = useLocation();
+  if (!role || !roles.includes(role)) {
+    const next = encodeURIComponent(`${location.pathname}${location.search}`);
+    return <Navigate to={`/login?next=${next}&switch=1`} replace />;
   }
   return children;
 }
@@ -92,6 +112,14 @@ export function AppRouter() {
           }
         />
         <Route
+          path="/companies"
+          element={
+            <SuperOnly>
+              <CompaniesPage />
+            </SuperOnly>
+          }
+        />
+        <Route
           path="/audit"
           element={
             <SuperOnly>
@@ -115,20 +143,86 @@ export function AppRouter() {
             </OpsOnly>
           }
         />
-        <Route path="/sender/onboarding" element={<SenderOnboardingPage />} />
-        <Route path="/carrier/onboarding" element={<CarrierOnboardingPage />} />
-        <Route path="/driver/onboarding" element={<DriverOnboardingPage />} />
-        <Route path="/jobs" element={<JobsListPage />} />
+        <Route
+          path="/sender/onboarding"
+          element={
+            <RequireRoles roles={[AppRole.SENDER]}>
+              <SenderOnboardingPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/carrier/onboarding"
+          element={
+            <RequireRoles roles={[AppRole.TRANSPORT_COMPANY]}>
+              <CarrierOnboardingPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/driver/onboarding"
+          element={
+            <RequireRoles roles={[AppRole.DRIVER]}>
+              <DriverOnboardingPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/jobs"
+          element={
+            <RequireRoles roles={[AppRole.SENDER]}>
+              <JobsListPage />
+            </RequireRoles>
+          }
+        />
         <Route path="/jobs/new" element={<JobCreatePage />} />
         <Route path="/jobs/:id/edit" element={<JobEditPage />} />
         <Route path="/jobs/:id" element={<JobDetailPage />} />
-        <Route path="/market" element={<MarketBoardPage />} />
-        <Route path="/assignments" element={<CarrierAssignmentsPage />} />
-        <Route path="/trips" element={<DriverTripsPage />} />
-        <Route path="/trips/:tripId" element={<DriverTripDetailPage />} />
+        <Route
+          path="/market"
+          element={
+            <RequireRoles roles={[AppRole.TRANSPORT_COMPANY]}>
+              <MarketBoardPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/assignments"
+          element={
+            <RequireRoles roles={[AppRole.TRANSPORT_COMPANY]}>
+              <CarrierAssignmentsPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/trips"
+          element={
+            <RequireRoles roles={[AppRole.DRIVER]}>
+              <DriverTripsPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/trips/:tripId"
+          element={
+            <RequireRoles roles={[AppRole.DRIVER]}>
+              <DriverTripDetailPage />
+            </RequireRoles>
+          }
+        />
         <Route path="/jobs/:jobId/track" element={<SenderTrackPage />} />
         <Route path="/surcharges" element={<SurchargesPage />} />
-        <Route path="/qa/upload" element={<QaUploadPage />} />
+        <Route
+          path="/documents/upload"
+          element={
+            <RequireRoles
+              roles={[AppRole.SENDER, AppRole.TRANSPORT_COMPANY, AppRole.DRIVER]}
+            >
+              <DocumentsUploadPage />
+            </RequireRoles>
+          }
+        />
+        <Route path="/qa/upload" element={<Navigate to="/documents/upload" replace />} />
         <Route path="/account" element={<AccountPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -119,11 +119,14 @@ export function DataTable({
   children,
   className,
   minWidthClassName = 'min-w-[40rem]',
+  headerClassNames,
 }: {
   headers: ReactNode[];
   children: ReactNode;
   className?: string;
   minWidthClassName?: string;
+  /** Optional per-column th classes (e.g. text-right to match action cells). */
+  headerClassNames?: Array<string | undefined>;
 }) {
   return (
     <div
@@ -136,7 +139,10 @@ export function DataTable({
         <thead className="bg-clox-surface-alt font-mono text-[11px] uppercase tracking-wide text-clox-faint">
           <tr>
             {headers.map((header, index) => (
-              <th key={index} className="px-4 py-3 font-medium">
+              <th
+                key={index}
+                className={cn('px-4 py-3 font-medium', headerClassNames?.[index])}
+              >
                 {header}
               </th>
             ))}

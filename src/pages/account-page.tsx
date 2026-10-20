@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { IdentitySummary } from '@/components/identity-summary';
 import { getErrorDetail, getIdentityMe, listSessions, revokeSession } from '@/lib/api';
 import { LoadingBlock } from '@/components/status-blocks';
-import { Button, DataCard, Notice, RoleBadge, useToast } from '@/components/ui';
+import { Button, DataCard, Notice, RoleBadge, useConfirm, useToast } from '@/components/ui';
 import { useAuthStore } from '@/stores/auth-store';
 
 export function AccountPage() {
@@ -11,6 +11,7 @@ export function AccountPage() {
   const role = useAuthStore((s) => s.role);
   const qc = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
 
   const me = useQuery({
     queryKey: ['identity', 'me'],
@@ -81,7 +82,17 @@ export function AccountPage() {
                   variant="secondary"
                   size="sm"
                   disabled={revoke.isPending}
-                  onClick={() => revoke.mutate(s.id)}
+                  onClick={() => {
+                    void (async () => {
+                      const ok = await confirm({
+                        title: t('confirm.revokeSessionTitle'),
+                        description: t('confirm.revokeSessionBody'),
+                        confirmLabel: t('account.revoke'),
+                        tone: 'destructive',
+                      });
+                      if (ok) revoke.mutate(s.id);
+                    })();
+                  }}
                 >
                   {t('account.revoke')}
                 </Button>

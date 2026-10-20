@@ -65,11 +65,55 @@ http.interceptors.request.use((config) => {
   return config;
 });
 
+function problemCode(data: unknown): string | undefined {
+  if (data && typeof data === 'object' && 'code' in data) {
+    const code = (data as { code?: unknown }).code;
+    return typeof code === 'string' ? code : undefined;
+  }
+  return undefined;
+}
+
+function problemReason(data: unknown): string | undefined {
+  if (data && typeof data === 'object' && 'reason' in data) {
+    const reason = (data as { reason?: unknown }).reason;
+    return typeof reason === 'string' && reason.trim() ? reason.trim() : undefined;
+  }
+  return undefined;
+}
+
+function forceLogoutSuspended(apiError: ReturnType<typeof toApiError>) {
+  const code = problemCode(apiError.data);
+  if (
+    apiError.status !== 403 ||
+    (code !== 'ACCOUNT_SUSPENDED' && code !== 'ACCOUNT_DISABLED')
+  ) {
+    return false;
+  }
+
+  const { clearSession } = useAuthStore.getState();
+  clearSession();
+
+  if (typeof window === 'undefined') return true;
+  const path = window.location.pathname;
+  if (path === '/login' || path.startsWith('/login/')) return true;
+
+  const params = new URLSearchParams();
+  params.set('accountStatus', code === 'ACCOUNT_DISABLED' ? 'disabled' : 'suspended');
+  const reason = problemReason(apiError.data) || apiError.detail;
+  if (reason) params.set('reason', reason.slice(0, 500));
+  window.location.assign(`/login?${params.toString()}`);
+  return true;
+}
+
 http.interceptors.response.use(
   (response) => response,
   async (error) => {
     const apiError = toApiError(error);
     const original = error.config as RetryConfig | undefined;
+
+    if (forceLogoutSuspended(apiError)) {
+      return Promise.reject(apiError);
+    }
 
     if (
       apiError.status === 401 &&

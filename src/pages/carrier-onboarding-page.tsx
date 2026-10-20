@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate } from 'react-router-dom';
@@ -21,7 +21,7 @@ import {
   uploadDocumentContent,
   type CarrierOnboarding,
 } from '@/lib/api';
-import { Button, Field, Notice, Select, StepChips } from '@/components/ui';
+import { Button, Field, Notice, Select, StepChips, useConfirm } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
 import { abnSchema, VEHICLE_CLASSES } from '@/lib/validation';
 import { AppRole } from '@/shared/types';
@@ -39,6 +39,18 @@ const STEPS = [
   'complete',
 ] as const;
 
+type CarrierStepId = (typeof STEPS)[number];
+
+const EDITABLE_STEPS: readonly CarrierStepId[] = [
+  'profile',
+  'documents',
+  'connect',
+  'vehicles',
+  'drivers',
+  'capabilities',
+  'submit',
+];
+
 const STEP_LABEL_KEYS = {
   profile: 'carrierOnboarding.stepLegal',
   documents: 'carrierOnboarding.stepDocs',
@@ -49,7 +61,11 @@ const STEP_LABEL_KEYS = {
   submit: 'carrierOnboarding.stepSubmit',
   waiting_ops: 'carrierOnboarding.stepOps',
   complete: 'carrierOnboarding.stepDone',
-} as const satisfies Record<(typeof STEPS)[number], string>;
+} as const satisfies Record<CarrierStepId, string>;
+
+function isCarrierStepId(value: string): value is CarrierStepId {
+  return (STEPS as readonly string[]).includes(value);
+}
 
 export function CarrierOnboardingPage() {
   const { t } = useTranslation();
@@ -60,6 +76,12 @@ export function CarrierOnboardingPage() {
     queryFn: () => getCarrierOnboarding(),
     enabled: role === AppRole.TRANSPORT_COMPANY,
   });
+  const [viewStep, setViewStep] = useState<string | null>(null);
+
+  const serverStep = query.data?.step;
+  useEffect(() => {
+    if (serverStep) setViewStep(serverStep);
+  }, [serverStep]);
 
   if (role !== AppRole.TRANSPORT_COMPANY) {
     return <Navigate to="/" replace />;
@@ -70,7 +92,10 @@ export function CarrierOnboardingPage() {
   }
 
   const data = query.data;
-  const step = data.step;
+  const step = viewStep ?? data.step;
+  const canEditSteps =
+    data.company.status === 'DRAFT' || data.company.status === 'INFO_REQUESTED';
+  const serverIdx = STEPS.indexOf(isCarrierStepId(data.step) ? data.step : 'profile');
   const refresh = async () => {
     await qc.invalidateQueries({ queryKey: ['carrier', 'onboarding'] });
   };
@@ -87,7 +112,26 @@ export function CarrierOnboardingPage() {
           id,
           label: t(STEP_LABEL_KEYS[id]),
         }))}
+        onStepSelect={canEditSteps ? setViewStep : undefined}
+        canSelectStep={(id, index) => {
+          if (!canEditSteps) return false;
+          if (!EDITABLE_STEPS.includes(id as CarrierStepId)) return false;
+          // Completed steps + server current (and any earlier editable revisits).
+          return index <= serverIdx || id === data.step;
+        }}
       />
+      {canEditSteps && step !== data.step ? (
+        <p className="mt-2 text-xs text-clox-mute">
+          {t('carrierOnboarding.viewingPastStep')}{' '}
+          <button
+            type="button"
+            className="font-semibold text-clox-orange hover:underline"
+            onClick={() => setViewStep(data.step)}
+          >
+            {t('carrierOnboarding.backToCurrentStep')}
+          </button>
+        </p>
+      ) : null}
 
       <div className="mt-4 rounded-xl border border-clox-border bg-clox-surface p-3 text-xs text-clox-mute">
         {t('carrierOnboarding.statusStrip', {
@@ -96,6 +140,14 @@ export function CarrierOnboardingPage() {
         })}
         {data.stripeMock ? ' · ' + t('carrierOnboarding.stripeMock') : ''}
       </div>
+
+      {data.company.status === 'INFO_REQUESTED' ? (
+        <Notice tone="warn" className="mt-4">
+          {t('carrierOnboarding.opsRequestedInfo', {
+            note: data.latestCase?.decisionNote ? `: ${data.latestCase.decisionNote}` : '',
+          })}
+        </Notice>
+      ) : null}
 
       {step === 'profile' && <ProfileStep data={data} onSaved={refresh} />}
       {step === 'documents' && (
@@ -108,7 +160,14 @@ export function CarrierOnboardingPage() {
       {step === 'submit' && <SubmitStep data={data} onSubmitted={refresh} />}
       {step === 'waiting_ops' && (
         <Notice tone="warn" className="mt-8" title={t('waitingForOps')}>
-          <p>{t('carrierOnboarding.waitingOpsBody', { status: data.latestCase?.status ?? 'OPEN' })}</p>
+          <p>
+            {t('carrierOnboarding.waitingOpsBody', {
+              status: data.latestCase?.status ?? 'OPEN',
+            })}
+            {data.latestCase?.decisionNote
+              ? ' ' + t('carrierOnboarding.notePrefix', { note: data.latestCase.decisionNote })
+              : ''}
+          </p>
           <Button variant="secondary" className="mt-4" onClick={() => void query.refetch()}>
             {t('refreshStatus')}
           </Button>
@@ -674,6 +733,18 @@ function CapabilitiesStep({ data, onSaved }: { data: CarrierOnboarding; onSaved:
   );
 }
 
+function pickLatestDoc(
+  docs: Array<{ id: string; docType: string; status: string }>,
+  docType: string,
+) {
+  const matches = docs.filter((d) => d.docType === docType);
+  return (
+    matches.find((d) => d.status === 'UPLOADED') ??
+    matches.find((d) => d.status === 'UNDER_REVIEW') ??
+    matches[0]
+  );
+}
+
 function SubmitStep({
   data,
   onSubmitted,
@@ -682,10 +753,12 @@ function SubmitStep({
   onSubmitted: () => Promise<void>;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
+  const isInfoRequested = data.company.status === 'INFO_REQUESTED';
   const existing = data.uploadedDocs ?? [];
-  const pl = existing.find((d) => d.docType === 'PUBLIC_LIABILITY');
-  const cargo = existing.find((d) => d.docType === 'CARGO_INSURANCE');
-  const rwc = existing.find((d) => d.docType === 'RWC');
+  const pl = pickLatestDoc(existing, 'PUBLIC_LIABILITY');
+  const cargo = pickLatestDoc(existing, 'CARGO_INSURANCE');
+  const rwc = pickLatestDoc(existing, 'RWC');
   const [plId, setPlId] = useState<string | null>(pl?.id ?? null);
   const [cargoId, setCargoId] = useState<string | null>(cargo?.id ?? null);
   const [rwcId, setRwcId] = useState<string | null>(rwc?.id ?? null);
@@ -726,8 +799,16 @@ function SubmitStep({
 
   return (
     <div className="mt-8 space-y-4">
-      <h2 className="text-lg font-semibold">{t('carrierOnboarding.submitTitle')}</h2>
-      <p className="text-sm text-clox-mute">{t('carrierOnboarding.submitHint')}</p>
+      <h2 className="text-lg font-semibold">
+        {isInfoRequested
+          ? t('carrierOnboarding.resubmitTitle')
+          : t('carrierOnboarding.submitTitle')}
+      </h2>
+      <p className="text-sm text-clox-mute">
+        {isInfoRequested
+          ? t('carrierOnboarding.resubmitHint')
+          : t('carrierOnboarding.submitHint')}
+      </p>
       <div>
         <p className="mb-1 text-xs text-clox-faint">{t('carrierOnboarding.publicLiability')}</p>
         <input
@@ -786,9 +867,24 @@ function SubmitStep({
       <Button
         variant="cta"
         disabled={!plId || !cargoId || !rwcId || submit.isPending}
-        onClick={() => submit.mutate()}
+        onClick={() => {
+          void (async () => {
+            const ok = await confirm({
+              title: t('confirm.submitComplianceTitle'),
+              description: t('confirm.submitComplianceBody'),
+              confirmLabel: isInfoRequested
+                ? t('carrierOnboarding.resubmitComplianceCase')
+                : t('carrierOnboarding.submitComplianceCase'),
+            });
+            if (ok) submit.mutate();
+          })();
+        }}
       >
-        {submit.isPending ? t('submitting') : t('carrierOnboarding.submitComplianceCase')}
+        {submit.isPending
+          ? t('submitting')
+          : isInfoRequested
+            ? t('carrierOnboarding.resubmitComplianceCase')
+            : t('carrierOnboarding.submitComplianceCase')}
       </Button>
     </div>
   );

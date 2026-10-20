@@ -1,3 +1,4 @@
+import { ApiError } from '@/lib/http/client';
 import { http } from '@/lib/http';
 
 export type ComplianceCaseListItem = {
@@ -22,8 +23,20 @@ export type ComplianceCaseListItem = {
   }>;
 };
 
-export type ComplianceCaseDetail = ComplianceCaseListItem & {
+export type ComplianceCaseDocument = {
+  id: string;
+  docType: string;
+  status: string;
+  expiresAt: string | null;
+  originalFilename: string | null;
+  createdAt: string;
+  isNewSinceInfoRequest: boolean;
+};
+
+export type ComplianceCaseDetail = Omit<ComplianceCaseListItem, 'documents'> & {
   decisionNote: string | null;
+  infoRequestedAt: string | null;
+  documents: ComplianceCaseDocument[];
   abrAssist?: {
     configured: boolean;
     abn: string;
@@ -103,6 +116,43 @@ export function uploadDocumentContent(documentId: string, file: File) {
       form,
     )
     .then((r) => r.data);
+}
+
+/** Authenticated blob fetch + open in a new tab (Ops visual review). */
+export async function openDocumentContent(documentId: string) {
+  try {
+    const response = await http.get<Blob>(`/documents/${documentId}/content`, {
+      responseType: 'blob',
+    });
+    const blob = response.data;
+    const url = URL.createObjectURL(blob);
+    const opened = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!opened) {
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      anchor.click();
+    }
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return blob;
+  } catch (err) {
+    if (err instanceof ApiError && err.data instanceof Blob) {
+      const text = await err.data.text();
+      try {
+        const parsed = JSON.parse(text) as { detail?: string; title?: string };
+        const detail = parsed.detail ?? parsed.title;
+        if (typeof detail === 'string' && detail.trim()) {
+          throw new Error(detail);
+        }
+      } catch (parsed) {
+        if (parsed instanceof Error && !(parsed instanceof SyntaxError)) {
+          throw parsed;
+        }
+      }
+    }
+    throw err;
+  }
 }
 
 export function confirmDocument(documentId: string, contentHash: string) {

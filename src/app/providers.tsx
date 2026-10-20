@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { I18nextProvider } from 'react-i18next';
 import { RoleThemeProvider } from '@/components/role-theme-provider';
-import { ToastProvider } from '@/components/ui';
+import { ConfirmProvider, ToastProvider } from '@/components/ui';
 import { i18n } from '@/lib/i18n';
 
 export function AppProviders({ children }: { children: ReactNode }) {
@@ -25,7 +25,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <RoleThemeProvider>
-            <ToastProvider>{children}</ToastProvider>
+            <ToastProvider>
+              <ConfirmProvider>{children}</ConfirmProvider>
+            </ToastProvider>
           </RoleThemeProvider>
         </BrowserRouter>
       </QueryClientProvider>

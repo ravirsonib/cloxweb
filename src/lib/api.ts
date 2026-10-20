@@ -12,13 +12,19 @@ export {
 } from '@/lib/api/auth';
 export {
   addLeadNote,
+  deleteCompany,
+  deleteLead,
+  disableCompany,
   exportLeadsCsv,
   getDashboardStats,
   getLead,
   listAudit,
+  listCompanies,
   listLeads,
+  reactivateCompany,
   updateLead,
   type AuditListItem,
+  type CompanyListItem,
   type DashboardStats,
   type Paginated,
 } from '@/lib/api/admin';
@@ -28,10 +34,12 @@ export {
   decideCompliance,
   createUploadIntent,
   uploadDocumentContent,
+  openDocumentContent,
   confirmDocument,
   submitCompliance,
   type ComplianceCaseListItem,
   type ComplianceCaseDetail,
+  type ComplianceCaseDocument,
 } from '@/lib/api/compliance';
 export {
   registerSender,

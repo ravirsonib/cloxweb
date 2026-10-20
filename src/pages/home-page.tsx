@@ -91,7 +91,19 @@ function RoleHomePage() {
           />
         ) : null}
         {isMarketplace ? (
-          <HomeLink to="/qa/upload" title={t('home.qaTitle')} hint={t('home.qaHint')} />
+          <HomeLink
+            to="/documents/upload"
+            title={
+              role === AppRole.DRIVER
+                ? t('documentsUpload.driverTitle')
+                : t('home.documentsUploadTitle')
+            }
+            hint={
+              role === AppRole.DRIVER
+                ? t('documentsUpload.driverSubtitle')
+                : t('home.documentsUploadHint')
+            }
+          />
         ) : null}
         {role === AppRole.SENDER ? (
           <HomeLink

@@ -7,7 +7,7 @@ import {
   paySurcharge,
   waiveSurcharge,
 } from '@/lib/api';
-import { Button, DataCard, Notice, StatusPill, useToast } from '@/components/ui';
+import { Button, DataCard, Notice, StatusPill, useConfirm, useToast } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
 import type { SurchargeRow } from '@/lib/api/surcharges';
 import { AdminRole, AppRole } from '@/shared/types';
@@ -28,6 +28,7 @@ export function SurchargesPage() {
   const role = useAuthStore((s) => s.role);
   const qc = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
   const isSender = role === AppRole.SENDER;
   const isSuper = role === AdminRole.SUPER_ADMIN;
   const canAccess = isSender || isSuper;
@@ -117,7 +118,16 @@ export function SurchargesPage() {
                         variant="cta"
                         size="sm"
                         disabled={pay.isPending}
-                        onClick={() => pay.mutate(row.id)}
+                        onClick={() => {
+                          void (async () => {
+                            const ok = await confirm({
+                              title: t('confirm.paySurchargeTitle'),
+                              description: t('confirm.paySurchargeBody'),
+                              confirmLabel: t('surcharges.pay'),
+                            });
+                            if (ok) pay.mutate(row.id);
+                          })();
+                        }}
                       >
                         {t('surcharges.pay')}
                       </Button>
@@ -128,7 +138,17 @@ export function SurchargesPage() {
                         variant="secondary"
                         size="sm"
                         disabled={waive.isPending}
-                        onClick={() => waive.mutate(row.id)}
+                        onClick={() => {
+                          void (async () => {
+                            const ok = await confirm({
+                              title: t('confirm.waiveSurchargeTitle'),
+                              description: t('confirm.waiveSurchargeBody'),
+                              confirmLabel: t('surcharges.waive'),
+                              tone: 'destructive',
+                            });
+                            if (ok) waive.mutate(row.id);
+                          })();
+                        }}
                       >
                         {t('surcharges.waive')}
                       </Button>

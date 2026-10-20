@@ -1,5 +1,6 @@
 import type {
   AdminAuditQuery,
+  AdminCompanyListQuery,
   AdminLeadExportQuery,
   AdminLeadListQuery,
   CreateLeadNoteInput,
@@ -86,6 +87,89 @@ export function listLeads(
     .then((res) => res.data);
 }
 
+export type CompanyListItem = {
+  id: string;
+  type: 'SENDER' | 'CARRIER';
+  status: string;
+  legalName: string;
+  tradingName: string | null;
+  abn: string | null;
+  email: string | null;
+  phone: string | null;
+  suspendedAt: string | null;
+  suspendedReason: string | null;
+  suspendedNote: string | null;
+  statusBeforeSuspend: string | null;
+  createdAt: string;
+  updatedAt: string;
+  homeRegion: { code: string; name: string } | null;
+  openCase: { id: string; status: string; caseType: string } | null;
+  counts: { users: number; vehicles: number; drivers: number };
+};
+
+export type DisableCompanyInput = {
+  reason: string;
+  note?: string;
+};
+
+export type CompanyDisableResult = {
+  id: string;
+  status: string;
+  statusBeforeSuspend: string | null;
+  suspendedAt: string | null;
+  suspendedReason: string | null;
+  suspendedNote: string | null;
+  cascade: {
+    usersSuspended: number;
+    driversSuspended: number;
+    vehiclesSuspended: number;
+    sessionsRevoked: number;
+  };
+};
+
+export function listCompanies(
+  query: Partial<AdminCompanyListQuery> = {},
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .get<Paginated<CompanyListItem>>('/admin/companies', {
+      params: query,
+      signal: options?.signal,
+      paramsSerializer: {
+        indexes: null,
+      },
+    })
+    .then((res) => res.data);
+}
+
+export function disableCompany(
+  id: string,
+  payload: DisableCompanyInput,
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .post<CompanyDisableResult>(`/admin/companies/${id}/disable`, payload, {
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export function reactivateCompany(id: string, options?: { signal?: AbortSignal }) {
+  return http
+    .post<Omit<CompanyDisableResult, 'cascade'>>(`/admin/companies/${id}/reactivate`, undefined, {
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export function deleteCompany(id: string, options?: { signal?: AbortSignal }) {
+  return http
+    .delete<{ ok: true; id: string }>(`/admin/companies/${id}`, {
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
 export function getLead(id: string, options?: { signal?: AbortSignal }) {
   return http
     .get<LeadDetail>(`/admin/leads/${id}`, { signal: options?.signal })
@@ -99,6 +183,14 @@ export function updateLead(
 ) {
   return http
     .patch<LeadListItem>(`/admin/leads/${id}`, payload, {
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export function deleteLead(id: string, options?: { signal?: AbortSignal }) {
+  return http
+    .delete<{ ok: true; id: string }>(`/admin/leads/${id}`, {
       signal: options?.signal,
     })
     .then((res) => res.data);

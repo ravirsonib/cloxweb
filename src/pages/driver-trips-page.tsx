@@ -19,6 +19,7 @@ import {
   LockedCta,
   Notice,
   dataCardClassName,
+  useConfirm,
 } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
 import { AppRole } from '@/shared/types';
@@ -88,6 +89,7 @@ export function DriverTripDetailPage() {
   const { tripId = '' } = useParams();
   const role = useAuthStore((s) => s.role);
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const [msg, setMsg] = useState<string | null>(null);
   const [massKg, setMassKg] = useState('');
 
@@ -289,7 +291,17 @@ export function DriverTripDetailPage() {
                 type="button"
                 variant="destructive"
                 disabled={safety.isPending}
-                onClick={() => safety.mutate(false)}
+                onClick={() => {
+                  void (async () => {
+                    const ok = await confirm({
+                      title: t('confirm.safetyFailTitle'),
+                      description: t('confirm.safetyFailBody'),
+                      confirmLabel: t('trips.failLockVehicle'),
+                      tone: 'destructive',
+                    });
+                    if (ok) safety.mutate(false);
+                  })();
+                }}
               >
                 {t('trips.failLockVehicle')}
               </Button>
@@ -330,7 +342,16 @@ export function DriverTripDetailPage() {
               variant="cta"
               size="block"
               disabled={start.isPending}
-              onClick={() => start.mutate()}
+              onClick={() => {
+                void (async () => {
+                  const ok = await confirm({
+                    title: t('confirm.startTripTitle'),
+                    description: t('confirm.startTripBody'),
+                    confirmLabel: t('trips.startTrip'),
+                  });
+                  if (ok) start.mutate();
+                })();
+              }}
             >
               {start.isPending ? t('loading') : t('trips.startTrip')}
             </LockedCta>
@@ -347,7 +368,16 @@ export function DriverTripDetailPage() {
             variant="secondary"
             size="block"
             disabled={brk.isPending}
-            onClick={() => brk.mutate(!tripData.onBreak)}
+            onClick={() => {
+              void (async () => {
+                const ok = await confirm({
+                  title: t('confirm.breakTitle'),
+                  description: t('confirm.breakBody'),
+                  confirmLabel: tripData.onBreak ? t('trips.endBreak') : t('trips.takingBreak'),
+                });
+                if (ok) brk.mutate(!tripData.onBreak);
+              })();
+            }}
           >
             {tripData.onBreak ? t('trips.endBreak') : t('trips.takingBreak')}
           </Button>

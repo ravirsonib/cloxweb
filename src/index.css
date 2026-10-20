@@ -363,6 +363,20 @@
     border-color: var(--status-ok-bd);
   }
 
+  .clox-step-chip-selectable {
+    @apply cursor-pointer;
+  }
+
+  .clox-step-chip-selectable:hover {
+    filter: brightness(0.97);
+    border-color: var(--clox-orange);
+  }
+
+  .clox-step-chip-selectable:focus-visible {
+    outline: 2px solid var(--clox-orange);
+    outline-offset: 2px;
+  }
+
   .clox-btn {
     @apply inline-flex items-center justify-center gap-2 whitespace-nowrap border text-sm font-semibold transition;
     border-radius: 8px;
@@ -429,6 +443,27 @@
     border: 1px solid var(--clox-border);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-1);
+  }
+
+  .clox-dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(16, 25, 43, 0.55);
+  }
+
+  .clox-dialog {
+    width: 100%;
+    max-width: 28rem;
+    background: var(--clox-surface);
+    border: 1px solid var(--clox-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-2, var(--shadow-1));
+    padding: 1.5rem;
   }
 
   .clox-panel {

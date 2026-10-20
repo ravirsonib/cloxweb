@@ -10,10 +10,16 @@ export function StepChips({
   steps,
   current,
   className,
+  onStepSelect,
+  canSelectStep,
 }: {
   steps: readonly StepChipItem[];
   current: string;
   className?: string;
+  /** Called when a selectable completed/current step chip is activated. */
+  onStepSelect?: (stepId: string) => void;
+  /** Which steps may be opened (typically completed + current while editable). */
+  canSelectStep?: (stepId: string, index: number) => boolean;
 }) {
   const currentIdx = steps.findIndex((step) => step.id === current);
 
@@ -22,6 +28,28 @@ export function StepChips({
       {steps.map((step, index) => {
         const active = step.id === current;
         const done = currentIdx >= 0 && index < currentIdx;
+        const selectable =
+          Boolean(onStepSelect) && (canSelectStep?.(step.id, index) ?? (done || active));
+
+        if (selectable) {
+          return (
+            <button
+              key={step.id}
+              type="button"
+              role="listitem"
+              className={cn(
+                'clox-step-chip clox-step-chip-selectable',
+                active && 'clox-step-chip-active',
+                done && !active && 'clox-step-chip-done',
+              )}
+              aria-current={active ? 'step' : undefined}
+              onClick={() => onStepSelect?.(step.id)}
+            >
+              {step.label}
+            </button>
+          );
+        }
+
         return (
           <span
             key={step.id}
@@ -31,6 +59,7 @@ export function StepChips({
               active && 'clox-step-chip-active',
               done && 'clox-step-chip-done',
             )}
+            aria-current={active ? 'step' : undefined}
           >
             {step.label}
           </span>

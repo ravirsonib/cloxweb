@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate } from 'react-router-dom';
@@ -17,22 +17,52 @@ import {
   uploadDocumentContent,
   type SenderOnboarding,
 } from '@/lib/api';
-import { Button, Field, Notice, RadioCardGroup, StepChips } from '@/components/ui';
+import {
+  Button,
+  Field,
+  Notice,
+  RadioCardGroup,
+  StepChips,
+  useConfirm,
+} from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
 import { abnSchema, AU_STATES } from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
+const SENDER_STEPS = [
+  'account_type',
+  'invoice',
+  'documents',
+  'waiting_ops',
+  'payment',
+  'complete',
+] as const;
+
+type SenderStepId = (typeof SENDER_STEPS)[number];
+
+const SENDER_EDITABLE_STEPS: readonly SenderStepId[] = [
+  'account_type',
+  'invoice',
+  'documents',
+];
+
 export function SenderOnboardingPage() {
   const { t } = useTranslation();
   const role = useAuthStore((s) => s.role);
   const qc = useQueryClient();
+  const [viewStep, setViewStep] = useState<string | null>(null);
 
   const query = useQuery({
     queryKey: ['sender', 'onboarding'],
     queryFn: () => getSenderOnboarding(),
     enabled: role === AppRole.SENDER,
   });
+
+  const serverStep = query.data?.step;
+  useEffect(() => {
+    if (serverStep) setViewStep(serverStep);
+  }, [serverStep]);
 
   if (role !== AppRole.SENDER) {
     return <Navigate to="/" replace />;
@@ -47,7 +77,14 @@ export function SenderOnboardingPage() {
   }
 
   const data = query.data;
-  const step = data.step;
+  const step = viewStep ?? data.step;
+  const canEditSteps =
+    data.company.status === 'DRAFT' || data.company.status === 'INFO_REQUESTED';
+  const serverIdx = SENDER_STEPS.indexOf(
+    (SENDER_STEPS as readonly string[]).includes(data.step)
+      ? (data.step as SenderStepId)
+      : 'account_type',
+  );
 
   return (
     <div className="max-w-2xl">
@@ -65,7 +102,25 @@ export function SenderOnboardingPage() {
           { id: 'payment', label: t('senderOnboarding.stepPay') },
           { id: 'complete', label: t('senderOnboarding.stepDone') },
         ]}
+        onStepSelect={canEditSteps ? setViewStep : undefined}
+        canSelectStep={(id, index) => {
+          if (!canEditSteps) return false;
+          if (!SENDER_EDITABLE_STEPS.includes(id as SenderStepId)) return false;
+          return index <= serverIdx || id === data.step;
+        }}
       />
+      {canEditSteps && step !== data.step ? (
+        <p className="mt-2 text-xs text-clox-mute">
+          {t('senderOnboarding.viewingPastStep')}{' '}
+          <button
+            type="button"
+            className="font-semibold text-clox-orange hover:underline"
+            onClick={() => setViewStep(data.step)}
+          >
+            {t('senderOnboarding.backToCurrentStep')}
+          </button>
+        </p>
+      ) : null}
 
       <div className="mt-4 rounded-xl border border-clox-border bg-clox-surface p-3 text-xs text-clox-mute">
         {t('senderOnboarding.statusStrip', {
@@ -74,6 +129,14 @@ export function SenderOnboardingPage() {
         })}
         {data.stripeMock ? ' · ' + t('senderOnboarding.stripeMock') : ''}
       </div>
+
+      {data.company.status === 'INFO_REQUESTED' ? (
+        <Notice tone="warn" className="mt-4">
+          {t('senderOnboarding.opsRequestedInfo', {
+            note: data.latestCase?.decisionNote ? `: ${data.latestCase.decisionNote}` : '',
+          })}
+        </Notice>
+      ) : null}
 
       {(step === 'account_type' || step === 'invoice') && (
         <ProfileStep
@@ -107,15 +170,6 @@ export function SenderOnboardingPage() {
           </Button>
         </Notice>
       )}
-
-      {data.company.status === 'INFO_REQUESTED' &&
-      (step === 'account_type' || step === 'invoice' || step === 'documents') ? (
-        <Notice tone="warn" className="mt-4">
-          {t('senderOnboarding.opsRequestedInfo', {
-            note: data.latestCase?.decisionNote ? `: ${data.latestCase.decisionNote}` : '',
-          })}
-        </Notice>
-      ) : null}
 
       {step === 'rejected' && (
         <Notice tone="error" className="mt-8">
@@ -341,6 +395,7 @@ function DocumentsStep({
   onSubmitted: () => Promise<void>;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const docType = accountType === 'INDIVIDUAL' ? 'GOVERNMENT_ID' : 'ABN_EXTRACT';
   const [file, setFile] = useState<File | null>(null);
   const [docId, setDocId] = useState<string | null>(null);
@@ -405,7 +460,16 @@ function DocumentsStep({
         <Button
           variant="cta"
           disabled={!docId || submit.isPending}
-          onClick={() => submit.mutate()}
+          onClick={() => {
+            void (async () => {
+              const ok = await confirm({
+                title: t('confirm.submitComplianceTitle'),
+                description: t('confirm.submitComplianceBody'),
+                confirmLabel: t('senderOnboarding.submitToOps'),
+              });
+              if (ok) submit.mutate();
+            })();
+          }}
         >
           {submit.isPending ? t('submitting') : t('senderOnboarding.submitToOps')}
         </Button>

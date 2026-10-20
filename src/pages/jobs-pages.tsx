@@ -26,6 +26,7 @@ import {
   ResponsiveDataView,
   ViewModeToggle,
   dataCardClassName,
+  useConfirm,
   useDataViewMode,
   useToast,
 } from '@/components/ui';
@@ -589,6 +590,7 @@ export function JobDetailPage() {
   const { id = '' } = useParams();
   const role = useAuthStore((s) => s.role);
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const job = useQuery({
     queryKey: ['jobs', id],
     queryFn: () => getSenderJob(id),
@@ -695,7 +697,16 @@ export function JobDetailPage() {
           <Button
             variant="cta"
             disabled={publish.isPending}
-            onClick={() => publish.mutate()}
+            onClick={() => {
+              void (async () => {
+                const ok = await confirm({
+                  title: t('confirm.publishJobTitle'),
+                  description: t('confirm.publishJobBody'),
+                  confirmLabel: t('jobs.publish'),
+                });
+                if (ok) publish.mutate();
+              })();
+            }}
           >
             {t('jobs.publish')}
           </Button>
@@ -723,7 +734,16 @@ export function JobDetailPage() {
                   variant="secondary"
                   className="mt-3"
                   disabled={accept.isPending}
-                  onClick={() => accept.mutate(p.id)}
+                  onClick={() => {
+                    void (async () => {
+                      const ok = await confirm({
+                        title: t('confirm.acceptProposalTitle'),
+                        description: t('confirm.acceptProposalBody'),
+                        confirmLabel: t('jobs.acceptAndCharge'),
+                      });
+                      if (ok) accept.mutate(p.id);
+                    })();
+                  }}
                 >
                   {t('jobs.acceptAndCharge')}
                 </Button>

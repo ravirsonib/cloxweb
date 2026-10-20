@@ -626,7 +626,7 @@
     "statusLine": "Status: {{status}}",
     "expiredSuffix": "· expired",
     "alreadyAcceptedSuffix": "· already accepted",
-    "otpHint": "Enter the OTP sent to your email to accept this invite.",
+    "otpHint": "Click Accept invite, then sign in with the one-time code emailed to you.",
     "acceptInvite": "Accept invite",
     "prefix": "Driver invite",
     "invited": "invited",
@@ -634,7 +634,7 @@
     "statusLabel": "Status",
     "expired": "expired",
     "consumed": "already accepted",
-    "otpNote": "Enter the OTP sent to your email to accept this invite.",
+    "otpNote": "No code on this screen. Accept the invite, then enter the OTP on the login page (email is prefilled).",
     "acceptButton": "Accept invite"
   },
   "senderRegister": {

@@ -11,6 +11,8 @@ export type TripSummary = {
   actualMassKg: number | null;
   onBreak: boolean;
   startedAt: string | null;
+  taxInvoiceStorageKey?: string | null;
+  runSheetStorageKey?: string | null;
   gates: {
     paid: boolean;
     safetyOk: boolean;
@@ -24,6 +26,7 @@ export type TripSummary = {
     deadWeightKg: number | null;
     chargeableWeightKg: number | null;
     stops: Array<{
+      id?: string;
       sequence: number;
       stopType: string;
       suburb: string | null;
@@ -37,10 +40,21 @@ export type TripSummary = {
     id: string;
     jobStopId: string;
     enteredAt: string | null;
+    exitedAt?: string | null;
     freeWaitEndsAt: string | null;
     waitOverageMinutes: number;
     arrivalRecorded: boolean;
     currentlyInside: boolean;
+    approachingNotifiedAt?: string | null;
+    approachingSource?: string | null;
+    atDropoffNotifiedAt?: string | null;
+    podStatus?: string;
+    signedAt?: string | null;
+    signerName?: string | null;
+    receiverPresentAttested?: boolean;
+    goodsPhotoCount?: number;
+    podFinalizedAt?: string | null;
+    podPackageStorageKey?: string | null;
     stop: {
       sequence: number;
       stopType: string;
@@ -82,10 +96,16 @@ export type SenderTrack = {
   };
   stopsProgress?: Array<{
     id: string;
+    jobStopId?: string;
     enteredAt: string | null;
     freeWaitEndsAt: string | null;
     waitOverageMinutes: number;
     arrivalRecorded: boolean;
+    podStatus?: string;
+    signerName?: string | null;
+    podFinalizedAt?: string | null;
+    podPackageStorageKey?: string | null;
+    goodsPhotoCount?: number;
     stop: {
       sequence: number;
       stopType: string;
@@ -98,6 +118,29 @@ export type SenderTrack = {
     status: 'PENDING_PAYMENT' | 'PAID' | 'WAIVED';
     amountIncGstCents: number;
   }> | null;
+  taxInvoiceStorageKey?: string | null;
+  runSheetStorageKey?: string | null;
+};
+
+export type TripPodSummary = {
+  tripId: string;
+  jobId: string;
+  tripStatus: string;
+  podStorageKey: string | null;
+  taxInvoiceStorageKey: string | null;
+  runSheetStorageKey: string | null;
+  dropoffs: Array<{
+    jobStopId: string;
+    sequence: number;
+    suburb: string | null;
+    podStatus: string;
+    signedAt: string | null;
+    signerName: string | null;
+    podFinalizedAt: string | null;
+    podPackageStorageKey: string | null;
+    signaturePdfStorageKey: string | null;
+    goodsPhotoCount: number;
+  }>;
 };
 
 export function listDriverTrips() {
@@ -132,6 +175,45 @@ export function tripLocation(tripId: string, lat: number, lng: number) {
   return http.post(`/trips/${tripId}/locations`, { lat, lng }).then((r) => r.data);
 }
 
+export function tripNotifyApproaching(tripId: string, jobStopId?: string) {
+  return http
+    .post<TripSummary>(`/trips/${tripId}/notify-approaching`, {
+      ...(jobStopId ? { jobStopId } : {}),
+    })
+    .then((r) => r.data);
+}
+
+export function tripPodSignature(
+  tripId: string,
+  payload: {
+    jobStopId: string;
+    signerName: string;
+    signatureDataUrl: string;
+    receiverPresentAttested: boolean;
+  },
+) {
+  return http
+    .post<TripSummary>(`/trips/${tripId}/pod/signature`, payload)
+    .then((r) => r.data);
+}
+
+export function tripPodPhoto(
+  tripId: string,
+  payload: { jobStopId: string; photoDataUrl: string },
+) {
+  return http.post<TripSummary>(`/trips/${tripId}/pod/photos`, payload).then((r) => r.data);
+}
+
+export function tripPodFinalize(tripId: string, jobStopId: string) {
+  return http
+    .post<TripSummary>(`/trips/${tripId}/pod/finalize`, { jobStopId })
+    .then((r) => r.data);
+}
+
 export function getSenderTrack(jobId: string) {
   return http.get<SenderTrack>(`/trips/jobs/${jobId}/track`).then((r) => r.data);
+}
+
+export function getTripPod(tripId: string) {
+  return http.get<TripPodSummary>(`/trips/${tripId}/pod`).then((r) => r.data);
 }

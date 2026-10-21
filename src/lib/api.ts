@@ -164,9 +164,15 @@ export {
   tripStart,
   tripBreak,
   tripLocation,
+  tripNotifyApproaching,
+  tripPodSignature,
+  tripPodPhoto,
+  tripPodFinalize,
   getSenderTrack,
+  getTripPod,
   type TripSummary,
   type SenderTrack,
+  type TripPodSummary,
 } from '@/lib/api/trips';
 export {
   listSenderSurcharges,

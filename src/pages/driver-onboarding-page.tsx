@@ -52,7 +52,9 @@ export function DriverOnboardingPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold sm:text-3xl">{t('driverOnboarding.title')}</h1>
+      <h1 className="font-display text-2xl font-bold text-clox-ink sm:text-3xl">
+        {t('driverOnboarding.title')}
+      </h1>
       <p className="mt-2 text-sm text-clox-mute">
         {data.company ? (
           <>

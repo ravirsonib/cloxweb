@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import {
@@ -13,6 +13,10 @@ import {
   tripBreak,
   tripLocation,
   tripMassCheck,
+  tripNotifyApproaching,
+  tripPodFinalize,
+  tripPodPhoto,
+  tripPodSignature,
   tripSafetyCheck,
   tripStart,
   uploadDocumentContent,
@@ -115,6 +119,11 @@ export function DriverTripDetailPage() {
   const [photoDocumentId, setPhotoDocumentId] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [signerName, setSignerName] = useState('');
+  const [attestPresent, setAttestPresent] = useState(false);
+  const [podStopId, setPodStopId] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawingRef = useRef(false);
 
   const tripQuery = useQuery({
     queryKey: ['trips', tripId],
@@ -254,6 +263,59 @@ export function DriverTripDetailPage() {
     onError: (e) => setMsg(getErrorDetail(e)),
   });
 
+  const notifyApproaching = useMutation({
+    mutationFn: (jobStopId?: string) => tripNotifyApproaching(tripId, jobStopId),
+    onSuccess: async () => {
+      setMsg(t('trips.notifyApproachingDone'));
+      await refresh();
+    },
+    onError: (e) => setMsg(getErrorDetail(e)),
+  });
+
+  const podSign = useMutation({
+    mutationFn: (payload: {
+      jobStopId: string;
+      signerName: string;
+      signatureDataUrl: string;
+      receiverPresentAttested: boolean;
+    }) => tripPodSignature(tripId, payload),
+    onSuccess: async () => {
+      setMsg(t('trips.podCaptureSignature'));
+      await refresh();
+    },
+    onError: (e) => setMsg(getErrorDetail(e)),
+  });
+
+  const podPhoto = useMutation({
+    mutationFn: (payload: { jobStopId: string; photoDataUrl: string }) =>
+      tripPodPhoto(tripId, payload),
+    onSuccess: async () => {
+      await refresh();
+    },
+    onError: (e) => setMsg(getErrorDetail(e)),
+  });
+
+  const podFinalize = useMutation({
+    mutationFn: (jobStopId: string) => tripPodFinalize(tripId, jobStopId),
+    onSuccess: async () => {
+      setMsg(t('trips.podFinalized'));
+      await refresh();
+    },
+    onError: (e) => setMsg(getErrorDetail(e)),
+  });
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#10192b';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+  }, [podStopId]);
+
   if (role !== AppRole.DRIVER) return <Navigate to="/" replace />;
   if (tripQuery.isLoading) return <LoadingBlock label={t('trips.loadingDetail')} />;
   if (tripQuery.isError || !tripQuery.data) {
@@ -264,6 +326,57 @@ export function DriverTripDetailPage() {
   const declared =
     tripData.declaredMassKg ?? tripData.job?.chargeableWeightKg ?? tripData.job?.deadWeightKg ?? 0;
   const startLocked = !tripData.gates.canStart;
+  const dropoffStops = (tripData.job?.stops ?? []).filter((s) => s.stopType === 'DROPOFF');
+  const progressByStop = new Map(
+    (tripData.stopsProgress ?? []).map((p) => [p.jobStopId, p] as const),
+  );
+  const dropoffProgress = (tripData.stopsProgress ?? []).filter(
+    (p) => p.stop?.stopType === 'DROPOFF' || dropoffStops.some((s) => s.id === p.jobStopId),
+  );
+  const eligibleNotifyStop = dropoffStops.find((s) => {
+    if (!s.id) return false;
+    const p = progressByStop.get(s.id);
+    if (p?.approachingNotifiedAt) return false;
+    if (p?.enteredAt || p?.exitedAt) return false;
+    return true;
+  });
+  const canNotifyApproaching =
+    Boolean(tripData.startedAt) &&
+    tripData.status !== 'COMPLETED' &&
+    tripData.status !== 'CANCELLED' &&
+    Boolean(eligibleNotifyStop);
+
+  const showPodCapture =
+    Boolean(tripData.startedAt) &&
+    (tripData.status === 'AT_DROPOFF' ||
+      tripData.status === 'COMPLETED' ||
+      dropoffProgress.some((p) => Boolean(p.enteredAt) || p.podStatus !== 'PENDING'));
+
+  const activePodStopIdResolved =
+    podStopId ||
+    dropoffProgress.find((p) => p.podStatus !== 'FINALIZED')?.jobStopId ||
+    dropoffProgress[0]?.jobStopId ||
+    dropoffStops.find((s) => {
+      if (!s.id) return false;
+      const p = progressByStop.get(s.id);
+      return !p || p.podStatus !== 'FINALIZED';
+    })?.id ||
+    dropoffStops[0]?.id ||
+    null;
+  const activePodStop =
+    (activePodStopIdResolved
+      ? progressByStop.get(activePodStopIdResolved) ?? null
+      : null) ??
+    dropoffProgress.find((p) => p.podStatus !== 'FINALIZED') ??
+    dropoffProgress[0] ??
+    null;
+  const activePodStopId = activePodStopIdResolved;
+  const activePodStatus = activePodStop?.podStatus ?? 'PENDING';
+  const activePhotoCount = activePodStop?.goodsPhotoCount ?? 0;
+  const canFinalizePod =
+    Boolean(activePodStopId) &&
+    (activePodStatus === 'SIGNED' || Boolean(activePodStop?.signedAt)) &&
+    activePhotoCount >= 1;
 
   return (
     <div>
@@ -494,8 +607,189 @@ export function DriverTripDetailPage() {
           >
             {t('trips.sendMockLocation')}
           </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="block"
+            disabled={!canNotifyApproaching || notifyApproaching.isPending}
+            onClick={() =>
+              notifyApproaching.mutate(eligibleNotifyStop?.id)
+            }
+          >
+            {canNotifyApproaching
+              ? t('trips.notifyApproaching')
+              : t('trips.notifyApproachingDone')}
+          </Button>
+          <p className="text-xs text-clox-mute">{t('trips.notifyApproachingHint')}</p>
+
+          {showPodCapture && activePodStopId ? (
+            <div className="clox-card space-y-3 p-4">
+              <h2 className="font-display font-semibold text-clox-ink">{t('trips.podTitle')}</h2>
+              <p className="text-sm text-clox-mute">{t('trips.podHint')}</p>
+              <p className="text-xs text-clox-mute">
+                {t('trips.podStatus')}:{' '}
+                <span className="font-mono text-clox-ink">{activePodStatus}</span>
+                {' · '}
+                {t('trips.podPhotosCount', { count: activePhotoCount })}
+                {activePodStop?.stop?.suburb
+                  ? ` · ${activePodStop.stop.suburb}`
+                  : dropoffStops.find((s) => s.id === activePodStopId)?.suburb
+                    ? ` · ${dropoffStops.find((s) => s.id === activePodStopId)?.suburb}`
+                    : ''}
+              </p>
+
+              {activePodStatus !== 'FINALIZED' ? (
+                <>
+                  <Field
+                    label={t('trips.podSignerName')}
+                    placeholder={t('trips.podSignerPlaceholder')}
+                    value={signerName}
+                    onChange={(e) => setSignerName(e.target.value)}
+                  />
+                  <label className="flex items-start gap-2 text-sm text-clox-ink">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={attestPresent}
+                      onChange={(e) => setAttestPresent(e.target.checked)}
+                    />
+                    <span>{t('trips.podAttestPresent')}</span>
+                  </label>
+                  <p className="text-xs text-clox-mute">{t('trips.podDrawHint')}</p>
+                  <canvas
+                    ref={canvasRef}
+                    width={320}
+                    height={140}
+                    className="w-full rounded-clox-sm border border-clox-border bg-white touch-none"
+                    onPointerDown={(e) => {
+                      drawingRef.current = true;
+                      const canvas = canvasRef.current;
+                      const ctx = canvas?.getContext('2d');
+                      if (!canvas || !ctx) return;
+                      const rect = canvas.getBoundingClientRect();
+                      ctx.beginPath();
+                      ctx.moveTo(
+                        ((e.clientX - rect.left) / rect.width) * canvas.width,
+                        ((e.clientY - rect.top) / rect.height) * canvas.height,
+                      );
+                    }}
+                    onPointerMove={(e) => {
+                      if (!drawingRef.current) return;
+                      const canvas = canvasRef.current;
+                      const ctx = canvas?.getContext('2d');
+                      if (!canvas || !ctx) return;
+                      const rect = canvas.getBoundingClientRect();
+                      ctx.lineTo(
+                        ((e.clientX - rect.left) / rect.width) * canvas.width,
+                        ((e.clientY - rect.top) / rect.height) * canvas.height,
+                      );
+                      ctx.stroke();
+                    }}
+                    onPointerUp={() => {
+                      drawingRef.current = false;
+                    }}
+                    onPointerLeave={() => {
+                      drawingRef.current = false;
+                    }}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        const canvas = canvasRef.current;
+                        const ctx = canvas?.getContext('2d');
+                        if (!canvas || !ctx) return;
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                      }}
+                    >
+                      {t('trips.podClearSignature')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={
+                        podSign.isPending ||
+                        !attestPresent ||
+                        signerName.trim().length < 2 ||
+                        !activePodStopId
+                      }
+                      onClick={() => {
+                        if (!activePodStopId || !canvasRef.current) return;
+                        setPodStopId(activePodStopId);
+                        podSign.mutate({
+                          jobStopId: activePodStopId,
+                          signerName: signerName.trim(),
+                          signatureDataUrl: canvasRef.current.toDataURL('image/png'),
+                          receiverPresentAttested: attestPresent,
+                        });
+                      }}
+                    >
+                      {t('trips.podCaptureSignature')}
+                    </Button>
+                    <label className="clox-btn clox-btn-secondary cursor-pointer px-3 py-1.5 text-[12.5px]">
+                      {t('trips.podAddPhoto')}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="sr-only"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file || !activePodStopId) return;
+                          setPodStopId(activePodStopId);
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            const dataUrl = String(reader.result ?? '');
+                            if (dataUrl) {
+                              podPhoto.mutate({
+                                jobStopId: activePodStopId,
+                                photoDataUrl: dataUrl,
+                              });
+                            }
+                          };
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      variant="cta"
+                      size="sm"
+                      disabled={podFinalize.isPending || !canFinalizePod}
+                      onClick={() => {
+                        if (!activePodStopId) return;
+                        podFinalize.mutate(activePodStopId);
+                      }}
+                    >
+                      {t('trips.podFinalize')}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <Notice tone="success">{t('trips.podFinalized')}</Notice>
+              )}
+            </div>
+          ) : null}
+
         </div>
       )}
+
+      {tripData.taxInvoiceStorageKey || tripData.runSheetStorageKey ? (
+        <Notice tone="info" className="mt-6" title={t('trips.completionDocsTitle')}>
+          <ul className="mt-1 space-y-1 font-mono text-xs text-clox-ink">
+            {tripData.taxInvoiceStorageKey ? (
+              <li>{t('trips.taxInvoiceKey', { key: tripData.taxInvoiceStorageKey })}</li>
+            ) : null}
+            {tripData.runSheetStorageKey ? (
+              <li>{t('trips.runSheetKey', { key: tripData.runSheetStorageKey })}</li>
+            ) : null}
+          </ul>
+        </Notice>
+      ) : null}
 
       {tripData.status !== 'COMPLETED' && tripData.status !== 'CANCELLED' ? (
         <div className="mt-8 border-t border-clox-border-soft pt-6">

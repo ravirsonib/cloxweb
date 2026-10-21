@@ -139,14 +139,20 @@ export function LoginPage() {
       : null;
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-clox-bg px-4 py-10 text-clox-text sm:px-6">
+    <main
+      className="auth-shell flex items-center justify-center px-4 py-10 sm:px-6"
+      data-role="default"
+      data-theme="ops"
+    >
       <div className="clox-card w-full max-w-md p-6 shadow-clox-2 sm:p-8">
         <div className="flex items-center justify-between gap-3">
           <BrandLogo variant="default" className="h-9 w-auto object-contain object-left" />
           <LanguageSwitcher />
         </div>
-        <h1 className="mt-4 font-display text-3xl font-bold text-clox-ink">{t('login.title')}</h1>
-        <p className="mt-3 text-sm text-clox-mute">
+        <h1 className="mt-5 font-display text-3xl font-bold tracking-tight text-clox-ink">
+          {t('login.title')}
+        </h1>
+        <p className="mt-2 text-sm leading-relaxed text-clox-mute">
           {step === 'email' ? t('login.emailHint') : t('login.otpHint')}
         </p>
         {accountStatus === 'suspended' || accountStatus === 'disabled' ? (

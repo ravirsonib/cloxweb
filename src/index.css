@@ -118,33 +118,37 @@
   [data-role='driver'],
   [data-theme='cab'] {
     --clox-accent: var(--clox-orange);
-    --clox-accent-tint: rgba(242, 110, 34, 0.22);
+    --clox-accent-tint: rgba(242, 110, 34, 0.28);
     --clox-accent-deep: #ffb07a;
     --clox-bg: var(--cab-bg);
     --clox-surface: var(--cab-surface);
     --clox-surface-alt: var(--cab-surface-2);
     --clox-border: var(--cab-border);
-    --clox-border-soft: #243552;
+    --clox-border-soft: #31486c;
     --clox-ink: var(--cab-text);
     --clox-text: var(--cab-text);
-    --clox-mute: var(--cab-text-mute);
-    --clox-faint: #8a9bb8;
+    /* Stronger secondary text on navy for WCAG-ish cab readability */
+    --clox-mute: #b4c3dc;
+    --clox-faint: #9aadc8;
+    --cab-text-mute: #b4c3dc;
     /* Status chips / destructive text on dark cab */
     --status-ok: var(--cab-green);
-    --status-ok-bg: rgba(62, 214, 137, 0.14);
-    --status-ok-bd: rgba(62, 214, 137, 0.4);
+    --status-ok-bg: rgba(62, 214, 137, 0.16);
+    --status-ok-bd: rgba(62, 214, 137, 0.45);
     --status-warn: var(--cab-amber);
-    --status-warn-bg: rgba(255, 194, 75, 0.14);
-    --status-warn-bd: rgba(255, 194, 75, 0.4);
-    --status-danger: var(--cab-red);
-    --status-danger-bg: rgba(255, 93, 82, 0.14);
-    --status-danger-bd: rgba(255, 93, 82, 0.4);
-    --status-info: #9db8ff;
-    --status-info-bg: rgba(157, 184, 255, 0.14);
-    --status-info-bd: rgba(157, 184, 255, 0.4);
-    --status-neutral: var(--cab-text-mute);
+    --status-warn-bg: rgba(255, 194, 75, 0.16);
+    --status-warn-bd: rgba(255, 194, 75, 0.45);
+    --status-danger: #ff7a72;
+    --status-danger-bg: rgba(255, 93, 82, 0.16);
+    --status-danger-bd: rgba(255, 93, 82, 0.45);
+    --status-info: #b4c8ff;
+    --status-info-bg: rgba(157, 184, 255, 0.16);
+    --status-info-bd: rgba(157, 184, 255, 0.45);
+    --status-neutral: #b4c3dc;
     --status-neutral-bg: var(--cab-surface-2);
     --status-neutral-bd: var(--cab-border);
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 1px rgba(0, 0, 0, 0.2);
+    --shadow-2: 0 10px 28px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
     color-scheme: dark;
   }
 
@@ -607,13 +611,15 @@
   .cab-tab {
     @apply flex flex-1 flex-col items-center justify-center gap-0.5;
     font-family: var(--font-mono);
-    font-size: 9.5px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
     color: var(--cab-text-mute);
   }
 
   .cab-tab[aria-current='page'],
   .cab-tab.is-active {
-    color: var(--clox-orange);
+    color: #ffb07a;
   }
 
   .cab-btn {
@@ -633,8 +639,45 @@
   }
 
   .cab-btn-locked {
-    background: #26314a;
-    color: #5c6c8a;
+    background: var(--cab-surface-2);
+    color: var(--clox-mute);
+    border: 1px solid var(--cab-border);
+  }
+
+  /* Auth surfaces (login / invite) always stay light ops — never inherit cab */
+  .auth-shell {
+    min-height: 100dvh;
+    background: #f3f5f9;
+    color: #17233b;
+    --clox-bg: #f3f5f9;
+    --clox-surface: #ffffff;
+    --clox-surface-alt: #eef1f6;
+    --clox-border: #dce2ec;
+    --clox-border-soft: #e9ecf3;
+    --clox-ink: #10192b;
+    --clox-text: #17233b;
+    --clox-mute: #5b6b84;
+    --clox-faint: #93a0b4;
+    --clox-accent: var(--clox-orange);
+    --clox-accent-tint: var(--clox-orange-tint);
+    --clox-accent-deep: var(--clox-orange-deep);
+    color-scheme: light;
+  }
+
+  .auth-shell .clox-card {
+    background: #ffffff;
+    border-color: #dce2ec;
+    color: #17233b;
+  }
+
+  [data-theme='cab'] .clox-field-control {
+    background: var(--cab-surface-2);
+    color: var(--cab-text);
+    border-color: var(--cab-border);
+  }
+
+  [data-theme='cab'] .clox-field-control::placeholder {
+    color: var(--clox-faint);
   }
 
   [data-theme='cab'] .clox-btn-secondary {
@@ -644,18 +687,18 @@
   }
 
   [data-theme='cab'] .clox-btn-secondary:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--cab-surface-2) 82%, #ffffff 18%);
+    background: color-mix(in srgb, var(--cab-surface-2) 75%, #ffffff 25%);
     color: var(--cab-text);
   }
 
   [data-theme='cab'] .clox-btn-destructive {
-    background: rgba(255, 93, 82, 0.14);
-    color: var(--cab-red);
-    border-color: rgba(255, 93, 82, 0.45);
+    background: rgba(255, 93, 82, 0.18);
+    color: #ff8f88;
+    border-color: rgba(255, 93, 82, 0.5);
   }
 
   [data-theme='cab'] .clox-btn-ghost {
-    color: var(--cab-text-mute);
+    color: var(--cab-text);
   }
 
   [data-theme='cab'] .clox-btn-ghost:hover:not(:disabled) {
@@ -663,39 +706,53 @@
     color: var(--cab-text);
   }
 
-  [data-theme='cab'] .clox-btn:disabled {
-    background: var(--cab-surface-2);
-    color: var(--clox-faint);
-    border-color: var(--cab-border);
+  [data-theme='cab'] .clox-btn:disabled,
+  [data-theme='cab'] .clox-btn-cta:disabled,
+  [data-theme='cab'] .clox-btn-primary:disabled {
+    background: #243552;
+    color: #c5d2e8;
+    border-color: #3a5278;
+    opacity: 1;
+  }
+
+  [data-theme='cab'] .clox-btn-cta:disabled {
+    background: color-mix(in srgb, var(--clox-orange) 35%, #243552 65%);
+    color: #ffe8d6;
   }
 
   /* Role badge / links that used light-theme navy or deep accent */
   [data-theme='cab'] [data-role-badge] {
-    color: var(--clox-accent-deep);
-    background: var(--clox-accent-tint);
-    border-color: rgba(242, 110, 34, 0.45);
+    color: #ffd0a8;
+    background: rgba(242, 110, 34, 0.28);
+    border-color: rgba(242, 110, 34, 0.55);
   }
 
   [data-theme='cab'] .clox-notice-warn {
     background: var(--status-warn-bg);
     border-color: var(--status-warn-bd);
-    color: var(--status-warn);
+    color: #ffd27a;
   }
 
   [data-theme='cab'] .clox-notice-error {
     background: var(--status-danger-bg);
     border-color: var(--status-danger-bd);
-    color: var(--status-danger);
+    color: #ff9a94;
   }
 
   [data-theme='cab'] .clox-notice-success {
     background: var(--status-ok-bg);
     border-color: var(--status-ok-bd);
-    color: var(--status-ok);
+    color: #6eefab;
   }
 
   [data-theme='cab'] .clox-notice-info {
     background: var(--cab-surface-2);
+    border-color: var(--cab-border);
+    color: var(--cab-text);
+  }
+
+  [data-theme='cab'] .clox-card {
+    background: var(--cab-surface);
     border-color: var(--cab-border);
     color: var(--cab-text);
   }

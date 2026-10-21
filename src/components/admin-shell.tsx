@@ -223,22 +223,22 @@ function DriverCabShell({ children }: { children?: ReactNode }) {
     <div className="cab-shell flex min-h-dvh flex-col" data-role={theme} data-theme="cab">
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-clox-border bg-clox-surface px-4">
         <div className="flex min-w-0 items-center gap-2.5">
-          <BrandLogo variant="light" markOnly className="h-7 w-7 rounded-lg object-contain" />
+          <BrandLogo variant="light" markOnly className="h-7 w-7 shrink-0 rounded-lg object-contain" />
           <div className="min-w-0">
             <p className="truncate font-display text-sm font-semibold text-clox-ink">CLOX Cab</p>
-            <p className="truncate font-mono text-[10px] text-clox-mute">{title}</p>
+            <p className="truncate font-mono text-[11px] text-clox-mute">{title}</p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1">
           <RoleBadge role={role} className="hidden sm:inline-flex" />
           <LanguageSwitcher />
-          <Button variant="ghost" size="sm" onClick={() => void signOut()}>
+          <Button variant="ghost" size="sm" className="text-clox-ink" onClick={() => void signOut()}>
             {t('signOut')}
           </Button>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-lg flex-1 px-4 py-5 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]">
+      <main className="mx-auto w-full max-w-lg flex-1 px-4 py-5 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] text-clox-text">
         {children ?? <Outlet />}
       </main>
 

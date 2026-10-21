@@ -49,6 +49,7 @@ export function SenderTrackPage() {
             {data.stopsProgress.map((row) => {
               const stop = row.stop;
               const overage = row.waitOverageMinutes > 0;
+              const isDropoff = stop?.stopType === 'DROPOFF';
               return (
                 <li
                   key={row.id}
@@ -65,6 +66,12 @@ export function SenderTrackPage() {
                       })}
                     </span>
                   ) : null}
+                  {isDropoff && row.podStatus ? (
+                    <span className="ml-2 font-mono text-clox-ink">
+                      {t('trips.podStatus')}: {row.podStatus}
+                      {row.signerName ? ` · ${row.signerName}` : ''}
+                    </span>
+                  ) : null}
                   {overage ? (
                     <span className="ml-2 text-clox-orange">
                       {t('trips.stopOverage', { min: row.waitOverageMinutes })}
@@ -75,6 +82,21 @@ export function SenderTrackPage() {
             })}
           </ul>
         </div>
+      ) : null}
+
+      {data?.stopsProgress?.some((r) => r.podStatus === 'FINALIZED') ? (
+        <Notice tone="success" className="mt-4" title={t('trips.podFinalized')}>
+          {(data.taxInvoiceStorageKey || data.runSheetStorageKey) && (
+            <ul className="mt-1 space-y-1 font-mono text-xs">
+              {data.taxInvoiceStorageKey ? (
+                <li>{t('trips.taxInvoiceKey', { key: data.taxInvoiceStorageKey })}</li>
+              ) : null}
+              {data.runSheetStorageKey ? (
+                <li>{t('trips.runSheetKey', { key: data.runSheetStorageKey })}</li>
+              ) : null}
+            </ul>
+          )}
+        </Notice>
       ) : null}
 
       {data?.surcharges && data.surcharges.some((s) => s.status === 'PENDING_PAYMENT') ? (

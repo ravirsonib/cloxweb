@@ -29,13 +29,13 @@ export function DriverInvitePage() {
       return acceptDriverInvite(token);
     },
     onSuccess: (data) => {
-      navigate('/login', { replace: true, state: { email: data.email } });
+      navigate(`/login?email=${encodeURIComponent(data.email)}`, { replace: true });
     },
   });
 
   if (!token) {
     return (
-      <main className="mx-auto max-w-lg px-6 py-12">
+      <main className="auth-shell mx-auto flex max-w-lg flex-col justify-center px-6 py-12">
         <Notice tone="error">{t('driverInvite.missingToken')}</Notice>
       </main>
     );
@@ -45,7 +45,7 @@ export function DriverInvitePage() {
 
   if (peek.isError) {
     return (
-      <main className="mx-auto max-w-lg px-6 py-12">
+      <main className="auth-shell mx-auto flex max-w-lg flex-col justify-center px-6 py-12">
         <BrandLogo variant="default" className="h-9 w-auto object-contain" />
         <h1 className="mt-4 font-display text-2xl font-bold text-clox-ink">
           {t('driverInvite.unavailableTitle')}
@@ -64,25 +64,25 @@ export function DriverInvitePage() {
 
   return (
     <main
-      className="mx-auto flex min-h-screen max-w-lg flex-col justify-center bg-clox-bg px-6 py-12 text-clox-text"
-      data-role="driver"
-      data-theme="cab"
+      className="auth-shell mx-auto flex max-w-lg flex-col justify-center px-6 py-12"
+      data-role="default"
+      data-theme="ops"
     >
       <div className="clox-card p-6 shadow-clox-2 sm:p-8">
         <BrandLogo variant="default" className="h-9 w-auto object-contain" />
-        <p className="mt-4 font-mono text-xs uppercase tracking-[0.2em] text-clox-faint">
+        <p className="mt-5 font-mono text-xs uppercase tracking-[0.2em] text-clox-faint">
           {t('driverInvite.prefix')}
         </p>
-        <h1 className="mt-2 font-display text-3xl font-bold text-clox-ink">
+        <h1 className="mt-2 font-display text-3xl font-bold tracking-tight text-clox-ink">
           {t('driverInvite.title')}
         </h1>
-        <p className="mt-3 text-clox-mute">
+        <p className="mt-3 text-sm leading-relaxed text-clox-mute">
           <span className="font-semibold text-clox-ink">{data.companyName}</span>{' '}
           {t('driverInvite.invited')}{' '}
           <span className="font-semibold text-clox-ink">{data.name ?? data.email}</span>{' '}
           {t('driverInvite.toDriveOn')}
         </p>
-        <ul className="mt-6 space-y-1 text-sm text-clox-mute">
+        <ul className="mt-6 space-y-1.5 text-sm text-clox-mute">
           <li>{t('driverInvite.emailLine', { email: data.email })}</li>
           <li>
             {t('driverInvite.statusLabel')}: {data.status}
@@ -118,7 +118,10 @@ export function DriverInvitePage() {
           {accept.isPending ? t('loading') : t('driverInvite.acceptButton')}
         </Button>
         {!data.canAccept ? (
-          <Link to="/login" className="clox-btn clox-btn-secondary mt-3 inline-flex w-full justify-center">
+          <Link
+            to="/login"
+            className="clox-btn clox-btn-secondary mt-3 inline-flex w-full justify-center"
+          >
             {t('goToLogin')}
           </Link>
         ) : null}

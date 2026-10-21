@@ -646,6 +646,17 @@ export function JobDetailPage() {
       <p className="mt-1 font-mono text-sm text-clox-mute">
         {j.status} · {j.pricingModel} · min {j.minVehicleClass} · rec {j.recommendedVehicleClass}
       </p>
+      {j.openException ? (
+        <Notice tone="warn" className="mt-4" title={t('jobs.exceptionBannerTitle')}>
+          <p className="text-sm">
+            {j.openException.kind} · {j.openException.phase} · {j.openException.status}
+          </p>
+          {j.openException.note ? (
+            <p className="mt-1 text-xs text-clox-mute">{j.openException.note}</p>
+          ) : null}
+          <p className="mt-1 text-xs text-clox-faint">{t('jobs.exceptionBannerHint')}</p>
+        </Notice>
+      ) : null}
       <ul className="mt-4 space-y-1 text-sm text-clox-mute">
         <li>
           {t('jobs.routeLine', {

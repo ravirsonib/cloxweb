@@ -53,6 +53,16 @@ export type TripSummary = {
     status: 'PENDING_PAYMENT' | 'PAID' | 'WAIVED';
     amountIncGstCents: number;
   }> | null;
+  openException?: {
+    id: string;
+    kind: string;
+    phase: string;
+    status: string;
+    reasonCode: string | null;
+    note: string | null;
+    openedAt: string;
+    resolvedAt: string | null;
+  } | null;
 };
 
 export type SenderTrack = {

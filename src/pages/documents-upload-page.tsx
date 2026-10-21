@@ -25,7 +25,13 @@ const CARRIER_DOC_TYPES = [
   'OTHER',
 ] as const;
 /** Matches API assertUploadRoleAllowed for DRIVER. */
-const DRIVER_DOC_TYPES = ['DRIVER_LICENCE', 'GOVERNMENT_ID', 'SELFIE', 'NHVR'] as const;
+const DRIVER_DOC_TYPES = [
+  'DRIVER_LICENCE',
+  'GOVERNMENT_ID',
+  'SELFIE',
+  'NHVR',
+  'OTHER',
+] as const;
 
 export function DocumentsUploadPage() {
   const { t } = useTranslation('common');

@@ -187,6 +187,24 @@ export function CarrierOnboardingPage() {
             <li>{t('carrierOnboarding.goNoGoFleet', { value: String(data.goNoGo.fleetReady) })}</li>
             <li>{t('carrierOnboarding.goNoGoCanBid', { value: String(data.goNoGo.canBid) })}</li>
           </ul>
+          <p className="mt-3 text-sm">{t('carrierOnboarding.manageFleetHint')}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              to="/carrier/fleet"
+              className="clox-btn clox-btn-secondary inline-flex items-center text-sm"
+            >
+              {t('carrierOnboarding.manageFleetCta')}
+            </Link>
+            <Link
+              to="/carrier/drivers"
+              className="clox-btn clox-btn-secondary inline-flex items-center text-sm"
+            >
+              {t('carrierOnboarding.manageDriversCta')}
+            </Link>
+            <Link to="/market" className="clox-btn clox-btn-cta inline-flex items-center text-sm">
+              {t('nav.jobBoard')}
+            </Link>
+          </div>
         </Notice>
       )}
 
@@ -594,8 +612,22 @@ function DriversStep({ data, onSaved }: { data: CarrierOnboarding; onSaved: () =
       });
     },
   });
+  const inviting = mutation.isPending;
+  const busy = inviting || resend.isPending;
   return (
-    <div className="mt-8 space-y-4">
+    <div className="relative mt-8 space-y-4" aria-busy={busy || undefined}>
+      {inviting ? (
+        <div
+          className="clox-dialog-backdrop z-40"
+          role="status"
+          aria-live="polite"
+          aria-label={t('drivers.inviting')}
+        >
+          <div className="clox-dialog max-w-sm">
+            <LoadingBlock label={t('drivers.inviting')} />
+          </div>
+        </div>
+      ) : null}
       <h2 className="font-display text-lg font-semibold">{t('carrierOnboarding.driversTitle')}</h2>
       <p className="text-sm text-clox-mute">{t('carrierOnboarding.driversHint')}</p>
       {data.drivers.length > 0 ? (
@@ -610,7 +642,7 @@ function DriversStep({ data, onSaved }: { data: CarrierOnboarding; onSaved: () =
                   type="button"
                   variant="secondary"
                   size="sm"
-                  disabled={resend.isPending}
+                  disabled={busy}
                   onClick={() => resend.mutate(d.id)}
                 >
                   {t('carrierOnboarding.resend')}
@@ -621,54 +653,59 @@ function DriversStep({ data, onSaved }: { data: CarrierOnboarding; onSaved: () =
         </ul>
       ) : null}
       <form
-        onSubmit={form.handleSubmit((values) => mutation.mutate(values))}
+        onSubmit={form.handleSubmit((values) => {
+          if (busy) return;
+          mutation.mutate(values);
+        })}
         noValidate
       >
-        <Field
-          label={t('carrierOnboarding.placeholderDriverName')}
-          required
-          error={form.formState.errors.name?.message}
-          {...form.register('name')}
-        />
-        <Field
-          type="email"
-          label={t('carrierOnboarding.placeholderDriverEmail')}
-          required
-          error={form.formState.errors.email?.message}
-          {...form.register('email')}
-        />
-        {mutation.isError ? (
-          <Notice tone="error" className="mb-4">
-            {getErrorDetail(mutation.error)}
-          </Notice>
-        ) : null}
-        {resend.isError ? (
-          <Notice tone="error" className="mb-4">
-            {getErrorDetail(resend.error)}
-          </Notice>
-        ) : null}
-        {lastInvite ? (
-          <Notice tone="info" className="mb-4" title={t('carrierOnboarding.inviteUrlLabel')}>
-            <a className="break-all text-clox-orange underline" href={lastInvite.inviteUrl}>
-              {lastInvite.inviteUrl}
-            </a>
-            {lastInvite.mailSkipped && lastInvite.debugToken ? (
-              <p className="mt-2">
-                {t('carrierOnboarding.smtpSkippedDebugToken', { token: lastInvite.debugToken })}
-              </p>
-            ) : null}
-          </Notice>
-        ) : null}
-        <div className="flex flex-wrap gap-2">
-          <Button type="submit" variant="cta" disabled={mutation.isPending}>
-            {mutation.isPending ? t('submitting') : t('carrierOnboarding.inviteDriver')}
-          </Button>
-          {data.drivers.length >= 1 ? (
-            <Button type="button" variant="secondary" onClick={() => void onSaved()}>
-              {t('continue')}
-            </Button>
+        <fieldset disabled={busy} className="min-w-0 border-0 p-0">
+          <Field
+            label={t('carrierOnboarding.placeholderDriverName')}
+            required
+            error={form.formState.errors.name?.message}
+            {...form.register('name')}
+          />
+          <Field
+            type="email"
+            label={t('carrierOnboarding.placeholderDriverEmail')}
+            required
+            error={form.formState.errors.email?.message}
+            {...form.register('email')}
+          />
+          {mutation.isError ? (
+            <Notice tone="error" className="mb-4">
+              {getErrorDetail(mutation.error)}
+            </Notice>
           ) : null}
-        </div>
+          {resend.isError ? (
+            <Notice tone="error" className="mb-4">
+              {getErrorDetail(resend.error)}
+            </Notice>
+          ) : null}
+          {lastInvite ? (
+            <Notice tone="info" className="mb-4" title={t('carrierOnboarding.inviteUrlLabel')}>
+              <a className="break-all text-clox-orange underline" href={lastInvite.inviteUrl}>
+                {lastInvite.inviteUrl}
+              </a>
+              {lastInvite.mailSkipped && lastInvite.debugToken ? (
+                <p className="mt-2">
+                  {t('carrierOnboarding.smtpSkippedDebugToken', { token: lastInvite.debugToken })}
+                </p>
+              ) : null}
+            </Notice>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" variant="cta" disabled={busy}>
+              {inviting ? t('drivers.inviting') : t('carrierOnboarding.inviteDriver')}
+            </Button>
+            {data.drivers.length >= 1 ? (
+              <Button type="button" variant="secondary" disabled={busy} onClick={() => void onSaved()}>
+                {t('continue')}
+              </Button>
+            ) : null}
+          </div>
+        </fieldset>
       </form>
     </div>
   );

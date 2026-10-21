@@ -1,14 +1,15 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { Link, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Navigate } from 'react-router-dom';
 import { z } from 'zod';
 import {
-  getCarrierOnboarding,
   getErrorDetail,
   getMarketBoard,
+  listCarrierDrivers,
+  listCarrierVehicles,
   submitBid,
 } from '@/lib/api';
 import {
@@ -16,18 +17,22 @@ import {
   DataCardList,
   Field,
   Notice,
+  Select,
   ViewModeToggle,
   useDataViewMode,
   useToast,
 } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
 import { cn } from '@/lib/cn';
+import { isVehicleClassAdequate } from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
 type BidForm = {
   amountAud: number;
   etaMinutes: number;
+  vehicleId: string;
+  driverId: string;
 };
 
 export function MarketBoardPage() {
@@ -39,9 +44,14 @@ export function MarketBoardPage() {
     queryFn: () => getMarketBoard(),
     enabled: role === AppRole.TRANSPORT_COMPANY,
   });
-  const fleet = useQuery({
-    queryKey: ['carrier', 'onboarding'],
-    queryFn: () => getCarrierOnboarding(),
+  const vehiclesQuery = useQuery({
+    queryKey: ['carrier', 'vehicles'],
+    queryFn: ({ signal }) => listCarrierVehicles({ signal }),
+    enabled: role === AppRole.TRANSPORT_COMPANY,
+  });
+  const driversQuery = useQuery({
+    queryKey: ['carrier', 'drivers'],
+    queryFn: ({ signal }) => listCarrierDrivers({ signal }),
     enabled: role === AppRole.TRANSPORT_COMPANY,
   });
 
@@ -49,45 +59,93 @@ export function MarketBoardPage() {
   const [viewMode, setViewMode] = useDataViewMode('market', 'list');
   const toast = useToast();
 
-  const vehicleId = fleet.data?.vehicles[0]?.id;
-  const driverId = fleet.data?.drivers[0]?.id;
+  const selectedJob = useMemo(
+    () => board.data?.jobs.find((j) => j.id === jobId) ?? null,
+    [board.data?.jobs, jobId],
+  );
+
+  const activeVehicles = useMemo(
+    () => (vehiclesQuery.data?.items ?? []).filter((v) => v.status === 'ACTIVE'),
+    [vehiclesQuery.data?.items],
+  );
+  const activeDrivers = useMemo(
+    () => (driversQuery.data?.items ?? []).filter((d) => d.status === 'ACTIVE'),
+    [driversQuery.data?.items],
+  );
 
   const schema = z.object({
     amountAud: z.number().positive(t('validation.bidAmountPositive')),
     etaMinutes: z.number().int().min(1, t('validation.etaPositive')),
+    vehicleId: z.string().uuid(t('market.errorSelectVehicle')),
+    driverId: z.string().uuid(t('market.errorSelectDriver')),
   });
 
   const form = useForm<BidForm>({
     resolver: zodResolver(schema),
-    defaultValues: { amountAud: 150, etaMinutes: 90 },
+    defaultValues: { amountAud: 150, etaMinutes: 90, vehicleId: '', driverId: '' },
   });
 
   const amountWatch = form.watch('amountAud');
+  const vehicleIdWatch = form.watch('vehicleId');
+  const driverIdWatch = form.watch('driverId');
+
+  useEffect(() => {
+    if (!selectedJob) return;
+    const eligibleVehicle =
+      activeVehicles.find((v) =>
+        isVehicleClassAdequate(v.vehicleClass, selectedJob.minVehicleClass),
+      ) ?? null;
+    const nextVehicleId = eligibleVehicle?.id ?? '';
+    const nextDriverId = activeDrivers[0]?.id ?? '';
+    form.setValue('vehicleId', nextVehicleId);
+    form.setValue('driverId', nextDriverId);
+  }, [selectedJob, activeVehicles, activeDrivers, form]);
+
+  const selectedVehicle = activeVehicles.find((v) => v.id === vehicleIdWatch);
+  const vehicleEligible =
+    !!selectedVehicle &&
+    isVehicleClassAdequate(selectedVehicle.vehicleClass, selectedJob?.minVehicleClass);
 
   const bid = useMutation({
     mutationFn: (values: BidForm) => {
-      if (!jobId || !vehicleId || !driverId) {
-        throw new Error(t('market.errorSelectJobFleet'));
+      if (!jobId) {
+        throw new Error(t('market.errorSelectJob'));
+      }
+      if (!isVehicleClassAdequate(
+        activeVehicles.find((v) => v.id === values.vehicleId)?.vehicleClass,
+        selectedJob?.minVehicleClass,
+      )) {
+        throw new Error(t('market.errorVehicleUndersize'));
       }
       return submitBid({
         jobId,
-        vehicleId,
-        driverId,
+        vehicleId: values.vehicleId,
+        driverId: values.driverId,
         amountIncGstCents: Math.round(values.amountAud * 100),
         etaMinutes: values.etaMinutes,
       });
     },
     onSuccess: async () => {
       toast.success(t('market.bidSubmitted'));
+      form.reset({
+        amountAud: 150,
+        etaMinutes: 90,
+        vehicleId: '',
+        driverId: '',
+      });
+      setJobId(null);
       await qc.invalidateQueries({ queryKey: ['matching', 'board'] });
     },
     onError: (err) => toast.error(getErrorDetail(err)),
   });
 
   if (role !== AppRole.TRANSPORT_COMPANY) return <Navigate to="/" replace />;
-  if (board.isLoading) return <LoadingBlock label={t('market.loading')} />;
+  if (board.isLoading || vehiclesQuery.isLoading || driversQuery.isLoading) {
+    return <LoadingBlock label={t('market.loading')} />;
+  }
 
   const marketJobs = board.data?.jobs ?? [];
+  const hasFleet = activeVehicles.length > 0 && activeDrivers.length > 0;
 
   return (
     <div>
@@ -106,9 +164,16 @@ export function MarketBoardPage() {
         </Notice>
       ) : null}
 
-      {!vehicleId || !driverId ? (
+      {!hasFleet ? (
         <Notice tone="warn" className="mt-4">
-          {t('market.errorSelectJobFleet')}
+          {t('market.errorNeedActiveFleet')}{' '}
+          <Link to="/carrier/fleet" className="font-semibold text-clox-orange hover:underline">
+            {t('nav.fleet')}
+          </Link>
+          {' · '}
+          <Link to="/carrier/drivers" className="font-semibold text-clox-orange hover:underline">
+            {t('nav.drivers')}
+          </Link>
         </Notice>
       ) : null}
 
@@ -144,7 +209,7 @@ export function MarketBoardPage() {
         )}
       />
 
-      {jobId ? (
+      {jobId && selectedJob ? (
         <form
           className="clox-card mt-8 max-w-md p-4"
           onSubmit={form.handleSubmit((values) => bid.mutate(values))}
@@ -152,11 +217,52 @@ export function MarketBoardPage() {
         >
           <h2 className="font-display font-semibold text-clox-ink">{t('market.placeBid')}</h2>
           <p className="mb-4 mt-1 text-xs text-clox-faint">
-            {t('market.vehicleDriverLine', {
-              registration: fleet.data?.vehicles[0]?.registration ?? t('dash'),
-              email: fleet.data?.drivers[0]?.email ?? t('dash'),
-            })}
+            {t('market.minClassLine', { minClass: selectedJob.minVehicleClass ?? t('dash') })}
           </p>
+
+          <Select
+            className="mb-3"
+            label={t('market.assignVehicle')}
+            required
+            error={form.formState.errors.vehicleId?.message}
+            value={vehicleIdWatch}
+            {...form.register('vehicleId')}
+          >
+            <option value="">{t('market.selectVehicle')}</option>
+            {activeVehicles.map((v) => {
+              const ok = isVehicleClassAdequate(v.vehicleClass, selectedJob.minVehicleClass);
+              return (
+                <option key={v.id} value={v.id} disabled={!ok}>
+                  {v.registration ?? v.label ?? v.id.slice(0, 8)} · {v.vehicleClass ?? t('dash')}
+                  {ok ? '' : ` · ${t('market.notEligible')}`}
+                </option>
+              );
+            })}
+          </Select>
+
+          <Select
+            className="mb-3"
+            label={t('market.assignDriver')}
+            required
+            error={form.formState.errors.driverId?.message}
+            value={driverIdWatch}
+            {...form.register('driverId')}
+          >
+            <option value="">{t('market.selectDriver')}</option>
+            {activeDrivers.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.user.name ?? d.user.email}
+                {d.licenceClass ? ` · ${d.licenceClass}` : ''}
+              </option>
+            ))}
+          </Select>
+
+          {vehicleIdWatch && !vehicleEligible ? (
+            <Notice tone="warn" className="mb-3">
+              {t('market.errorVehicleUndersize')}
+            </Notice>
+          ) : null}
+
           <Field
             type="number"
             step="0.01"
@@ -179,7 +285,7 @@ export function MarketBoardPage() {
             type="submit"
             variant="cta"
             size="block"
-            disabled={bid.isPending || !vehicleId || !driverId}
+            disabled={bid.isPending || !hasFleet || !vehicleEligible}
           >
             {bid.isPending ? t('submitting') : t('market.submitProposal')}
           </Button>

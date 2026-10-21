@@ -118,8 +118,8 @@
   [data-role='driver'],
   [data-theme='cab'] {
     --clox-accent: var(--clox-orange);
-    --clox-accent-tint: rgba(242, 110, 34, 0.18);
-    --clox-accent-deep: var(--clox-orange-deep);
+    --clox-accent-tint: rgba(242, 110, 34, 0.22);
+    --clox-accent-deep: #ffb07a;
     --clox-bg: var(--cab-bg);
     --clox-surface: var(--cab-surface);
     --clox-surface-alt: var(--cab-surface-2);
@@ -128,7 +128,23 @@
     --clox-ink: var(--cab-text);
     --clox-text: var(--cab-text);
     --clox-mute: var(--cab-text-mute);
-    --clox-faint: #6f82a3;
+    --clox-faint: #8a9bb8;
+    /* Status chips / destructive text on dark cab */
+    --status-ok: var(--cab-green);
+    --status-ok-bg: rgba(62, 214, 137, 0.14);
+    --status-ok-bd: rgba(62, 214, 137, 0.4);
+    --status-warn: var(--cab-amber);
+    --status-warn-bg: rgba(255, 194, 75, 0.14);
+    --status-warn-bd: rgba(255, 194, 75, 0.4);
+    --status-danger: var(--cab-red);
+    --status-danger-bg: rgba(255, 93, 82, 0.14);
+    --status-danger-bd: rgba(255, 93, 82, 0.4);
+    --status-info: #9db8ff;
+    --status-info-bg: rgba(157, 184, 255, 0.14);
+    --status-info-bd: rgba(157, 184, 255, 0.4);
+    --status-neutral: var(--cab-text-mute);
+    --status-neutral-bg: var(--cab-surface-2);
+    --status-neutral-bd: var(--cab-border);
     color-scheme: dark;
   }
 
@@ -212,11 +228,8 @@
   }
 
   .clox-select-popover {
-    position: absolute;
-    z-index: 40;
-    top: calc(100% + 4px);
-    left: 0;
-    right: 0;
+    position: fixed;
+    z-index: 70;
     max-height: 16rem;
     overflow-y: auto;
     padding: 4px;
@@ -403,12 +416,14 @@
 
   .clox-btn-secondary {
     background: var(--clox-surface);
-    color: var(--clox-navy);
+    /* Theme-aware ink (not hard-coded navy) so cab/dark text stays readable */
+    color: var(--clox-ink);
     border-color: var(--clox-border);
   }
 
   .clox-btn-secondary:hover:not(:disabled) {
     background: var(--clox-surface-alt);
+    color: var(--clox-ink);
   }
 
   .clox-btn-ghost {
@@ -423,9 +438,13 @@
   }
 
   .clox-btn-destructive {
-    background: var(--clox-surface);
+    background: var(--status-danger-bg);
     color: var(--status-danger);
     border-color: var(--status-danger-bd);
+  }
+
+  .clox-btn-destructive:hover:not(:disabled) {
+    filter: brightness(1.08);
   }
 
   .clox-btn-cta {
@@ -504,7 +523,7 @@
   .clox-notice-warn {
     background: var(--status-warn-bg);
     border: 1px solid var(--status-warn-bd);
-    color: #7a550a;
+    color: var(--status-warn);
   }
 
   .clox-notice-error {
@@ -618,27 +637,71 @@
     color: #5c6c8a;
   }
 
+  [data-theme='cab'] .clox-btn-secondary {
+    background: var(--cab-surface-2);
+    color: var(--cab-text);
+    border-color: var(--cab-border);
+  }
+
+  [data-theme='cab'] .clox-btn-secondary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--cab-surface-2) 82%, #ffffff 18%);
+    color: var(--cab-text);
+  }
+
+  [data-theme='cab'] .clox-btn-destructive {
+    background: rgba(255, 93, 82, 0.14);
+    color: var(--cab-red);
+    border-color: rgba(255, 93, 82, 0.45);
+  }
+
+  [data-theme='cab'] .clox-btn-ghost {
+    color: var(--cab-text-mute);
+  }
+
+  [data-theme='cab'] .clox-btn-ghost:hover:not(:disabled) {
+    background: var(--cab-surface-2);
+    color: var(--cab-text);
+  }
+
+  [data-theme='cab'] .clox-btn:disabled {
+    background: var(--cab-surface-2);
+    color: var(--clox-faint);
+    border-color: var(--cab-border);
+  }
+
+  /* Role badge / links that used light-theme navy or deep accent */
+  [data-theme='cab'] [data-role-badge] {
+    color: var(--clox-accent-deep);
+    background: var(--clox-accent-tint);
+    border-color: rgba(242, 110, 34, 0.45);
+  }
+
   [data-theme='cab'] .clox-notice-warn {
-    background: rgba(255, 194, 75, 0.12);
-    border-color: rgba(255, 194, 75, 0.35);
-    color: var(--cab-amber);
+    background: var(--status-warn-bg);
+    border-color: var(--status-warn-bd);
+    color: var(--status-warn);
   }
 
   [data-theme='cab'] .clox-notice-error {
-    background: rgba(255, 93, 82, 0.12);
-    border-color: rgba(255, 93, 82, 0.35);
-    color: var(--cab-red);
+    background: var(--status-danger-bg);
+    border-color: var(--status-danger-bd);
+    color: var(--status-danger);
   }
 
   [data-theme='cab'] .clox-notice-success {
-    background: rgba(62, 214, 137, 0.12);
-    border-color: rgba(62, 214, 137, 0.35);
-    color: var(--cab-green);
+    background: var(--status-ok-bg);
+    border-color: var(--status-ok-bd);
+    color: var(--status-ok);
   }
 
   [data-theme='cab'] .clox-notice-info {
-    background: var(--cab-surface);
+    background: var(--cab-surface-2);
     border-color: var(--cab-border);
-    color: var(--cab-text-mute);
+    color: var(--cab-text);
+  }
+
+  [data-theme='cab'] ::selection {
+    background: rgba(242, 110, 34, 0.45);
+    color: var(--cab-text);
   }
 }

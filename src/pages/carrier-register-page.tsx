@@ -1,10 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { getErrorDetail, registerCarrier } from '@/lib/api';
+import { getErrorDetail, peekCompanyInvite, registerCarrier } from '@/lib/api';
 import { BrandLogo } from '@/components/brand-logo';
 import { Button, Field, Notice } from '@/components/ui';
 
@@ -18,6 +19,15 @@ type Form = {
 export function CarrierRegisterPage() {
   const { t } = useTranslation('common');
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const inviteToken = searchParams.get('invite')?.trim() || undefined;
+
+  const invitePeek = useQuery({
+    queryKey: ['public', 'company-invite', inviteToken],
+    queryFn: () => peekCompanyInvite(inviteToken!),
+    enabled: Boolean(inviteToken),
+    retry: false,
+  });
 
   const schema = z.object({
     name: z.string().trim().min(1, t('validation.companyNameRequired')),
@@ -37,6 +47,14 @@ export function CarrierRegisterPage() {
     defaultValues: { name: '', email: '', phone: '', acceptedTerms: false },
   });
 
+  useEffect(() => {
+    if (!invitePeek.data) return;
+    form.setValue('email', invitePeek.data.email);
+    if (invitePeek.data.legalNameHint) {
+      form.setValue('name', invitePeek.data.legalNameHint);
+    }
+  }, [invitePeek.data, form]);
+
   const mutation = useMutation({
     mutationFn: (values: Form) =>
       registerCarrier({
@@ -44,6 +62,7 @@ export function CarrierRegisterPage() {
         email: values.email.trim(),
         phone: values.phone.trim() || undefined,
         acceptedTerms: values.acceptedTerms,
+        inviteToken,
       }),
     onSuccess: (_data, values) => {
       navigate('/login', { replace: true, state: { email: values.email.trim().toLowerCase() } });
@@ -61,6 +80,19 @@ export function CarrierRegisterPage() {
           {t('carrierRegister.title')}
         </h1>
         <p className="mt-2 text-sm text-clox-mute">{t('carrierRegister.subtitle')}</p>
+        {inviteToken && invitePeek.isSuccess ? (
+          <Notice tone="info" className="mt-3">
+            {t('growth.inviteSubtitle')}
+            {invitePeek.data.inviterName
+              ? ` (${invitePeek.data.inviterName})`
+              : ''}
+          </Notice>
+        ) : null}
+        {inviteToken && invitePeek.isError ? (
+          <Notice tone="warn" className="mt-3">
+            {t('growth.expired')} — {t('growth.hqOwner')}
+          </Notice>
+        ) : null}
 
         <form
           className="mt-6"
@@ -86,11 +118,18 @@ export function CarrierRegisterPage() {
             {...form.register('phone')}
           />
           <label className="mb-4 flex items-start gap-2 text-sm text-clox-mute">
-            <input type="checkbox" className="mt-1 accent-clox-accent" {...form.register('acceptedTerms')} />
+            <input
+              type="checkbox"
+              className="mt-1 accent-clox-accent"
+              {...form.register('acceptedTerms')}
+            />
             <span>
               {t('acceptTerms')}
               {form.formState.errors.acceptedTerms?.message ? (
-                <span className="mt-1 block text-[12px] font-medium text-[var(--status-danger)]" role="alert">
+                <span
+                  className="mt-1 block text-[12px] font-medium text-[var(--status-danger)]"
+                  role="alert"
+                >
                   {form.formState.errors.acceptedTerms.message}
                 </span>
               ) : null}

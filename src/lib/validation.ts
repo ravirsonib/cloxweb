@@ -13,6 +13,30 @@ export const VEHICLE_CLASSES = [
   'BDOUBLE',
 ] as const;
 
+/** Keep in sync with api/src/modules/jobs/job-pricing.util.ts (G0-12 ranks). */
+const VEHICLE_CLASS_RANK: Record<string, number> = {
+  UTE: 1,
+  VAN: 2,
+  RIGID_1_2T: 3,
+  RIGID_3_4T: 4,
+  SEMI: 5,
+  BDOUBLE: 6,
+};
+
+export function vehicleClassRank(vehicleClass: string | null | undefined): number {
+  if (!vehicleClass) return 0;
+  return VEHICLE_CLASS_RANK[vehicleClass.toUpperCase()] ?? 0;
+}
+
+/** True if offered class is same or larger than required minimum. */
+export function isVehicleClassAdequate(
+  offeredClass: string | null | undefined,
+  minClass: string | null | undefined,
+): boolean {
+  if (!minClass) return true;
+  return vehicleClassRank(offeredClass) >= vehicleClassRank(minClass);
+}
+
 export function abnSchema(requiredMessage: string, invalidMessage: string) {
   return z
     .string()

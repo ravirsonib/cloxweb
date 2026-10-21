@@ -22,6 +22,11 @@ export {
 } from './distribution-bars';
 export { Field, FieldShell, TextArea } from './field';
 export { Select, type SelectProps } from './select';
+export {
+  SearchableSelect,
+  type SearchableSelectOption,
+  type SearchableSelectProps,
+} from './searchable-select';
 export { Kpi, KpiStrip } from './kpi';
 export { LockedCta } from './locked-cta';
 export { Notice } from './notice';

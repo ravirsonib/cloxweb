@@ -18,12 +18,16 @@ import {
 import {
   deleteCompany,
   disableCompany,
+  getCompanyReferrer,
   getErrorDetail,
   listCompanies,
+  listLocalBdesForReassign,
   reactivateCompany,
+  reassignCompanyReferrer,
   type CompanyListItem,
 } from '@/lib/api';
 import { formatDateTime } from '@/lib/leads';
+import { companyStatusTone } from '@/lib/status-tone';
 import {
   COMPANY_STATUS_KEYS,
   CompanyStatus,
@@ -54,6 +58,8 @@ export function CompaniesPage() {
   const [disableTarget, setDisableTarget] = useState<CompanyListItem | null>(null);
   const [disableReason, setDisableReason] = useState('');
   const [disableNote, setDisableNote] = useState('');
+  const [reassignTarget, setReassignTarget] = useState<CompanyListItem | null>(null);
+  const [reassignLocalId, setReassignLocalId] = useState<string>('');
   const [actionError, setActionError] = useState<string | null>(null);
 
   const page = Number(searchParams.get('page') || '1') || 1;
@@ -77,6 +83,18 @@ export function CompaniesPage() {
   const companiesQuery = useQuery({
     queryKey: ['admin', 'companies', query],
     queryFn: ({ signal }) => listCompanies(query, { signal }),
+  });
+
+  const localBdesQuery = useQuery({
+    queryKey: ['ops', 'growth', 'local-bdes'],
+    queryFn: listLocalBdesForReassign,
+    enabled: Boolean(reassignTarget),
+  });
+
+  const referrerQuery = useQuery({
+    queryKey: ['ops', 'growth', 'referrer', reassignTarget?.id],
+    queryFn: () => getCompanyReferrer(reassignTarget!.id),
+    enabled: Boolean(reassignTarget),
   });
 
   const invalidate = () =>
@@ -119,11 +137,30 @@ export function CompaniesPage() {
     onError: (error) => setActionError(getErrorDetail(error)),
   });
 
+  const reassignMutation = useMutation({
+    mutationFn: () =>
+      reassignCompanyReferrer(
+        reassignTarget!.id,
+        reassignLocalId ? reassignLocalId : null,
+      ),
+    onSuccess: async () => {
+      setReassignTarget(null);
+      setReassignLocalId('');
+      setActionError(null);
+      toast.success(t('growth.reassignSuccess'));
+      await invalidate();
+    },
+    onError: (error) => setActionError(getErrorDetail(error)),
+  });
+
   const items = companiesQuery.data?.items ?? [];
   const totalPages = companiesQuery.data?.totalPages ?? 1;
   const total = companiesQuery.data?.total ?? 0;
   const busy =
-    disableMutation.isPending || reactivateMutation.isPending || deleteMutation.isPending;
+    disableMutation.isPending ||
+    reactivateMutation.isPending ||
+    deleteMutation.isPending ||
+    reassignMutation.isPending;
 
   function updateFilter(key: string, value: string) {
     const next = new URLSearchParams(searchParams);
@@ -167,42 +204,66 @@ export function CompaniesPage() {
   }
 
   function renderActions(row: CompanyListItem) {
+    const reassignBtn = (
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        disabled={busy}
+        onClick={() => {
+          setActionError(null);
+          setReassignLocalId('');
+          setReassignTarget(row);
+        }}
+      >
+        {t('growth.reassignConfirm')}
+      </Button>
+    );
     if (row.status === CompanyStatus.DRAFT) {
       return (
+        <div className="flex flex-wrap justify-end gap-2">
+          {reassignBtn}
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            disabled={busy}
+            onClick={() => void onDelete(row)}
+          >
+            {t('companies.delete')}
+          </Button>
+        </div>
+      );
+    }
+    if (row.status === CompanyStatus.SUSPENDED) {
+      return (
+        <div className="flex flex-wrap justify-end gap-2">
+          {reassignBtn}
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            onClick={() => void onReactivate(row)}
+          >
+            {t('companies.reactivate')}
+          </Button>
+        </div>
+      );
+    }
+    return (
+      <div className="flex flex-wrap justify-end gap-2">
+        {reassignBtn}
         <Button
           type="button"
           variant="destructive"
           size="sm"
           disabled={busy}
-          onClick={() => void onDelete(row)}
+          onClick={() => void onDisable(row)}
         >
-          {t('companies.delete')}
+          {t('companies.disable')}
         </Button>
-      );
-    }
-    if (row.status === CompanyStatus.SUSPENDED) {
-      return (
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          disabled={busy}
-          onClick={() => void onReactivate(row)}
-        >
-          {t('companies.reactivate')}
-        </Button>
-      );
-    }
-    return (
-      <Button
-        type="button"
-        variant="destructive"
-        size="sm"
-        disabled={busy}
-        onClick={() => void onDisable(row)}
-      >
-        {t('companies.disable')}
-      </Button>
+      </div>
     );
   }
 
@@ -319,7 +380,7 @@ export function CompaniesPage() {
                             {row.email ?? t('dash')}
                           </p>
                         </div>
-                        <StatusPill tone="neutral">
+                        <StatusPill tone={companyStatusTone(row.status)}>
                           {t(`companyStatuses.${row.status}`, { defaultValue: row.status })}
                         </StatusPill>
                       </div>
@@ -331,6 +392,16 @@ export function CompaniesPage() {
                         </span>
                         <span>{row.homeRegion?.code ?? t('dash')}</span>
                         <span>{row.abn ? `ABN ${row.abn}` : t('dash')}</span>
+                        <span>
+                          {row.type === 'CARRIER'
+                            ? t('companies.fleetCounts', {
+                                vehicles: row.counts.vehicles,
+                                drivers: row.counts.drivers,
+                              })
+                            : t('companies.fleetCountsSender', {
+                                users: row.counts.users,
+                              })}
+                        </span>
                         <span>{formatDateTime(row.createdAt)}</span>
                       </div>
                       {row.status === CompanyStatus.SUSPENDED && row.suspendedReason ? (
@@ -360,6 +431,7 @@ export function CompaniesPage() {
                     t('companies.colStatus'),
                     t('companies.colRegion'),
                     t('companies.colAbn'),
+                    t('companies.colFleet'),
                     t('companies.colCreated'),
                     t('companies.colCase'),
                     t('companies.colActions'),
@@ -388,7 +460,7 @@ export function CompaniesPage() {
                           : t('companies.typeSender')}
                       </td>
                       <td className="px-4 py-3">
-                        <StatusPill tone="neutral">
+                        <StatusPill tone={companyStatusTone(row.status)}>
                           {t(`companyStatuses.${row.status}`, { defaultValue: row.status })}
                         </StatusPill>
                       </td>
@@ -397,6 +469,16 @@ export function CompaniesPage() {
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-clox-mute">
                         {row.abn ?? t('dash')}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-xs text-clox-mute">
+                        {row.type === 'CARRIER'
+                          ? t('companies.fleetCounts', {
+                              vehicles: row.counts.vehicles,
+                              drivers: row.counts.drivers,
+                            })
+                          : t('companies.fleetCountsSender', {
+                              users: row.counts.users,
+                            })}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-clox-mute">
                         {formatDateTime(row.createdAt)}
@@ -508,6 +590,68 @@ export function CompaniesPage() {
                 onClick={() => disableMutation.mutate()}
               >
                 {disableMutation.isPending ? t('loading') : t('companies.disableConfirm')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {reassignTarget ? (
+        <div
+          className="clox-dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !reassignMutation.isPending) {
+              setReassignTarget(null);
+            }
+          }}
+        >
+          <div className="clox-dialog" role="dialog" aria-modal="true">
+            <h2 className="font-display text-lg font-semibold text-clox-ink">
+              {t('growth.reassignTitle')}
+            </h2>
+            <p className="mt-2 text-sm text-clox-mute">
+              {t('growth.reassignBody', { name: reassignTarget.legalName })}
+            </p>
+            <p className="mt-3 text-sm text-clox-ink">
+              {t('growth.currentOwner')}:{' '}
+              {referrerQuery.data?.referredByAdminUser
+                ? `${referrerQuery.data.referredByAdminUser.name ?? ''} (${referrerQuery.data.referredByAdminUser.email})`
+                : t('growth.hqOwner')}
+            </p>
+            <Select
+              className="mt-4"
+              label={t('growth.pickLocal')}
+              value={reassignLocalId}
+              onChange={(event) => setReassignLocalId(event.target.value)}
+            >
+              <option value="">{t('growth.hqOwner')}</option>
+              {(localBdesQuery.data?.items ?? []).map((local) => (
+                <option key={local.id} value={local.id}>
+                  {[local.name, local.email, local.territoryCode].filter(Boolean).join(' · ')}
+                </option>
+              ))}
+            </Select>
+            {reassignMutation.isError ? (
+              <Notice tone="error" className="mt-3">
+                {getErrorDetail(reassignMutation.error)}
+              </Notice>
+            ) : null}
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={reassignMutation.isPending}
+                onClick={() => setReassignTarget(null)}
+              >
+                {t('confirm.cancel')}
+              </Button>
+              <Button
+                type="button"
+                disabled={reassignMutation.isPending}
+                onClick={() => reassignMutation.mutate()}
+              >
+                {reassignMutation.isPending ? t('loading') : t('growth.reassignConfirm')}
               </Button>
             </div>
           </div>

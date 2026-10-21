@@ -1,11 +1,28 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LoadingBlock } from '@/components/status-blocks';
 import { KeyValueList } from '@/components/identity-summary';
-import { Button, Notice, Select, TextArea, Timeline, useConfirm, useToast } from '@/components/ui';
-import { addLeadNote, deleteLead, getErrorDetail, getLead, updateLead } from '@/lib/api';
+import {
+  Button,
+  Notice,
+  SearchableSelect,
+  Select,
+  TextArea,
+  Timeline,
+  useConfirm,
+  useToast,
+} from '@/components/ui';
+import {
+  addLeadNote,
+  deleteLead,
+  getErrorDetail,
+  getLead,
+  inviteAdminPartner,
+  listOpsGeography,
+  updateLead,
+} from '@/lib/api';
 import { formatAuditAction } from '@/lib/audit-format';
 import {
   LEAD_STATUS_KEYS,
@@ -13,7 +30,7 @@ import {
   formatLeadStatus,
   formatLeadType,
 } from '@/lib/leads';
-import { LeadStatus } from '@/shared/types';
+import { AdminRole, LeadStatus, LeadType } from '@/shared/types';
 
 export function LeadDetailPage() {
   const { t } = useTranslation('common');
@@ -26,6 +43,8 @@ export function LeadDetailPage() {
   const [status, setStatus] = useState<LeadStatus | ''>('');
   const [priority, setPriority] = useState(false);
   const [note, setNote] = useState('');
+  const [inviteRegion, setInviteRegion] = useState('VIC');
+  const [inviteTerritory, setInviteTerritory] = useState('');
 
   const leadQuery = useQuery({
     queryKey: ['admin', 'lead', id],
@@ -35,10 +54,21 @@ export function LeadDetailPage() {
 
   const lead = leadQuery.data;
 
+  const geoQuery = useQuery({
+    queryKey: ['ops', 'geography'],
+    queryFn: () => listOpsGeography(),
+    enabled: Boolean(
+      lead &&
+        (lead.type === LeadType.EOI_STATE_MASTER || lead.type === LeadType.EOI_LOCAL_BDE),
+    ),
+  });
+
   useEffect(() => {
     if (lead) {
       setStatus(lead.status);
       setPriority(lead.priority);
+      setInviteRegion((lead.state || 'VIC').toUpperCase());
+      setInviteTerritory((lead.territory || '').toUpperCase());
     }
   }, [lead]);
 
@@ -77,6 +107,83 @@ export function LeadDetailPage() {
     },
     onError: (err) => toast.error(getErrorDetail(err)),
   });
+
+  const inviteMutation = useMutation({
+    mutationFn: () => {
+      if (!lead) throw new Error('missing lead');
+      const role =
+        lead.type === LeadType.EOI_STATE_MASTER
+          ? AdminRole.STATE_MASTER
+          : AdminRole.LOCAL_BDE;
+      return inviteAdminPartner({
+        email: lead.email,
+        name: lead.companyName ?? undefined,
+        companyName: lead.companyName ?? undefined,
+        role,
+        regionCode: inviteRegion.trim().toUpperCase(),
+        territoryCode:
+          role === AdminRole.LOCAL_BDE
+            ? inviteTerritory.trim().toUpperCase() || undefined
+            : undefined,
+        leadId: lead.id,
+      });
+    },
+    onSuccess: (data: { invite?: { inviteUrl?: string } }) => {
+      toast.success(t('admin.invitePartnerSuccess'));
+      if (data.invite?.inviteUrl) {
+        toast.success(data.invite.inviteUrl);
+      }
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'lead', id] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'leads'] });
+    },
+    onError: (err) => toast.error(getErrorDetail(err)),
+  });
+
+  const canInvitePartner =
+    lead &&
+    (lead.type === LeadType.EOI_STATE_MASTER || lead.type === LeadType.EOI_LOCAL_BDE) &&
+    lead.status !== LeadStatus.PROVISIONED &&
+    lead.status !== LeadStatus.REJECTED;
+
+  const regionOptions = useMemo(() => {
+    const rows = (geoQuery.data?.regions ?? []).map((r) => ({
+      value: r.code,
+      label: r.code,
+      hint: r.name,
+      disabled: !r.enabled,
+      badge: r.enabled ? undefined : t('opsPartners.comingSoon'),
+    }));
+    return rows.sort((a, b) => Number(a.disabled) - Number(b.disabled));
+  }, [geoQuery.data?.regions, t]);
+
+  useEffect(() => {
+    if (!geoQuery.data?.regions?.length) return;
+    const selected = geoQuery.data.regions.find((r) => r.code === inviteRegion);
+    if (!selected?.enabled) {
+      const firstEnabled = geoQuery.data.regions.find((r) => r.enabled);
+      if (firstEnabled) {
+        setInviteRegion(firstEnabled.code);
+        setInviteTerritory('');
+      }
+    }
+  }, [geoQuery.data?.regions, inviteRegion]);
+
+  const territoryOptions = useMemo(() => {
+    const region = geoQuery.data?.regions.find((r) => r.code === inviteRegion);
+    return (region?.territories ?? [])
+      .filter((tr) => tr.enabled)
+      .map((tr) => ({
+        value: tr.code,
+        label: tr.code,
+        hint: tr.name,
+      }));
+  }, [geoQuery.data?.regions, inviteRegion]);
+
+  useEffect(() => {
+    if (inviteTerritory && !territoryOptions.some((o) => o.value === inviteTerritory)) {
+      setInviteTerritory('');
+    }
+  }, [territoryOptions, inviteTerritory]);
 
   return (
     <div>
@@ -220,6 +327,66 @@ export function LeadDetailPage() {
           </div>
 
           <div className="space-y-6">
+            {canInvitePartner ? (
+              <section className="clox-card p-5">
+                <h2 className="font-display text-lg font-semibold text-clox-ink">
+                  {t('admin.invitePartnerTitle')}
+                </h2>
+                <p className="mt-2 text-sm text-clox-mute">{t('admin.invitePartnerBody')}</p>
+                <div className="mt-4 space-y-3">
+                  <SearchableSelect
+                    label={t('opsPartners.region')}
+                    value={inviteRegion}
+                    onChange={(next) => {
+                      setInviteRegion(next);
+                      setInviteTerritory('');
+                    }}
+                    options={regionOptions}
+                    placeholder={t('opsPartners.regionPlaceholder')}
+                    searchPlaceholder={t('opsPartners.searchPlaceholder')}
+                    emptyLabel={t('opsPartners.noMatches')}
+                    disabled={geoQuery.isLoading}
+                    required
+                  />
+                  {lead.type === LeadType.EOI_LOCAL_BDE ? (
+                    <SearchableSelect
+                      label={t('opsPartners.territory')}
+                      value={inviteTerritory}
+                      onChange={setInviteTerritory}
+                      options={territoryOptions}
+                      placeholder={
+                        territoryOptions.length
+                          ? t('opsPartners.territoryPlaceholder')
+                          : t('opsPartners.noTerritories')
+                      }
+                      searchPlaceholder={t('opsPartners.searchPlaceholder')}
+                      emptyLabel={t('opsPartners.noMatches')}
+                      disabled={geoQuery.isLoading || territoryOptions.length === 0}
+                      required
+                    />
+                  ) : null}
+                </div>
+                <Button
+                  className="mt-4"
+                  variant="cta"
+                  size="block"
+                  disabled={
+                    inviteMutation.isPending ||
+                    geoQuery.isLoading ||
+                    !inviteRegion ||
+                    (lead.type === LeadType.EOI_LOCAL_BDE && !inviteTerritory)
+                  }
+                  onClick={() => inviteMutation.mutate()}
+                >
+                  {inviteMutation.isPending
+                    ? t('loading')
+                    : lead.type === LeadType.EOI_STATE_MASTER
+                      ? t('admin.inviteAsState')
+                      : t('admin.inviteAsLocal')}
+                </Button>
+              </section>
+            ) : null}
+
             <section className="clox-card p-5">
               <h2 className="font-display text-lg font-semibold text-clox-ink">
                 {t('admin.review')}

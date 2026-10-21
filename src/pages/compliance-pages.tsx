@@ -32,15 +32,17 @@ export function ComplianceQueuePage() {
   const { t } = useTranslation('common');
   const role = useAuthStore((s) => s.role);
   const [status, setStatus] = useState('OPEN');
+  const [caseType, setCaseType] = useState('');
   const [regionCode, setRegionCode] = useState(
     role === AdminRole.SUPER_ADMIN ? '' : 'VIC',
   );
 
   const query = useQuery({
-    queryKey: ['compliance', 'cases', status, regionCode],
+    queryKey: ['compliance', 'cases', status, caseType, regionCode],
     queryFn: ({ signal }) =>
       listComplianceCases({
         status: status || undefined,
+        caseType: caseType || undefined,
         regionCode: regionCode || undefined,
         signal,
       }),
@@ -68,6 +70,18 @@ export function ComplianceQueuePage() {
           <option value="INFO_REQUESTED">{t('compliance.statusInfoRequested')}</option>
           <option value="APPROVED">{t('compliance.statusApproved')}</option>
           <option value="REJECTED">{t('compliance.statusRejected')}</option>
+        </Select>
+        <Select
+          className="mb-0 w-full min-w-[12rem] sm:w-auto"
+          label={t('compliance.colType')}
+          value={caseType}
+          onChange={(e) => setCaseType(e.target.value)}
+        >
+          <option value="">{t('compliance.caseTypeAll')}</option>
+          <option value="SENDER_KYB">SENDER_KYB</option>
+          <option value="SENDER_KYC">SENDER_KYC</option>
+          <option value="CARRIER_KYB">CARRIER_KYB</option>
+          <option value="ADMIN_PARTNER_KYB">ADMIN_PARTNER_KYB</option>
         </Select>
         <label className="mb-0 block w-full sm:w-auto">
           <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
@@ -201,8 +215,11 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
     onError: (err) => toast.error(getErrorDetail(err)),
   });
 
-  const canDecide = role === AdminRole.SUPER_ADMIN || role === AdminRole.STATE_MASTER;
-  const canEscalate = role === AdminRole.LOCAL_BDE;
+  const isPartnerKyb = query.data?.caseType === 'ADMIN_PARTNER_KYB';
+  const canDecide =
+    role === AdminRole.SUPER_ADMIN ||
+    (role === AdminRole.STATE_MASTER && !isPartnerKyb);
+  const canEscalate = role === AdminRole.LOCAL_BDE && !isPartnerKyb;
 
   async function runDecision(action: 'approve' | 'reject' | 'request-info' | 'escalate') {
     const trimmed = note.trim();
@@ -276,6 +293,12 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
       <p className="mt-1 font-mono text-sm text-clox-mute">
         {c.caseType} · {c.status} · company {c.company.status}
       </p>
+
+      {c.caseType === 'ADMIN_PARTNER_KYB' ? (
+        <Notice tone="info" className="mt-4">
+          {t('compliance.partnerKybChecklist')}
+        </Notice>
+      ) : null}
 
       {c.abrAssist ? (
         <div className="clox-card mt-4 p-4 text-sm">

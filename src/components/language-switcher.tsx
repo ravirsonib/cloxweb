@@ -92,8 +92,8 @@ export function LanguageSwitcher({ className = '' }: { className?: string }) {
                 className={cn(
                   'flex w-full px-4 py-3 text-left text-[0.95rem] transition',
                   active
-                    ? 'bg-clox-surface-alt font-bold text-clox-navy'
-                    : 'text-clox-text hover:bg-clox-orange-tint hover:text-clox-orange-deep',
+                    ? 'bg-clox-surface-alt font-bold text-clox-ink'
+                    : 'text-clox-text hover:bg-clox-accent-tint hover:text-clox-accent-deep',
                 )}
                 onMouseDown={(event) => {
                   event.preventDefault();

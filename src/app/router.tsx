@@ -14,11 +14,27 @@ import { DocumentsUploadPage } from '@/pages/documents-upload-page';
 import { AccountPage } from '@/pages/account-page';
 import { CarrierRegisterPage } from '@/pages/carrier-register-page';
 import { CarrierOnboardingPage } from '@/pages/carrier-onboarding-page';
+import { CarrierFleetPage } from '@/pages/carrier-fleet-page';
+import { CarrierDriversPage } from '@/pages/carrier-drivers-page';
 import { DriverInvitePage } from '@/pages/driver-invite-page';
 import { DriverOnboardingPage } from '@/pages/driver-onboarding-page';
+import { AdminInvitePage } from '@/pages/admin-invite-page';
+import { PartnerOnboardingPage } from '@/pages/partner-onboarding-page';
+import { OpsPartnersPage } from '@/pages/ops-partners-page';
+import {
+  GrowthInvitePage,
+  GrowthPipelinePage,
+  MyCarriersPage,
+  MySendersPage,
+} from '@/pages/growth-pages';
 import { JobCreatePage, JobDetailPage, JobEditPage, JobsListPage } from '@/pages/jobs-pages';
 import { MarketBoardPage } from '@/pages/market-board-page';
 import { CarrierAssignmentsPage } from '@/pages/carrier-assignments-page';
+import {
+  CarrierExceptionDetailPage,
+  CarrierExceptionsPage,
+} from '@/pages/carrier-exceptions-page';
+import { OpsExceptionsPage } from '@/pages/ops-exceptions-page';
 import { DriverTripsPage, DriverTripDetailPage } from '@/pages/driver-trips-page';
 import { SenderTrackPage } from '@/pages/sender-track-page';
 import { SenderRegisterPage } from '@/pages/sender-register-page';
@@ -93,6 +109,7 @@ export function AppRouter() {
       <Route path="/register/sender" element={<SenderRegisterPage />} />
       <Route path="/register/carrier" element={<CarrierRegisterPage />} />
       <Route path="/driver/invite/:token" element={<DriverInvitePage />} />
+      <Route path="/admin/invite/:token" element={<AdminInvitePage />} />
       <Route element={<ProtectedShell />}>
         <Route path="/" element={<HomePage />} />
         <Route
@@ -117,6 +134,54 @@ export function AppRouter() {
             <SuperOnly>
               <CompaniesPage />
             </SuperOnly>
+          }
+        />
+        <Route
+          path="/ops/partners"
+          element={
+            <SuperOnly>
+              <OpsPartnersPage />
+            </SuperOnly>
+          }
+        />
+        <Route
+          path="/ops/growth"
+          element={
+            <RequireRoles roles={[AdminRole.LOCAL_BDE, AdminRole.STATE_MASTER, AdminRole.SUPER_ADMIN]}>
+              <GrowthPipelinePage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/ops/growth/invite"
+          element={
+            <RequireRoles roles={[AdminRole.LOCAL_BDE]}>
+              <GrowthInvitePage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/ops/my-senders"
+          element={
+            <RequireRoles roles={[AdminRole.LOCAL_BDE]}>
+              <MySendersPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/ops/my-carriers"
+          element={
+            <RequireRoles roles={[AdminRole.LOCAL_BDE]}>
+              <MyCarriersPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/partner/onboarding"
+          element={
+            <RequireRoles roles={[AdminRole.STATE_MASTER, AdminRole.LOCAL_BDE]}>
+              <PartnerOnboardingPage />
+            </RequireRoles>
           }
         />
         <Route
@@ -160,6 +225,22 @@ export function AppRouter() {
           }
         />
         <Route
+          path="/carrier/fleet"
+          element={
+            <RequireRoles roles={[AppRole.TRANSPORT_COMPANY]}>
+              <CarrierFleetPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/carrier/drivers"
+          element={
+            <RequireRoles roles={[AppRole.TRANSPORT_COMPANY]}>
+              <CarrierDriversPage />
+            </RequireRoles>
+          }
+        />
+        <Route
           path="/driver/onboarding"
           element={
             <RequireRoles roles={[AppRole.DRIVER]}>
@@ -191,6 +272,30 @@ export function AppRouter() {
           element={
             <RequireRoles roles={[AppRole.TRANSPORT_COMPANY]}>
               <CarrierAssignmentsPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/carrier/exceptions"
+          element={
+            <RequireRoles roles={[AppRole.TRANSPORT_COMPANY]}>
+              <CarrierExceptionsPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/carrier/exceptions/:id"
+          element={
+            <RequireRoles roles={[AppRole.TRANSPORT_COMPANY]}>
+              <CarrierExceptionDetailPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/ops/exceptions"
+          element={
+            <RequireRoles roles={[AdminRole.SUPER_ADMIN, AdminRole.STATE_MASTER]}>
+              <OpsExceptionsPage />
             </RequireRoles>
           }
         />

@@ -66,6 +66,7 @@ export function registerCarrier(payload: {
   name: string;
   phone?: string;
   acceptedTerms: boolean;
+  inviteToken?: string;
 }) {
   return publicHttp.post('/carrier/register', payload).then((r) => r.data);
 }
@@ -88,8 +89,115 @@ export function confirmCarrierConnect() {
   return http.post<CarrierOnboarding>('/carrier/connect/confirm', {}).then((r) => r.data);
 }
 
+export type FleetDisableReasonInput = {
+  reason: string;
+  note?: string;
+};
+
+export type FleetRwcCompliance = {
+  state: 'OK' | 'EXPIRING' | 'EXPIRED' | 'PENDING' | 'MISSING';
+  expiresAt: string | null;
+  documentId: string | null;
+  documentStatus: string | null;
+};
+
+export type CarrierVehicleListItem = {
+  id: string;
+  status: string;
+  label: string | null;
+  registration: string | null;
+  vehicleClass: string | null;
+  tareKg: number | null;
+  gvmKg: number | null;
+  gcmKg: number | null;
+  disabledAt: string | null;
+  disabledReason: string | null;
+  disabledNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+  compliance?: {
+    rwc: FleetRwcCompliance;
+  };
+};
+
+export type CarrierDriverListItem = {
+  id: string;
+  status: string;
+  licenceNo: string | null;
+  licenceClass: string | null;
+  licenceExpiry: string | null;
+  inviteAcceptedAt: string | null;
+  inviteExpiresAt: string | null;
+  disabledAt: string | null;
+  disabledReason: string | null;
+  disabledNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    phone: string | null;
+    status: string;
+  };
+};
+
+export function listCarrierVehicles(options?: { signal?: AbortSignal }) {
+  return http
+    .get<{ items: CarrierVehicleListItem[] }>('/carrier/vehicles', {
+      signal: options?.signal,
+    })
+    .then((r) => r.data);
+}
+
+export function listCarrierDrivers(options?: { signal?: AbortSignal }) {
+  return http
+    .get<{ items: CarrierDriverListItem[] }>('/carrier/drivers', {
+      signal: options?.signal,
+    })
+    .then((r) => r.data);
+}
+
 export function addCarrierVehicle(payload: Record<string, unknown>) {
   return http.post<CarrierOnboarding>('/carrier/vehicles', payload).then((r) => r.data);
+}
+
+export function disableCarrierVehicle(id: string, payload: FleetDisableReasonInput) {
+  return http
+    .post<CarrierVehicleListItem>(`/carrier/vehicles/${id}/disable`, payload)
+    .then((r) => r.data);
+}
+
+export function retireCarrierVehicle(id: string, payload: FleetDisableReasonInput) {
+  return http
+    .post<CarrierVehicleListItem>(`/carrier/vehicles/${id}/retire`, payload)
+    .then((r) => r.data);
+}
+
+export function reactivateCarrierVehicle(id: string) {
+  return http
+    .post<CarrierVehicleListItem>(`/carrier/vehicles/${id}/reactivate`)
+    .then((r) => r.data);
+}
+
+export function deleteCarrierVehicle(id: string) {
+  return http.delete<{ ok: true; id: string }>(`/carrier/vehicles/${id}`).then((r) => r.data);
+}
+
+export function disableCarrierDriver(id: string, payload: FleetDisableReasonInput) {
+  return http
+    .post<CarrierDriverListItem>(`/carrier/drivers/${id}/disable`, payload)
+    .then((r) => r.data);
+}
+
+export function reactivateCarrierDriver(id: string) {
+  return http
+    .post<CarrierDriverListItem>(`/carrier/drivers/${id}/reactivate`)
+    .then((r) => r.data);
+}
+
+export function deleteCarrierDriver(id: string) {
+  return http.delete<{ ok: true; id: string }>(`/carrier/drivers/${id}`).then((r) => r.data);
 }
 
 export function inviteCarrierDriver(payload: Record<string, unknown>) {
@@ -139,5 +247,50 @@ export function getBidEligibility() {
       goNoGo: CarrierOnboarding['goNoGo'];
       companyStatus: string;
     }>('/carrier/bid-eligibility')
+    .then((r) => r.data);
+}
+
+export type AssignmentReassignInput = {
+  vehicleId: string;
+  driverId: string;
+  reason: string;
+  note?: string;
+};
+
+export type AssignmentReassignResult = {
+  id: string;
+  status: string;
+  vehicleId: string;
+  driverId: string;
+  safetyReset: boolean;
+  vehicle: {
+    id: string;
+    registration: string | null;
+    vehicleClass: string | null;
+    status: string;
+  } | null;
+  driver: {
+    id: string;
+    status: string;
+    user: { email: string; name: string | null };
+  } | null;
+  trip: { id: string; status: string } | null;
+  job: {
+    id: string;
+    title: string | null;
+    status: string;
+    minVehicleClass: string | null;
+  };
+};
+
+export function reassignCarrierAssignment(
+  assignmentId: string,
+  payload: AssignmentReassignInput,
+) {
+  return http
+    .post<AssignmentReassignResult>(
+      `/carrier/assignments/${assignmentId}/reassign`,
+      payload,
+    )
     .then((r) => r.data);
 }

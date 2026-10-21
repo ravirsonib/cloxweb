@@ -49,6 +49,7 @@ export function registerSender(payload: {
   name: string;
   phone?: string;
   acceptedTerms: boolean;
+  inviteToken?: string;
 }) {
   return publicHttp.post('/sender/register', payload).then((r) => r.data);
 }

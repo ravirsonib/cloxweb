@@ -50,6 +50,15 @@ export type JobSummary = {
     amountIncGstCents: number;
     stripePaymentIntentId: string | null;
   } | null;
+  openException?: {
+    id: string;
+    kind: string;
+    phase: string;
+    status: string;
+    note: string | null;
+    openedAt: string;
+    escalatedAt: string | null;
+  } | null;
   stops: Array<{
     sequence: number;
     stopType: string;
@@ -82,6 +91,7 @@ export type CarrierAssignment = {
   lockedAt: string | null;
   paidAndConfirmed: boolean;
   tripBlockedUntilPaid: boolean;
+  canReassign: boolean;
   amountIncGstCents: number;
   etaMinutes: number | null;
   job: {
@@ -90,7 +100,20 @@ export type CarrierAssignment = {
     status: string;
     pricingModel: string;
     estimateIncGstCents: number | null;
+    minVehicleClass: string | null;
   };
+  vehicle: {
+    id: string;
+    registration: string | null;
+    vehicleClass: string | null;
+    status: string;
+  } | null;
+  driver: {
+    id: string;
+    status: string;
+    user: { email: string; name: string | null };
+  } | null;
+  trip: { id: string; status: string } | null;
 };
 
 export type MarketBoard = {

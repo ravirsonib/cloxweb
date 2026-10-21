@@ -7,6 +7,8 @@ export type IdentityMe = {
   role: string;
   active?: boolean;
   status?: string;
+  companyId?: string | null;
+  opsEligible?: boolean;
   scopes?: Array<{
     scopeType: string;
     regionCode: string | null;

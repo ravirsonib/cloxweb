@@ -6,15 +6,18 @@ import {
   useEffect,
   useId,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
   type FocusEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   type SelectHTMLAttributes,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { FieldShell } from './field';
@@ -88,12 +91,13 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   const hiddenRef = useRef<HTMLSelectElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const [open, setOpen] = useState(false);
+  const [popoverStyle, setPopoverStyle] = useState<CSSProperties>({});
   const [uncontrolledValue, setUncontrolledValue] = useState(() => {
     if (defaultValue != null) return String(defaultValue);
-    // Prefer empty string when an empty option exists (filter "All"), else first option.
     if (options.some((option) => option.value === '')) return '';
     return String(options[0]?.value ?? '');
   });
@@ -134,6 +138,50 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
     [isControlled, name, onChange],
   );
 
+  const updatePopoverPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const maxHeight = 256;
+    const gap = 4;
+    const spaceBelow = window.innerHeight - rect.bottom - gap;
+    const spaceAbove = rect.top - gap;
+    const openUp = spaceBelow < Math.min(maxHeight, 160) && spaceAbove > spaceBelow;
+    const width = Math.max(rect.width, 160);
+    const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
+
+    if (openUp) {
+      setPopoverStyle({
+        position: 'fixed',
+        left,
+        width,
+        bottom: window.innerHeight - rect.top + gap,
+        top: 'auto',
+        maxHeight: Math.min(maxHeight, Math.max(120, spaceAbove)),
+      });
+    } else {
+      setPopoverStyle({
+        position: 'fixed',
+        left,
+        width,
+        top: rect.bottom + gap,
+        bottom: 'auto',
+        maxHeight: Math.min(maxHeight, Math.max(120, spaceBelow)),
+      });
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePopoverPosition();
+    window.addEventListener('resize', updatePopoverPosition);
+    window.addEventListener('scroll', updatePopoverPosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePopoverPosition);
+      window.removeEventListener('scroll', updatePopoverPosition, true);
+    };
+  }, [open, updatePopoverPosition, options.length]);
+
   useEffect(() => {
     if (!open) return;
 
@@ -144,9 +192,9 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
     setActiveIndex(selectedIndex >= 0 ? selectedIndex : (enabledIndexes[0] ?? 0));
 
     const onPointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        close();
-      }
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
+      close();
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -221,6 +269,55 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
     } as FocusEvent<HTMLSelectElement>);
   }
 
+  const listbox =
+    open && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            ref={popoverRef}
+            id={listboxId}
+            role="listbox"
+            tabIndex={-1}
+            aria-activedescendant={`${fieldId}-opt-${activeIndex}`}
+            className="clox-select-popover"
+            style={popoverStyle}
+            onKeyDown={onListKeyDown}
+          >
+            {options.map((option, index) => {
+              const selected = option.value === currentValue;
+              const active = index === activeIndex;
+              return (
+                <button
+                  key={`${option.value}-${index}`}
+                  ref={(node) => {
+                    optionRefs.current[index] = node;
+                  }}
+                  id={`${fieldId}-opt-${index}`}
+                  type="button"
+                  role="option"
+                  disabled={option.disabled}
+                  aria-selected={selected}
+                  className={cn(
+                    'clox-select-option',
+                    selected && 'clox-select-option-selected',
+                    active && 'clox-select-option-active',
+                  )}
+                  onMouseEnter={() => {
+                    if (!option.disabled) setActiveIndex(index);
+                  }}
+                  onClick={() => {
+                    if (!option.disabled) commit(option.value);
+                  }}
+                >
+                  <span className="min-w-0 flex-1 truncate text-left">{option.label}</span>
+                  {selected ? <Check size={14} aria-hidden className="clox-select-check" /> : null}
+                </button>
+              );
+            })}
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
     <FieldShell
       label={label}
@@ -273,48 +370,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
           />
         </button>
 
-        {open ? (
-          <div
-            id={listboxId}
-            role="listbox"
-            tabIndex={-1}
-            aria-activedescendant={`${fieldId}-opt-${activeIndex}`}
-            className="clox-select-popover"
-            onKeyDown={onListKeyDown}
-          >
-            {options.map((option, index) => {
-              const selected = option.value === currentValue;
-              const active = index === activeIndex;
-              return (
-                <button
-                  key={`${option.value}-${index}`}
-                  ref={(node) => {
-                    optionRefs.current[index] = node;
-                  }}
-                  id={`${fieldId}-opt-${index}`}
-                  type="button"
-                  role="option"
-                  disabled={option.disabled}
-                  aria-selected={selected}
-                  className={cn(
-                    'clox-select-option',
-                    selected && 'clox-select-option-selected',
-                    active && 'clox-select-option-active',
-                  )}
-                  onMouseEnter={() => {
-                    if (!option.disabled) setActiveIndex(index);
-                  }}
-                  onClick={() => {
-                    if (!option.disabled) commit(option.value);
-                  }}
-                >
-                  <span className="min-w-0 flex-1 truncate text-left">{option.label}</span>
-                  {selected ? <Check size={14} aria-hidden className="clox-select-check" /> : null}
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
+        {listbox}
       </div>
     </FieldShell>
   );

@@ -3,14 +3,20 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import {
+  confirmDocument,
+  createUploadIntent,
   getDriverTrip,
   getErrorDetail,
+  getIdentityMe,
   listDriverTrips,
+  openTripException,
   tripBreak,
   tripLocation,
   tripMassCheck,
   tripSafetyCheck,
   tripStart,
+  uploadDocumentContent,
+  type TripExceptionKind,
 } from '@/lib/api';
 import {
   Button,
@@ -18,12 +24,22 @@ import {
   Field,
   LockedCta,
   Notice,
+  Select,
+  StatusPill,
   dataCardClassName,
   useConfirm,
 } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
+
+const EXCEPTION_KINDS: TripExceptionKind[] = [
+  'DRIVER_UNAVAILABLE',
+  'VEHICLE_BREAKDOWN',
+  'ACCIDENT',
+  'TRAFFIC',
+  'OTHER',
+];
 
 export function DriverTripsPage() {
   const { t } = useTranslation('common');
@@ -92,6 +108,13 @@ export function DriverTripDetailPage() {
   const confirm = useConfirm();
   const [msg, setMsg] = useState<string | null>(null);
   const [massKg, setMassKg] = useState('');
+  const [showReport, setShowReport] = useState(false);
+  const [reportKind, setReportKind] = useState<TripExceptionKind>('DRIVER_UNAVAILABLE');
+  const [reportReason, setReportReason] = useState('');
+  const [reportNote, setReportNote] = useState('');
+  const [photoDocumentId, setPhotoDocumentId] = useState<string | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
   const tripQuery = useQuery({
     queryKey: ['trips', tripId],
@@ -99,10 +122,79 @@ export function DriverTripDetailPage() {
     enabled: role === AppRole.DRIVER && Boolean(tripId),
   });
 
+  const me = useQuery({
+    queryKey: ['identity', 'me'],
+    queryFn: () => getIdentityMe(),
+    enabled: role === AppRole.DRIVER && showReport,
+  });
+
   async function refresh() {
     await qc.invalidateQueries({ queryKey: ['trips', tripId] });
     await qc.invalidateQueries({ queryKey: ['trips', 'mine'] });
   }
+
+  async function uploadBreakdownPhoto(file: File) {
+    const companyId = me.data?.company?.id;
+    if (!companyId) {
+      setPhotoError(t('documentsUpload.errorNoCompany'));
+      return;
+    }
+    const mime = (file.type || 'image/jpeg') as
+      | 'image/jpeg'
+      | 'image/png'
+      | 'image/webp'
+      | 'application/pdf';
+    if (mime === 'application/pdf') {
+      setPhotoError(t('trips.reportPhotoHint'));
+      return;
+    }
+    setPhotoUploading(true);
+    setPhotoError(null);
+    setPhotoDocumentId(null);
+    try {
+      const intent = await createUploadIntent({
+        companyId,
+        docType: 'OTHER',
+        originalFilename: file.name,
+        mimeType: mime,
+        sizeBytes: file.size,
+      });
+      const uploadedRes = await uploadDocumentContent(intent.id, file);
+      await confirmDocument(intent.id, uploadedRes.contentHash);
+      setPhotoDocumentId(intent.id);
+    } catch (err) {
+      setPhotoError(getErrorDetail(err));
+    } finally {
+      setPhotoUploading(false);
+    }
+  }
+
+  const report = useMutation({
+    mutationFn: () =>
+      openTripException({
+        tripId,
+        kind: reportKind,
+        reasonCode: reportReason.trim() || undefined,
+        note: reportNote.trim(),
+        gpsLat: tripQuery.data?.latestLocation?.lat,
+        gpsLng: tripQuery.data?.latestLocation?.lng,
+        photoDocumentId: photoDocumentId ?? undefined,
+      }),
+    onSuccess: async (res) => {
+      setShowReport(false);
+      setReportNote('');
+      setReportReason('');
+      setPhotoDocumentId(null);
+      setPhotoError(null);
+      setMsg(
+        res.forceOffline
+          ? t('trips.reportSuccessOffline')
+          : t('trips.reportSuccess'),
+      );
+      await refresh();
+    },
+    onError: (e) => setMsg(getErrorDetail(e)),
+  });
 
   const safety = useMutation({
     mutationFn: (passed: boolean) => tripSafetyCheck(tripId, passed),
@@ -183,6 +275,18 @@ export function DriverTripDetailPage() {
       </h1>
       <p className="mt-1 font-mono text-sm text-clox-mute">{tripData.status}</p>
 
+      {tripData.openException ? (
+        <Notice tone="warn" className="mt-4" title={t('trips.exceptionOpenTitle')}>
+          <p className="text-sm">
+            {tripData.openException.kind} · {tripData.openException.phase} ·{' '}
+            <StatusPill tone="warn">{tripData.openException.status}</StatusPill>
+          </p>
+          {tripData.openException.note ? (
+            <p className="mt-1 text-xs text-clox-mute">{tripData.openException.note}</p>
+          ) : null}
+        </Notice>
+      ) : null}
+
       <ul className="mt-4 space-y-1 text-sm text-clox-mute">
         <li>
           {t('trips.gatesLine', {
@@ -239,14 +343,14 @@ export function DriverTripDetailPage() {
                     </span>
                   ) : null}
                   {row.freeWaitEndsAt && !overage ? (
-                    <span className="ml-2 text-[var(--cab-amber)]">
+                    <span className="ml-2 font-medium text-[var(--status-warn)]">
                       {t('trips.stopFreeWaitEnds', {
                         time: new Date(row.freeWaitEndsAt).toLocaleTimeString(),
                       })}
                     </span>
                   ) : null}
                   {overage ? (
-                    <span className="ml-2 text-clox-orange">
+                    <span className="ml-2 font-medium text-[var(--status-danger)]">
                       {t('trips.stopOverage', { min: row.waitOverageMinutes })}
                     </span>
                   ) : null}
@@ -392,6 +496,123 @@ export function DriverTripDetailPage() {
           </Button>
         </div>
       )}
+
+      {tripData.status !== 'COMPLETED' && tripData.status !== 'CANCELLED' ? (
+        <div className="mt-8 border-t border-clox-border-soft pt-6">
+          <h2 className="font-display font-semibold text-clox-ink">{t('trips.reportIssueTitle')}</h2>
+          <p className="mt-1 text-sm text-clox-mute">{t('trips.reportIssueHint')}</p>
+          {!tripData.openException && !showReport ? (
+            <Button
+              type="button"
+              variant="destructive"
+              className="mt-3"
+              onClick={() => setShowReport(true)}
+            >
+              {t('trips.reportIssue')}
+            </Button>
+          ) : null}
+          {showReport && !tripData.openException ? (
+            <form
+              className="clox-card mt-4 space-y-3 p-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (reportNote.trim().length < 3 || report.isPending) return;
+                report.mutate();
+              }}
+              noValidate
+            >
+              <Select
+                label={t('trips.reportKind')}
+                value={reportKind}
+                onChange={(event) => {
+                  const next = event.target.value as TripExceptionKind;
+                  setReportKind(next);
+                  if (next !== 'VEHICLE_BREAKDOWN') {
+                    setPhotoDocumentId(null);
+                    setPhotoError(null);
+                  }
+                }}
+              >
+                {EXCEPTION_KINDS.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {t(`trips.exceptionKinds.${kind}`, { defaultValue: kind })}
+                  </option>
+                ))}
+              </Select>
+              <Field
+                label={t('trips.reportReasonCode')}
+                value={reportReason}
+                onChange={(event) => setReportReason(event.target.value)}
+                placeholder={t('trips.reportReasonPlaceholder')}
+              />
+              <label className="block">
+                <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
+                  {t('trips.reportNote')}
+                </span>
+                <textarea
+                  className="clox-field-control min-h-[4.5rem]"
+                  value={reportNote}
+                  onChange={(event) => setReportNote(event.target.value)}
+                  placeholder={t('trips.reportNotePlaceholder')}
+                  maxLength={2000}
+                  required
+                />
+              </label>
+              {reportKind === 'VEHICLE_BREAKDOWN' ? (
+                <div className="space-y-2">
+                  <Notice tone="warn">{t('trips.reportPhotoRequired')}</Notice>
+                  <p className="text-xs text-clox-mute">{t('trips.reportPhotoHint')}</p>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="block w-full text-sm text-clox-mute file:mr-3 file:rounded-clox-md file:border-0 file:bg-clox-surface file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-clox-ink"
+                    disabled={photoUploading || report.isPending}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void uploadBreakdownPhoto(file);
+                    }}
+                  />
+                  {photoUploading ? (
+                    <p className="text-xs text-clox-mute">{t('trips.reportPhotoUploading')}</p>
+                  ) : null}
+                  {photoDocumentId ? (
+                    <Notice tone="success">{t('trips.reportPhotoReady')}</Notice>
+                  ) : null}
+                  {photoError ? <Notice tone="error">{photoError}</Notice> : null}
+                </div>
+              ) : null}
+              {reportKind === 'DRIVER_UNAVAILABLE' ? (
+                <Notice tone="warn">{t('trips.reportOfflineHint')}</Notice>
+              ) : null}
+              {report.isError ? (
+                <Notice tone="error">{getErrorDetail(report.error)}</Notice>
+              ) : null}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={report.isPending || photoUploading}
+                  onClick={() => setShowReport(false)}
+                >
+                  {t('cancel')}
+                </Button>
+                <Button
+                  type="submit"
+                  variant="destructive"
+                  disabled={
+                    report.isPending ||
+                    photoUploading ||
+                    reportNote.trim().length < 3 ||
+                    (reportKind === 'VEHICLE_BREAKDOWN' && !photoDocumentId)
+                  }
+                >
+                  {report.isPending ? t('loading') : t('trips.reportSubmit')}
+                </Button>
+              </div>
+            </form>
+          ) : null}
+        </div>
+      ) : null}
 
       {msg ? (
         <Notice tone="info" className="mt-4">

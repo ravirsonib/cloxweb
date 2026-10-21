@@ -5,6 +5,8 @@ import { useAuthStore, type PrincipalKind } from '@/stores/auth-store';
 const SAFE_NEXT_PATHS = new Set([
   '/documents/upload',
   '/carrier/onboarding',
+  '/carrier/fleet',
+  '/carrier/drivers',
   '/sender/onboarding',
   '/driver/onboarding',
   '/market',
@@ -92,7 +94,13 @@ export function roleCanAccessPath(role: AppRole | null | undefined, path: string
       role === AppRole.DRIVER
     );
   }
-  if (pathname === '/carrier/onboarding' || pathname === '/market' || pathname === '/assignments') {
+  if (
+    pathname === '/carrier/onboarding' ||
+    pathname === '/carrier/fleet' ||
+    pathname === '/carrier/drivers' ||
+    pathname === '/market' ||
+    pathname === '/assignments'
+  ) {
     return role === AppRole.TRANSPORT_COMPANY;
   }
   if (pathname === '/sender/onboarding' || pathname === '/jobs') {

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { IdentitySummary } from '@/components/identity-summary';
 import { DashboardPage } from '@/pages/dashboard-page';
@@ -53,6 +53,14 @@ function RoleHomePage() {
     role === AppRole.TRANSPORT_COMPANY ||
     role === AppRole.DRIVER;
 
+  if (
+    isOps &&
+    me.data?.kind === 'admin' &&
+    me.data.opsEligible === false
+  ) {
+    return <Navigate to="/partner/onboarding" replace />;
+  }
+
   return (
     <div>
       <div className="flex flex-wrap items-center gap-3">
@@ -83,6 +91,22 @@ function RoleHomePage() {
         {t('home.shortcuts')}
       </h2>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        {role === AdminRole.LOCAL_BDE ||
+        role === AdminRole.STATE_MASTER ||
+        role === AdminRole.SUPER_ADMIN ? (
+          <HomeLink
+            to="/ops/growth"
+            title={t('home.growthTitle')}
+            hint={t('home.growthHint')}
+          />
+        ) : null}
+        {role === AdminRole.LOCAL_BDE ? (
+          <HomeLink
+            to="/ops/growth/invite"
+            title={t('home.inviteTitle')}
+            hint={t('home.inviteHint')}
+          />
+        ) : null}
         {isOps ? (
           <HomeLink
             to="/compliance"

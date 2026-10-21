@@ -1,10 +1,11 @@
+import { useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { BrandLogo } from '@/components/brand-logo';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { Button, RoleBadge, useConfirm } from '@/components/ui';
-import { logout } from '@/lib/api';
+import { getIdentityMe, logout } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { isCabTheme, prefersCabShell, roleThemeFromRole } from '@/lib/role-theme';
 import { AdminRole, AppRole, isAdminRole } from '@/shared/types';
@@ -22,6 +23,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const { t } = useTranslation('common');
   const role = useAuthStore((s) => s.role);
   const isSuper = role === AdminRole.SUPER_ADMIN;
+  const isPartnerRole = role === AdminRole.STATE_MASTER || role === AdminRole.LOCAL_BDE;
   const isOpsAdmin =
     role === AdminRole.SUPER_ADMIN ||
     role === AdminRole.STATE_MASTER ||
@@ -30,6 +32,19 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
     role === AppRole.SENDER ||
     role === AppRole.TRANSPORT_COMPANY ||
     role === AppRole.DRIVER;
+
+  // Partner onboarding is only for pre-approval KYB. ACTIVE partners are redirected
+  // home from that route — hide the dead nav item once opsEligible.
+  const identityQuery = useQuery({
+    queryKey: ['identity', 'me'],
+    queryFn: () => getIdentityMe(),
+    enabled: isPartnerRole,
+    staleTime: 30_000,
+  });
+  const showPartnerOnboarding =
+    isPartnerRole &&
+    identityQuery.data?.kind === 'admin' &&
+    identityQuery.data.opsEligible === false;
 
   return (
     <nav className="flex flex-col" aria-label={t('nav.main')}>
@@ -57,6 +72,16 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
         </NavLink>
       ) : null}
       {role === AppRole.TRANSPORT_COMPANY ? (
+        <NavLink to="/carrier/fleet" className={navItemClass} onClick={onNavigate}>
+          {t('nav.fleet')}
+        </NavLink>
+      ) : null}
+      {role === AppRole.TRANSPORT_COMPANY ? (
+        <NavLink to="/carrier/drivers" className={navItemClass} onClick={onNavigate}>
+          {t('nav.drivers')}
+        </NavLink>
+      ) : null}
+      {role === AppRole.TRANSPORT_COMPANY ? (
         <NavLink to="/market" className={navItemClass} onClick={onNavigate}>
           {t('nav.jobBoard')}
         </NavLink>
@@ -64,6 +89,11 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
       {role === AppRole.TRANSPORT_COMPANY ? (
         <NavLink to="/assignments" className={navItemClass} onClick={onNavigate}>
           {t('nav.assignments')}
+        </NavLink>
+      ) : null}
+      {role === AppRole.TRANSPORT_COMPANY ? (
+        <NavLink to="/carrier/exceptions" className={navItemClass} onClick={onNavigate}>
+          {t('nav.exceptions')}
         </NavLink>
       ) : null}
       {role === AppRole.DRIVER ? (
@@ -81,6 +111,9 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           <NavLink to="/leads" className={navItemClass} onClick={onNavigate}>
             {t('nav.leads')}
           </NavLink>
+          <NavLink to="/ops/partners" className={navItemClass} onClick={onNavigate}>
+            {t('nav.opsPartners')}
+          </NavLink>
           <NavLink to="/companies" className={navItemClass} onClick={onNavigate}>
             {t('nav.companies')}
           </NavLink>
@@ -89,9 +122,36 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           </NavLink>
         </>
       ) : null}
+      {showPartnerOnboarding ? (
+        <NavLink to="/partner/onboarding" className={navItemClass} onClick={onNavigate}>
+          {t('nav.partnerOnboarding')}
+        </NavLink>
+      ) : null}
+      {role === AdminRole.LOCAL_BDE ||
+      role === AdminRole.STATE_MASTER ||
+      role === AdminRole.SUPER_ADMIN ? (
+        <NavLink to="/ops/growth" className={navItemClass} onClick={onNavigate}>
+          {t('nav.growth')}
+        </NavLink>
+      ) : null}
+      {role === AdminRole.LOCAL_BDE ? (
+        <>
+          <NavLink to="/ops/my-senders" className={navItemClass} onClick={onNavigate}>
+            {t('nav.mySenders')}
+          </NavLink>
+          <NavLink to="/ops/my-carriers" className={navItemClass} onClick={onNavigate}>
+            {t('nav.myCarriers')}
+          </NavLink>
+        </>
+      ) : null}
       {isOpsAdmin ? (
         <NavLink to="/compliance" className={navItemClass} onClick={onNavigate}>
           {t('nav.compliance')}
+        </NavLink>
+      ) : null}
+      {role === AdminRole.SUPER_ADMIN || role === AdminRole.STATE_MASTER ? (
+        <NavLink to="/ops/exceptions" className={navItemClass} onClick={onNavigate}>
+          {t('nav.opsExceptions')}
         </NavLink>
       ) : null}
       {isMarketplace ? (

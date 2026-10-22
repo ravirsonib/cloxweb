@@ -255,7 +255,13 @@ export function CarrierOnboardingPage() {
 
 type CarrierProfileForm = { legalName: string; abn: string };
 
-function ProfileStep({ data, onSaved }: { data: CarrierOnboarding; onSaved: () => Promise<void> }) {
+function ProfileStep({
+  data,
+  onSaved,
+}: {
+  data: CarrierOnboarding;
+  onSaved: () => Promise<CarrierOnboarding | void>;
+}) {
   const { t } = useTranslation();
   const schema = z.object({
     legalName: z.string().trim().min(1, t('validation.legalNameRequired')),
@@ -309,7 +315,13 @@ function ProfileStep({ data, onSaved }: { data: CarrierOnboarding; onSaved: () =
   );
 }
 
-function DocumentsStep({ companyId, onSubmitted }: { companyId: string; onSubmitted: () => Promise<void> }) {
+function DocumentsStep({
+  companyId,
+  onSubmitted,
+}: {
+  companyId: string;
+  onSubmitted: () => Promise<CarrierOnboarding | void>;
+}) {
   const { t } = useTranslation();
   const [plId, setPlId] = useState<string | null>(null);
   const [cargoId, setCargoId] = useState<string | null>(null);
@@ -397,7 +409,13 @@ function DocumentsStep({ companyId, onSubmitted }: { companyId: string; onSubmit
   );
 }
 
-function ConnectStep({ mock, onDone }: { mock: boolean; onDone: () => Promise<void> }) {
+function ConnectStep({
+  mock,
+  onDone,
+}: {
+  mock: boolean;
+  onDone: () => Promise<CarrierOnboarding | void>;
+}) {
   const { t } = useTranslation();
   const [info, setInfo] = useState<string | null>(null);
   const setup = useMutation({
@@ -447,7 +465,13 @@ type VehicleForm = {
   gvmKg: number;
 };
 
-function VehiclesStep({ data, onSaved }: { data: CarrierOnboarding; onSaved: () => Promise<void> }) {
+function VehiclesStep({
+  data,
+  onSaved,
+}: {
+  data: CarrierOnboarding;
+  onSaved: () => Promise<CarrierOnboarding | void>;
+}) {
   const { t } = useTranslation();
   const [rwcMsg, setRwcMsg] = useState<string | null>(null);
   const [rwcFile, setRwcFile] = useState<File | null>(null);
@@ -705,7 +729,13 @@ function VehiclesStep({ data, onSaved }: { data: CarrierOnboarding; onSaved: () 
 
 type DriverInviteForm = { name: string; email: string };
 
-function DriversStep({ data, onSaved }: { data: CarrierOnboarding; onSaved: () => Promise<void> }) {
+function DriversStep({
+  data,
+  onSaved,
+}: {
+  data: CarrierOnboarding;
+  onSaved: () => Promise<CarrierOnboarding | void>;
+}) {
   const { t } = useTranslation();
   const [lastInvite, setLastInvite] = useState<{
     inviteUrl: string;
@@ -1021,7 +1051,7 @@ function SubmitStep({
   onSubmitted,
 }: {
   data: CarrierOnboarding;
-  onSubmitted: () => Promise<void>;
+  onSubmitted: () => Promise<CarrierOnboarding | void>;
 }) {
   const { t } = useTranslation();
   const confirm = useConfirm();

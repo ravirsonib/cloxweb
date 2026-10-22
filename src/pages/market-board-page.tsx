@@ -194,6 +194,12 @@ export function MarketBoardPage() {
             onClick={() => setJobId(j.id)}
           >
             <p className="font-semibold text-clox-ink">{j.title ?? j.id.slice(0, 8)}</p>
+            <p className="mt-0.5 font-mono text-[11px] text-clox-faint">
+              {j.id.slice(0, 8)}
+              {j.publishedAt
+                ? ` · ${new Date(j.publishedAt).toLocaleString()}`
+                : ''}
+            </p>
             <p className="mt-1 font-mono text-xs text-clox-mute">
               {j.stopsSummary} · min {j.minVehicleClass}
               {j.requiresDg ? ` ${t('market.dgSuffix')}` : ''}

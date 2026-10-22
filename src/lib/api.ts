@@ -32,6 +32,7 @@ export {
   listComplianceCases,
   getComplianceCase,
   decideCompliance,
+  listDocuments,
   createUploadIntent,
   uploadDocumentContent,
   openDocumentContent,
@@ -40,6 +41,7 @@ export {
   type ComplianceCaseListItem,
   type ComplianceCaseDetail,
   type ComplianceCaseDocument,
+  type ComplianceDocumentListItem,
 } from '@/lib/api/compliance';
 export {
   registerSender,
@@ -80,6 +82,15 @@ export {
   type AssignmentReassignInput,
   type AssignmentReassignResult,
 } from '@/lib/api/carrier';
+export {
+  getCarrierCompanyProfile,
+  updateCarrierCompanyProfileSelf,
+  requestCarrierCompanyProfileChange,
+  getSenderCompanyProfile,
+  updateSenderCompanyProfileSelf,
+  requestSenderCompanyProfileChange,
+  type CompanyProfileResponse,
+} from '@/lib/api/company-profile';
 export {
   peekDriverInvite,
   acceptDriverInvite,
@@ -168,6 +179,7 @@ export {
   tripPodSignature,
   tripPodPhoto,
   tripPodFinalize,
+  fetchTripPodArtifactBlob,
   getSenderTrack,
   getTripPod,
   type TripSummary,

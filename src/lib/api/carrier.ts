@@ -33,6 +33,10 @@ export type CarrierOnboarding = {
     tareKg: number | null;
     gvmKg: number | null;
     gcmKg: number | null;
+    /** True when an RWC is uploaded for this vehicleId. */
+    hasRwc?: boolean;
+    /** Latest RWC document id for this vehicle (for View). */
+    rwcDocumentId?: string | null;
   }>;
   drivers: Array<{
     id: string;
@@ -58,7 +62,12 @@ export type CarrierOnboarding = {
     netPayoutHint: string;
   };
   stripeMock: boolean;
-  uploadedDocs?: Array<{ id: string; docType: string; status: string }>;
+  uploadedDocs?: Array<{
+    id: string;
+    docType: string;
+    status: string;
+    vehicleId?: string | null;
+  }>;
 };
 
 export function registerCarrier(payload: {
@@ -104,6 +113,16 @@ export type FleetRwcCompliance = {
 export type CarrierVehicleListItem = {
   id: string;
   status: string;
+  /** Live trip activity when assigned to an open trip (ON_BREAK, IN_TRANSIT, …). */
+  activityStatus?: string | null;
+  currentTrip?: {
+    id: string;
+    status: string;
+    onBreak: boolean;
+    breakStartedAt: string | null;
+    jobId: string;
+    jobTitle: string | null;
+  } | null;
   label: string | null;
   registration: string | null;
   vehicleClass: string | null;
@@ -123,6 +142,16 @@ export type CarrierVehicleListItem = {
 export type CarrierDriverListItem = {
   id: string;
   status: string;
+  /** Live trip activity when on an active assignment (ON_BREAK, IN_TRANSIT, …). */
+  activityStatus?: string | null;
+  currentTrip?: {
+    id: string;
+    status: string;
+    onBreak: boolean;
+    breakStartedAt: string | null;
+    jobId: string;
+    jobTitle: string | null;
+  } | null;
   licenceNo: string | null;
   licenceClass: string | null;
   licenceExpiry: string | null;

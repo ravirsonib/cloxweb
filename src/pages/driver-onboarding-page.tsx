@@ -87,7 +87,11 @@ export function DriverOnboardingPage() {
           <ul className="text-sm text-clox-mute">
             <li>
               {t('driverOnboarding.licenceLine', {
-                licenceClass: data.driver.licenceClass,
+                licenceClass: data.driver.licenceClass
+                  ? t(`driverOnboarding.licenceClasses.${data.driver.licenceClass}`, {
+                      defaultValue: data.driver.licenceClass,
+                    })
+                  : t('dash'),
                 licenceNo: data.driver.licenceNo,
                 expiry: data.driver.licenceExpiry?.slice(0, 10),
               })}
@@ -188,7 +192,7 @@ function LicenceStep({ onSaved }: { onSaved: () => Promise<void> }) {
       >
         {LICENCE_CLASSES.map((c) => (
           <option key={c} value={c}>
-            {c}
+            {t(`driverOnboarding.licenceClasses.${c}`)}
           </option>
         ))}
       </Select>

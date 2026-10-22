@@ -1,15 +1,17 @@
 import { useTranslation } from 'react-i18next';
+import { CloxLoader } from '@/components/clox-loader';
 
 export function LoadingBlock({ label }: { label?: string }) {
   const { t } = useTranslation('common');
+  const text = label ?? t('loading');
   return (
     <div
       className="clox-panel flex items-center gap-3 px-4 py-6 text-sm text-clox-mute"
       role="status"
       aria-live="polite"
     >
-      <span className="h-4 w-4 animate-spin rounded-full border-2 border-clox-orange border-r-transparent" />
-      {label ?? t('loading')}
+      <CloxLoader size={36} label={text} />
+      {text}
     </div>
   );
 }

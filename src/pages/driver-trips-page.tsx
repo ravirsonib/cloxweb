@@ -5,6 +5,7 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import {
   confirmDocument,
   createUploadIntent,
+  fetchTripPodArtifactBlob,
   getDriverTrip,
   getErrorDetail,
   getIdentityMe,
@@ -34,6 +35,8 @@ import {
   useConfirm,
 } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
+import { cn } from '@/lib/cn';
+import { fileToCompressedJpegDataUrl } from '@/lib/image-data-url';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -122,6 +125,10 @@ export function DriverTripDetailPage() {
   const [signerName, setSignerName] = useState('');
   const [attestPresent, setAttestPresent] = useState(false);
   const [podStopId, setPodStopId] = useState<string | null>(null);
+  const [localSignaturePreview, setLocalSignaturePreview] = useState<string | null>(null);
+  const [localPhotoPreviews, setLocalPhotoPreviews] = useState<string[]>([]);
+  const [remoteSignatureUrl, setRemoteSignatureUrl] = useState<string | null>(null);
+  const [remotePhotoUrls, setRemotePhotoUrls] = useState<string[]>([]);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
 
@@ -136,6 +143,76 @@ export function DriverTripDetailPage() {
     queryFn: () => getIdentityMe(),
     enabled: role === AppRole.DRIVER && showReport,
   });
+
+  const previewStopId =
+    podStopId ||
+    tripQuery.data?.stopsProgress?.find((p) => p.podStatus !== 'FINALIZED')?.jobStopId ||
+    tripQuery.data?.stopsProgress?.[0]?.jobStopId ||
+    tripQuery.data?.job?.stops?.find((s) => String(s.stopType).toUpperCase() === 'DROPOFF')?.id ||
+    null;
+  const previewStopProgress = previewStopId
+    ? tripQuery.data?.stopsProgress?.find((p) => p.jobStopId === previewStopId) ?? null
+    : null;
+  const previewHasSignature = Boolean(
+    previewStopProgress?.hasSignature || previewStopProgress?.signedAt,
+  );
+  const previewPhotoCount = previewStopProgress?.goodsPhotoCount ?? 0;
+
+  useEffect(() => {
+    setLocalSignaturePreview(null);
+    setLocalPhotoPreviews([]);
+  }, [previewStopId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const objectUrls: string[] = [];
+
+    async function loadPreviews() {
+      if (!tripId || !previewStopId) {
+        setRemoteSignatureUrl(null);
+        setRemotePhotoUrls([]);
+        return;
+      }
+
+      // Prefer local optimistic previews while remote blobs load.
+      setRemoteSignatureUrl(null);
+      setRemotePhotoUrls([]);
+
+      if (previewHasSignature) {
+        try {
+          const blob = await fetchTripPodArtifactBlob(tripId, previewStopId, 'signature');
+          if (cancelled) return;
+          const url = URL.createObjectURL(blob);
+          objectUrls.push(url);
+          setRemoteSignatureUrl(url);
+        } catch {
+          // Keep local signature preview if remote fetch fails.
+        }
+      }
+
+      if (previewPhotoCount < 1) return;
+
+      const urls: string[] = [];
+      for (let i = 0; i < previewPhotoCount; i += 1) {
+        try {
+          const blob = await fetchTripPodArtifactBlob(tripId, previewStopId, 'photo', i);
+          if (cancelled) return;
+          const url = URL.createObjectURL(blob);
+          objectUrls.push(url);
+          urls.push(url);
+        } catch {
+          // Skip missing individual photos; keep ones that loaded.
+        }
+      }
+      if (!cancelled && urls.length > 0) setRemotePhotoUrls(urls);
+    }
+
+    void loadPreviews();
+    return () => {
+      cancelled = true;
+      for (const url of objectUrls) URL.revokeObjectURL(url);
+    };
+  }, [tripId, previewStopId, previewHasSignature, previewPhotoCount]);
 
   async function refresh() {
     await qc.invalidateQueries({ queryKey: ['trips', tripId] });
@@ -245,7 +322,9 @@ export function DriverTripDetailPage() {
       const stops = tripQuery.data?.job?.stops ?? [];
       const progress = tripQuery.data?.stopsProgress ?? [];
       const incomplete = stops.find((s) => {
-        const p = progress.find((sp) => sp.stop?.sequence === s.sequence);
+        const p = progress.find(
+          (sp) => sp.jobStopId === s.id || sp.stop?.sequence === s.sequence,
+        );
         return !p?.arrivalRecorded || !p?.enteredAt;
       });
       const target =
@@ -254,10 +333,30 @@ export function DriverTripDetailPage() {
         stops[0];
       const lat = target?.lat ?? -37.82;
       const lng = target?.lng ?? 144.97;
-      return tripLocation(tripId, lat + 0.0001, lng + 0.0001);
+      // For DROPOFF not yet notified: stay ~500m outside geofence so
+      // "Notify approaching" stays available (product: before arrival).
+      const isDropoff = String(target?.stopType ?? '').toUpperCase() === 'DROPOFF';
+      const dropProgress = target?.id
+        ? progress.find((sp) => sp.jobStopId === target.id)
+        : undefined;
+      const keepOutsideForNotify =
+        isDropoff && !dropProgress?.approachingNotifiedAt && !dropProgress?.enteredAt;
+      const offset = keepOutsideForNotify ? 0.006 : 0.0001; // ~600m vs ~10m
+      return tripLocation(tripId, lat + offset, lng + offset);
     },
     onSuccess: async () => {
-      setMsg(t('trips.msgLocationPingSent'));
+      const progress = tripQuery.data?.stopsProgress ?? [];
+      const dropNotified = progress.some(
+        (p) =>
+          String(p.stop?.stopType ?? '').toUpperCase() === 'DROPOFF' &&
+          Boolean(p.approachingNotifiedAt) &&
+          !p.enteredAt,
+      );
+      setMsg(
+        dropNotified
+          ? t('trips.msgLocationPingArriving')
+          : t('trips.msgLocationPingSent'),
+      );
       await refresh();
     },
     onError: (e) => setMsg(getErrorDetail(e)),
@@ -279,8 +378,9 @@ export function DriverTripDetailPage() {
       signatureDataUrl: string;
       receiverPresentAttested: boolean;
     }) => tripPodSignature(tripId, payload),
-    onSuccess: async () => {
-      setMsg(t('trips.podCaptureSignature'));
+    onSuccess: async (_data, payload) => {
+      setLocalSignaturePreview(payload.signatureDataUrl);
+      setMsg(t('trips.podSignatureSaved'));
       await refresh();
     },
     onError: (e) => setMsg(getErrorDetail(e)),
@@ -289,7 +389,9 @@ export function DriverTripDetailPage() {
   const podPhoto = useMutation({
     mutationFn: (payload: { jobStopId: string; photoDataUrl: string }) =>
       tripPodPhoto(tripId, payload),
-    onSuccess: async () => {
+    onSuccess: async (_data, payload) => {
+      setLocalPhotoPreviews((prev) => [...prev, payload.photoDataUrl]);
+      setMsg(t('trips.podPhotoUploaded'));
       await refresh();
     },
     onError: (e) => setMsg(getErrorDetail(e)),
@@ -326,25 +428,50 @@ export function DriverTripDetailPage() {
   const declared =
     tripData.declaredMassKg ?? tripData.job?.chargeableWeightKg ?? tripData.job?.deadWeightKg ?? 0;
   const startLocked = !tripData.gates.canStart;
-  const dropoffStops = (tripData.job?.stops ?? []).filter((s) => s.stopType === 'DROPOFF');
+  const dropoffStops = (tripData.job?.stops ?? []).filter(
+    (s) => String(s.stopType).toUpperCase() === 'DROPOFF',
+  );
   const progressByStop = new Map(
     (tripData.stopsProgress ?? []).map((p) => [p.jobStopId, p] as const),
   );
   const dropoffProgress = (tripData.stopsProgress ?? []).filter(
-    (p) => p.stop?.stopType === 'DROPOFF' || dropoffStops.some((s) => s.id === p.jobStopId),
+    (p) =>
+      String(p.stop?.stopType ?? '').toUpperCase() === 'DROPOFF' ||
+      dropoffStops.some((s) => s.id === p.jobStopId),
   );
+  /** Match API: pick next dropoff that is not yet notified and not yet arrived. */
   const eligibleNotifyStop = dropoffStops.find((s) => {
-    if (!s.id) return false;
-    const p = progressByStop.get(s.id);
+    const p = s.id
+      ? progressByStop.get(s.id)
+      : dropoffProgress.find((sp) => sp.stop?.sequence === s.sequence);
     if (p?.approachingNotifiedAt) return false;
     if (p?.enteredAt || p?.exitedAt) return false;
     return true;
   });
-  const canNotifyApproaching =
-    Boolean(tripData.startedAt) &&
-    tripData.status !== 'COMPLETED' &&
-    tripData.status !== 'CANCELLED' &&
-    Boolean(eligibleNotifyStop);
+  const notifyDisabledReason = !tripData.startedAt
+    ? 'not_started'
+    : tripData.status === 'COMPLETED' || tripData.status === 'CANCELLED'
+      ? 'finished'
+      : dropoffStops.length === 0
+        ? 'no_dropoff'
+        : dropoffStops.every((s) => {
+              const p = s.id
+                ? progressByStop.get(s.id)
+                : dropoffProgress.find((sp) => sp.stop?.sequence === s.sequence);
+              return Boolean(p?.approachingNotifiedAt);
+            })
+          ? 'already_sent'
+          : dropoffStops.every((s) => {
+                const p = s.id
+                  ? progressByStop.get(s.id)
+                  : dropoffProgress.find((sp) => sp.stop?.sequence === s.sequence);
+                return Boolean(p?.enteredAt || p?.exitedAt);
+              })
+            ? 'already_at_drop'
+            : eligibleNotifyStop
+              ? null
+              : 'unavailable';
+  const canNotifyApproaching = notifyDisabledReason === null;
 
   const showPodCapture =
     Boolean(tripData.startedAt) &&
@@ -373,10 +500,23 @@ export function DriverTripDetailPage() {
   const activePodStopId = activePodStopIdResolved;
   const activePodStatus = activePodStop?.podStatus ?? 'PENDING';
   const activePhotoCount = activePodStop?.goodsPhotoCount ?? 0;
+  const hasPendingSurcharges =
+    Boolean(tripData.gates.pendingSurcharges) ||
+    (tripData.surcharges ?? []).some((s) => s.status === 'PENDING_PAYMENT');
+  const podBlockedBySurcharge = hasPendingSurcharges;
   const canFinalizePod =
     Boolean(activePodStopId) &&
+    !podBlockedBySurcharge &&
     (activePodStatus === 'SIGNED' || Boolean(activePodStop?.signedAt)) &&
     activePhotoCount >= 1;
+  /** After POD finalize (or trip end), lock break / location / notify / report. */
+  const tripActionsLocked =
+    activePodStatus === 'FINALIZED' ||
+    tripData.status === 'COMPLETED' ||
+    tripData.status === 'CANCELLED';
+  const signaturePreviewUrl = remoteSignatureUrl ?? localSignaturePreview;
+  const photoPreviewUrls =
+    remotePhotoUrls.length > 0 ? remotePhotoUrls : localPhotoPreviews;
 
   return (
     <div>
@@ -584,7 +724,7 @@ export function DriverTripDetailPage() {
             type="button"
             variant="secondary"
             size="block"
-            disabled={brk.isPending}
+            disabled={tripActionsLocked || brk.isPending}
             onClick={() => {
               void (async () => {
                 const ok = await confirm({
@@ -602,7 +742,7 @@ export function DriverTripDetailPage() {
             type="button"
             variant="cta"
             size="block"
-            disabled={loc.isPending}
+            disabled={tripActionsLocked || loc.isPending}
             onClick={() => loc.mutate()}
           >
             {t('trips.sendMockLocation')}
@@ -611,16 +751,35 @@ export function DriverTripDetailPage() {
             type="button"
             variant="secondary"
             size="block"
-            disabled={!canNotifyApproaching || notifyApproaching.isPending}
-            onClick={() =>
-              notifyApproaching.mutate(eligibleNotifyStop?.id)
+            disabled={
+              tripActionsLocked || !canNotifyApproaching || notifyApproaching.isPending
             }
+            onClick={() => notifyApproaching.mutate(eligibleNotifyStop?.id)}
           >
             {canNotifyApproaching
               ? t('trips.notifyApproaching')
-              : t('trips.notifyApproachingDone')}
+              : notifyDisabledReason === 'already_sent'
+                ? t('trips.notifyApproachingDone')
+                : t('trips.notifyApproaching')}
           </Button>
-          <p className="text-xs text-clox-mute">{t('trips.notifyApproachingHint')}</p>
+          <p className="text-xs text-clox-mute">
+            {canNotifyApproaching
+              ? t('trips.notifyApproachingHint')
+              : notifyDisabledReason === 'already_sent'
+                ? t('trips.notifyApproachingDoneHint')
+                : notifyDisabledReason === 'already_at_drop'
+                  ? t('trips.notifyApproachingAtDropHint')
+                  : notifyDisabledReason === 'no_dropoff'
+                    ? t('trips.notifyApproachingNoDropHint')
+                    : t('trips.notifyApproachingHint')}
+          </p>
+          {notifyDisabledReason === 'already_sent' &&
+          tripData.status !== 'AT_DROPOFF' &&
+          tripData.status !== 'COMPLETED' ? (
+            <Notice tone="info" title={t('trips.notifyApproachingNextTitle')}>
+              {t('trips.notifyApproachingNextBody')}
+            </Notice>
+          ) : null}
 
           {showPodCapture && activePodStopId ? (
             <div className="clox-card space-y-3 p-4">
@@ -638,6 +797,12 @@ export function DriverTripDetailPage() {
                     : ''}
               </p>
 
+              {podBlockedBySurcharge ? (
+                <Notice tone="warn" title={t('trips.podBlockedPendingTitle')}>
+                  {t('trips.podBlockedPendingBody')}
+                </Notice>
+              ) : null}
+
               {activePodStatus !== 'FINALIZED' ? (
                 <>
                   <Field
@@ -645,12 +810,14 @@ export function DriverTripDetailPage() {
                     placeholder={t('trips.podSignerPlaceholder')}
                     value={signerName}
                     onChange={(e) => setSignerName(e.target.value)}
+                    disabled={podBlockedBySurcharge}
                   />
                   <label className="flex items-start gap-2 text-sm text-clox-ink">
                     <input
                       type="checkbox"
                       className="mt-1"
                       checked={attestPresent}
+                      disabled={podBlockedBySurcharge}
                       onChange={(e) => setAttestPresent(e.target.checked)}
                     />
                     <span>{t('trips.podAttestPresent')}</span>
@@ -660,8 +827,12 @@ export function DriverTripDetailPage() {
                     ref={canvasRef}
                     width={320}
                     height={140}
-                    className="w-full rounded-clox-sm border border-clox-border bg-white touch-none"
+                    className={cn(
+                      'w-full rounded-clox-sm border border-clox-border bg-white touch-none',
+                      podBlockedBySurcharge ? 'pointer-events-none opacity-50' : '',
+                    )}
                     onPointerDown={(e) => {
+                      if (podBlockedBySurcharge) return;
                       drawingRef.current = true;
                       const canvas = canvasRef.current;
                       const ctx = canvas?.getContext('2d');
@@ -697,6 +868,7 @@ export function DriverTripDetailPage() {
                       type="button"
                       variant="ghost"
                       size="sm"
+                      disabled={podBlockedBySurcharge}
                       onClick={() => {
                         const canvas = canvasRef.current;
                         const ctx = canvas?.getContext('2d');
@@ -712,6 +884,7 @@ export function DriverTripDetailPage() {
                       variant="secondary"
                       size="sm"
                       disabled={
+                        podBlockedBySurcharge ||
                         podSign.isPending ||
                         !attestPresent ||
                         signerName.trim().length < 2 ||
@@ -730,31 +903,48 @@ export function DriverTripDetailPage() {
                     >
                       {t('trips.podCaptureSignature')}
                     </Button>
-                    <label className="clox-btn clox-btn-secondary cursor-pointer px-3 py-1.5 text-[12.5px]">
-                      {t('trips.podAddPhoto')}
+                    <label
+                      className={cn(
+                        'clox-btn clox-btn-secondary cursor-pointer px-3 py-1.5 text-[12.5px]',
+                        podBlockedBySurcharge || podPhoto.isPending
+                          ? 'pointer-events-none opacity-60'
+                          : '',
+                      )}
+                    >
+                      {podPhoto.isPending ? t('trips.podPhotoUploading') : t('trips.podAddPhoto')}
                       <input
                         type="file"
                         accept="image/*"
                         capture="environment"
                         className="sr-only"
+                        disabled={
+                          podBlockedBySurcharge || podPhoto.isPending || !activePodStopId
+                        }
                         onChange={(e) => {
-                          const file = e.target.files?.[0];
+                          const input = e.currentTarget;
+                          const file = input.files?.[0];
+                          input.value = '';
                           if (!file || !activePodStopId) return;
                           setPodStopId(activePodStopId);
-                          const reader = new FileReader();
-                          reader.onload = () => {
-                            const dataUrl = String(reader.result ?? '');
-                            if (dataUrl) {
+                          void (async () => {
+                            try {
+                              const photoDataUrl = await fileToCompressedJpegDataUrl(file);
                               podPhoto.mutate({
                                 jobStopId: activePodStopId,
-                                photoDataUrl: dataUrl,
+                                photoDataUrl,
                               });
+                            } catch (err) {
+                              setMsg(
+                                err instanceof Error
+                                  ? err.message
+                                  : t('trips.podPhotoCompressFailed'),
+                              );
                             }
-                          };
-                          reader.readAsDataURL(file);
+                          })();
                         }}
                       />
                     </label>
+                    <p className="basis-full text-xs text-clox-mute">{t('trips.podPhotoHint')}</p>
                     <Button
                       type="button"
                       variant="cta"
@@ -772,6 +962,38 @@ export function DriverTripDetailPage() {
               ) : (
                 <Notice tone="success">{t('trips.podFinalized')}</Notice>
               )}
+
+              {signaturePreviewUrl ? (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-clox-ink">
+                    {t('trips.podSignaturePreview')}
+                    {activePodStop?.signerName ? ` — ${activePodStop.signerName}` : ''}
+                  </p>
+                  <img
+                    src={signaturePreviewUrl}
+                    alt={t('trips.podSignaturePreview')}
+                    className="max-h-36 w-full rounded-clox-sm border border-clox-border bg-white object-contain"
+                  />
+                </div>
+              ) : null}
+
+              {photoPreviewUrls.length > 0 ? (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-clox-ink">
+                    {t('trips.podPhotosPreview')}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {photoPreviewUrls.map((url, index) => (
+                      <img
+                        key={`${url}-${index}`}
+                        src={url}
+                        alt={t('trips.podPhotoPreviewAlt', { index: index + 1 })}
+                        className="aspect-square w-full rounded-clox-sm border border-clox-border object-cover"
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -800,6 +1022,7 @@ export function DriverTripDetailPage() {
               type="button"
               variant="destructive"
               className="mt-3"
+              disabled={tripActionsLocked}
               onClick={() => setShowReport(true)}
             >
               {t('trips.reportIssue')}
@@ -885,7 +1108,7 @@ export function DriverTripDetailPage() {
                 <Button
                   type="button"
                   variant="secondary"
-                  disabled={report.isPending || photoUploading}
+                  disabled={tripActionsLocked || report.isPending || photoUploading}
                   onClick={() => setShowReport(false)}
                 >
                   {t('cancel')}
@@ -894,6 +1117,7 @@ export function DriverTripDetailPage() {
                   type="submit"
                   variant="destructive"
                   disabled={
+                    tripActionsLocked ||
                     report.isPending ||
                     photoUploading ||
                     reportNote.trim().length < 3 ||

@@ -13,6 +13,7 @@ import {
   getCarrierOnboarding,
   getErrorDetail,
   inviteCarrierDriver,
+  openDocumentContent,
   resendCarrierDriverInvite,
   setupCarrierConnect,
   submitCarrierVerification,
@@ -23,7 +24,12 @@ import {
 } from '@/lib/api';
 import { Button, Field, Notice, Select, StepChips, useConfirm } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
-import { abnSchema, VEHICLE_CLASSES } from '@/lib/validation';
+import {
+  abnSchema,
+  suggestedGvmKgForClass,
+  suggestedTareKgForClass,
+  VEHICLE_CLASSES,
+} from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -97,7 +103,11 @@ export function CarrierOnboardingPage() {
     data.company.status === 'DRAFT' || data.company.status === 'INFO_REQUESTED';
   const serverIdx = STEPS.indexOf(isCarrierStepId(data.step) ? data.step : 'profile');
   const refresh = async () => {
-    await qc.invalidateQueries({ queryKey: ['carrier', 'onboarding'] });
+    const result = await qc.fetchQuery({
+      queryKey: ['carrier', 'onboarding'],
+      queryFn: () => getCarrierOnboarding(),
+    });
+    return result;
   };
 
   return (
@@ -156,7 +166,15 @@ export function CarrierOnboardingPage() {
       {step === 'connect' && <ConnectStep mock={data.stripeMock} onDone={refresh} />}
       {step === 'vehicles' && <VehiclesStep data={data} onSaved={refresh} />}
       {step === 'drivers' && <DriversStep data={data} onSaved={refresh} />}
-      {step === 'capabilities' && <CapabilitiesStep data={data} onSaved={refresh} />}
+      {step === 'capabilities' && (
+        <CapabilitiesStep
+          data={data}
+          onSaved={async (next) => {
+            const fresh = next ?? (await refresh());
+            if (fresh.step) setViewStep(fresh.step);
+          }}
+        />
+      )}
       {step === 'submit' && <SubmitStep data={data} onSubmitted={refresh} />}
       {step === 'waiting_ops' && (
         <Notice tone="warn" className="mt-8" title={t('waitingForOps')}>
@@ -179,8 +197,20 @@ export function CarrierOnboardingPage() {
         </Notice>
       )}
       {step === 'complete' && (
-        <Notice tone="success" className="mt-8" title={t('carrierOnboarding.bidEligibleTitle')}>
-          <p>{data.goNoGo.netPayoutHint}</p>
+        <Notice
+          tone={data.goNoGo.canBid ? 'success' : 'warn'}
+          className="mt-8"
+          title={
+            data.goNoGo.canBid
+              ? t('carrierOnboarding.bidEligibleTitle')
+              : t('carrierOnboarding.opsApprovedNotBiddingTitle')
+          }
+        >
+          {data.goNoGo.canBid ? (
+            <p>{data.goNoGo.netPayoutHint}</p>
+          ) : (
+            <p>{t('carrierOnboarding.opsApprovedNotBiddingBody')}</p>
+          )}
           <ul className="mt-3 space-y-1 text-xs">
             <li>{t('carrierOnboarding.goNoGoOps', { value: String(data.goNoGo.opsApproved) })}</li>
             <li>{t('carrierOnboarding.goNoGoConnect', { value: String(data.goNoGo.connectReady) })}</li>
@@ -191,7 +221,11 @@ export function CarrierOnboardingPage() {
           <div className="mt-3 flex flex-wrap gap-2">
             <Link
               to="/carrier/fleet"
-              className="clox-btn clox-btn-secondary inline-flex items-center text-sm"
+              className={
+                data.goNoGo.canBid
+                  ? 'clox-btn clox-btn-secondary inline-flex items-center text-sm'
+                  : 'clox-btn clox-btn-cta inline-flex items-center text-sm'
+              }
             >
               {t('carrierOnboarding.manageFleetCta')}
             </Link>
@@ -201,9 +235,11 @@ export function CarrierOnboardingPage() {
             >
               {t('carrierOnboarding.manageDriversCta')}
             </Link>
-            <Link to="/market" className="clox-btn clox-btn-cta inline-flex items-center text-sm">
-              {t('nav.jobBoard')}
-            </Link>
+            {data.goNoGo.canBid ? (
+              <Link to="/market" className="clox-btn clox-btn-cta inline-flex items-center text-sm">
+                {t('nav.jobBoard')}
+              </Link>
+            ) : null}
           </div>
         </Notice>
       )}
@@ -277,13 +313,9 @@ function DocumentsStep({ companyId, onSubmitted }: { companyId: string; onSubmit
   const { t } = useTranslation();
   const [plId, setPlId] = useState<string | null>(null);
   const [cargoId, setCargoId] = useState<string | null>(null);
-  const [rwcId, setRwcId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  async function upload(
-    docType: 'PUBLIC_LIABILITY' | 'CARGO_INSURANCE' | 'RWC',
-    file: File,
-  ) {
+  async function upload(docType: 'PUBLIC_LIABILITY' | 'CARGO_INSURANCE', file: File) {
     const mime = (file.type || 'application/pdf') as
       | 'application/pdf'
       | 'image/jpeg'
@@ -315,22 +347,16 @@ function DocumentsStep({ companyId, onSubmitted }: { companyId: string; onSubmit
       setMessage(t('carrierOnboarding.cargoInsuranceUploaded'));
     },
   });
-  const uploadRwc = useMutation({
-    mutationFn: async (file: File) => upload('RWC', file),
-    onSuccess: (id) => {
-      setRwcId(id);
-      setMessage(t('carrierOnboarding.rwcUploaded'));
-    },
-  });
 
   return (
     <div className="mt-8 space-y-4">
       <h2 className="text-lg font-semibold">{t('carrierOnboarding.docsTitle')}</h2>
       <p className="text-sm text-clox-mute">
         {t('carrierOnboarding.docsRequired', {
-          docType: 'PUBLIC_LIABILITY + CARGO_INSURANCE + RWC',
+          docType: 'PUBLIC_LIABILITY + CARGO_INSURANCE',
         })}
       </p>
+      <p className="text-xs text-clox-faint">{t('carrierOnboarding.docsRwcFleetHint')}</p>
       <div>
         <p className="mb-1 text-xs text-clox-faint">{t('carrierOnboarding.publicLiability')}</p>
         <input
@@ -353,26 +379,15 @@ function DocumentsStep({ companyId, onSubmitted }: { companyId: string; onSubmit
           }}
         />
       </div>
-      <div>
-        <p className="mb-1 text-xs text-clox-faint">{t('carrierOnboarding.rwc')}</p>
-        <input
-          type="file"
-          accept=".pdf,image/jpeg,image/png,image/webp"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) uploadRwc.mutate(f);
-          }}
-        />
-      </div>
       {message ? <Notice tone="success">{message}</Notice> : null}
-      {(uploadPl.isError || uploadCargo.isError || uploadRwc.isError) && (
+      {(uploadPl.isError || uploadCargo.isError) && (
         <Notice tone="error">
-          {getErrorDetail(uploadPl.error ?? uploadCargo.error ?? uploadRwc.error)}
+          {getErrorDetail(uploadPl.error ?? uploadCargo.error)}
         </Notice>
       )}
       <Button
         variant="cta"
-        disabled={!plId || !cargoId || !rwcId}
+        disabled={!plId || !cargoId}
         onClick={() => void onSubmitted()}
       >
         {t('carrierOnboarding.continueDocsSaved')}
@@ -428,44 +443,58 @@ type VehicleForm = {
   label: string;
   registration: string;
   vehicleClass: (typeof VEHICLE_CLASSES)[number];
+  tareKg: number;
+  gvmKg: number;
 };
 
 function VehiclesStep({ data, onSaved }: { data: CarrierOnboarding; onSaved: () => Promise<void> }) {
   const { t } = useTranslation();
   const [rwcMsg, setRwcMsg] = useState<string | null>(null);
-  const schema = z.object({
-    label: z.string().trim().min(1, t('validation.vehicleLabelRequired')),
-    registration: z.string().trim().min(1, t('validation.registrationRequired')),
-    vehicleClass: z.enum(VEHICLE_CLASSES, {
-      message: t('validation.vehicleClassRequired'),
-    }),
-  });
+  const [rwcFile, setRwcFile] = useState<File | null>(null);
+  const [rwcFormError, setRwcFormError] = useState<string | null>(null);
+  const schema = z
+    .object({
+      label: z.string().trim().min(1, t('validation.vehicleLabelRequired')),
+      registration: z.string().trim().min(1, t('validation.registrationRequired')),
+      vehicleClass: z.enum(VEHICLE_CLASSES, {
+        message: t('validation.vehicleClassRequired'),
+      }),
+      tareKg: z
+        .number({ message: t('validation.tareKgRequired') })
+        .int()
+        .positive(t('validation.tareKgPositive'))
+        .max(100_000),
+      gvmKg: z
+        .number({ message: t('validation.gvmKgRequired') })
+        .int()
+        .positive(t('validation.gvmKgPositive'))
+        .max(200_000),
+    })
+    .superRefine((values, ctx) => {
+      if (values.tareKg >= values.gvmKg) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['tareKg'],
+          message: t('validation.tareLessThanGvm'),
+        });
+      }
+    });
   const form = useForm<VehicleForm>({
     resolver: zodResolver(schema),
     defaultValues: {
       label: 'Primary truck',
       registration: '',
       vehicleClass: 'RIGID_1_2T',
+      tareKg: suggestedTareKgForClass('RIGID_1_2T'),
+      gvmKg: suggestedGvmKgForClass('RIGID_1_2T'),
     },
   });
-  const mutation = useMutation({
-    mutationFn: (values: VehicleForm) =>
-      addCarrierVehicle({
-        label: values.label,
-        registration: values.registration,
-        vehicleClass: values.vehicleClass,
-        tareKg: 3500,
-        gvmKg: 8000,
-      }),
-    onSuccess: async () => {
-      form.reset({
-        label: 'Primary truck',
-        registration: '',
-        vehicleClass: 'RIGID_1_2T',
-      });
-      await onSaved();
-    },
-  });
+  const watchedClass = form.watch('vehicleClass');
+  const setValue = form.setValue;
+  useEffect(() => {
+    setValue('gvmKg', suggestedGvmKgForClass(watchedClass));
+    setValue('tareKg', suggestedTareKgForClass(watchedClass));
+  }, [watchedClass, setValue]);
 
   async function uploadRwcForVehicle(vehicleId: string, file: File) {
     const mime = (file.type || 'application/pdf') as
@@ -483,32 +512,98 @@ function VehiclesStep({ data, onSaved }: { data: CarrierOnboarding; onSaved: () 
     });
     const up = await uploadDocumentContent(intent.id, file);
     await confirmDocument(intent.id, up.contentHash);
-    setRwcMsg(t('carrierOnboarding.rwcUploaded'));
-    await onSaved();
   }
+
+  const mutation = useMutation({
+    mutationFn: async (values: VehicleForm) => {
+      if (!rwcFile) {
+        throw new Error(t('fleet.rwcRequiredError'));
+      }
+      const onboarding = await addCarrierVehicle({
+        label: values.label,
+        registration: values.registration,
+        vehicleClass: values.vehicleClass,
+        tareKg: values.tareKg,
+        gvmKg: values.gvmKg,
+      });
+      const rego = values.registration.trim().toUpperCase();
+      const created =
+        onboarding.vehicles.find(
+          (v) => (v.registration ?? '').toUpperCase() === rego && !v.hasRwc,
+        ) ??
+        onboarding.vehicles.find((v) => (v.registration ?? '').toUpperCase() === rego);
+      if (!created) {
+        throw new Error(t('fleet.rwcRequiredError'));
+      }
+      await uploadRwcForVehicle(created.id, rwcFile);
+      return onboarding;
+    },
+    onSuccess: async () => {
+      form.reset({
+        label: 'Primary truck',
+        registration: '',
+        vehicleClass: 'RIGID_1_2T',
+        tareKg: suggestedTareKgForClass('RIGID_1_2T'),
+        gvmKg: suggestedGvmKgForClass('RIGID_1_2T'),
+      });
+      setRwcFile(null);
+      setRwcFormError(null);
+      setRwcMsg(t('carrierOnboarding.rwcUploaded'));
+      await onSaved();
+    },
+    onError: (error) => setRwcFormError(getErrorDetail(error)),
+  });
+
+  const activeVehicles = data.vehicles.filter((v) => v.status === 'ACTIVE');
+  const allActiveHaveRwc =
+    activeVehicles.length > 0 && activeVehicles.every((v) => Boolean(v.hasRwc));
 
   return (
     <div className="mt-8 space-y-4">
       <h2 className="text-lg font-semibold">{t('carrierOnboarding.fleetTitle')}</h2>
+      <p className="text-sm text-clox-mute">{t('carrierOnboarding.fleetRwcHint')}</p>
       {data.vehicles.length > 0 ? (
         <ul className="space-y-2 text-sm text-clox-mute">
           {data.vehicles.map((v) => (
             <li key={v.id} className="rounded-xl border border-clox-border p-3">
               <p className="font-mono text-xs">
                 {v.registration} · {v.vehicleClass} · {v.label}
+                {v.hasRwc ? ` · ${t('carrierOnboarding.rwcOnFile')}` : ''}
               </p>
-              <label className="mt-2 block text-xs text-clox-faint">
-                {t('carrierOnboarding.rwc')} (vehicle)
-                <input
-                  type="file"
-                  accept=".pdf,image/jpeg,image/png,image/webp"
-                  className="mt-1 block"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) void uploadRwcForVehicle(v.id, f);
+              {v.hasRwc && v.rwcDocumentId ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="mt-2"
+                  onClick={() => {
+                    void openDocumentContent(v.rwcDocumentId!).catch((err) =>
+                      setRwcFormError(getErrorDetail(err)),
+                    );
                   }}
-                />
-              </label>
+                >
+                  {t('fleet.rwcView')}
+                </Button>
+              ) : null}
+              {!v.hasRwc ? (
+                <label className="mt-2 block text-xs text-clox-faint">
+                  {t('carrierOnboarding.rwc')} ({t('carrierOnboarding.rwcPerVehicle')})
+                  <input
+                    type="file"
+                    accept=".pdf,image/jpeg,image/png,image/webp"
+                    className="mt-1 block"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      void uploadRwcForVehicle(v.id, f)
+                        .then(async () => {
+                          setRwcMsg(t('carrierOnboarding.rwcUploaded'));
+                          await onSaved();
+                        })
+                        .catch((err) => setRwcFormError(getErrorDetail(err)));
+                    }}
+                  />
+                </label>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -516,9 +611,19 @@ function VehiclesStep({ data, onSaved }: { data: CarrierOnboarding; onSaved: () 
       {rwcMsg ? (
         <Notice tone="success">{rwcMsg}</Notice>
       ) : null}
+      {activeVehicles.length > 0 && !allActiveHaveRwc ? (
+        <Notice tone="warn">{t('carrierOnboarding.fleetRwcRequired')}</Notice>
+      ) : null}
       <form
         className="space-y-0"
-        onSubmit={form.handleSubmit((values) => mutation.mutate(values))}
+        onSubmit={form.handleSubmit((values) => {
+          if (!rwcFile) {
+            setRwcFormError(t('fleet.rwcRequiredError'));
+            return;
+          }
+          setRwcFormError(null);
+          mutation.mutate(values);
+        })}
         noValidate
       >
         <Field
@@ -546,16 +651,48 @@ function VehiclesStep({ data, onSaved }: { data: CarrierOnboarding; onSaved: () 
             </option>
           ))}
         </Select>
-        {mutation.isError ? (
+        <Field
+          type="number"
+          label={t('fleet.gvmKgLabel')}
+          hint={t('fleet.gvmKgHint')}
+          required
+          error={form.formState.errors.gvmKg?.message}
+          {...form.register('gvmKg', { valueAsNumber: true })}
+        />
+        <Field
+          type="number"
+          label={t('fleet.tareKgLabel')}
+          hint={t('fleet.tareKgHint')}
+          required
+          error={form.formState.errors.tareKg?.message}
+          {...form.register('tareKg', { valueAsNumber: true })}
+        />
+        <div className="mb-4">
+          <p className="mb-1 text-xs font-semibold text-clox-ink">
+            {t('fleet.rwcLabel')}{' '}
+            <span className="text-[var(--status-danger)]">*</span>
+          </p>
+          <p className="mb-2 text-xs text-clox-faint">{t('fleet.rwcHint')}</p>
+          <input
+            type="file"
+            accept=".pdf,image/jpeg,image/png,image/webp"
+            onChange={(e) => {
+              setRwcFile(e.target.files?.[0] ?? null);
+              setRwcFormError(null);
+            }}
+          />
+          {rwcFile ? <p className="mt-1 text-xs text-clox-mute">{rwcFile.name}</p> : null}
+        </div>
+        {rwcFormError || mutation.isError ? (
           <Notice tone="error" className="mb-4">
-            {getErrorDetail(mutation.error)}
+            {rwcFormError ?? getErrorDetail(mutation.error)}
           </Notice>
         ) : null}
         <div className="flex flex-wrap gap-2">
           <Button type="submit" variant="cta" disabled={mutation.isPending}>
             {mutation.isPending ? t('saving') : t('carrierOnboarding.addVehicle')}
           </Button>
-          {data.vehicles.length >= 1 ? (
+          {allActiveHaveRwc ? (
             <Button type="button" variant="secondary" onClick={() => void onSaved()}>
               {t('continue')}
             </Button>
@@ -711,16 +848,55 @@ function DriversStep({ data, onSaved }: { data: CarrierOnboarding; onSaved: () =
   );
 }
 
-function CapabilitiesStep({ data, onSaved }: { data: CarrierOnboarding; onSaved: () => Promise<void> }) {
+function CapabilitiesStep({
+  data,
+  onSaved,
+}: {
+  data: CarrierOnboarding;
+  onSaved: (next?: CarrierOnboarding) => Promise<void>;
+}) {
   const { t } = useTranslation();
+  const existingDg = (data.uploadedDocs ?? []).find(
+    (d) =>
+      d.docType === 'DG_LICENCE' &&
+      !d.vehicleId &&
+      (d.status === 'UPLOADED' || d.status === 'UNDER_REVIEW' || d.status === 'APPROVED'),
+  );
   const [dg, setDg] = useState(data.company.capabilities.includes('DG'));
   const [reefer, setReefer] = useState(data.company.capabilities.includes('REEFER'));
   const [oversize, setOversize] = useState(data.company.capabilities.includes('OVERSIZE'));
   const [tailLift, setTailLift] = useState(
     data.company.capabilities.length === 0 || data.company.capabilities.includes('TAIL_LIFT'),
   );
+  const [dgDocId, setDgDocId] = useState<string | null>(existingDg?.id ?? null);
+  const [dgMsg, setDgMsg] = useState<string | null>(
+    existingDg ? t('carrierOnboarding.dgLicenceUploaded') : null,
+  );
+  const [formError, setFormError] = useState<string | null>(null);
+
+  async function uploadDgLicence(file: File) {
+    const mime = (file.type || 'application/pdf') as
+      | 'application/pdf'
+      | 'image/jpeg'
+      | 'image/png'
+      | 'image/webp';
+    const intent = await createUploadIntent({
+      companyId: data.company.id,
+      docType: 'DG_LICENCE',
+      originalFilename: file.name,
+      mimeType: mime,
+      sizeBytes: file.size,
+    });
+    const up = await uploadDocumentContent(intent.id, file);
+    await confirmDocument(intent.id, up.contentHash);
+    return intent.id;
+  }
+
   const mutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
+      if (dg && !dgDocId) {
+        throw new Error(t('carrierOnboarding.dgLicenceRequired'));
+      }
       const capabilities = [
         ...(dg ? (['DG'] as const) : []),
         ...(reefer ? (['REEFER'] as const) : []),
@@ -732,13 +908,24 @@ function CapabilitiesStep({ data, onSaved }: { data: CarrierOnboarding; onSaved:
         serviceRegionCodes: ['VIC'],
       });
     },
-    onSuccess: () => onSaved(),
+    onSuccess: async (next) => {
+      setFormError(null);
+      setDgMsg(t('carrierOnboarding.capabilitiesSaved'));
+      await onSaved(next);
+    },
+    onError: (error) => setFormError(getErrorDetail(error)),
   });
+
   return (
     <form
       className="mt-8 space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
+        if (dg && !dgDocId) {
+          setFormError(t('carrierOnboarding.dgLicenceRequired'));
+          return;
+        }
+        setFormError(null);
         mutation.mutate();
       }}
     >
@@ -752,18 +939,65 @@ function CapabilitiesStep({ data, onSaved }: { data: CarrierOnboarding; onSaved:
         {t('carrierOnboarding.capReefer')}
       </label>
       <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={dg} onChange={(e) => setDg(e.target.checked)} />
+        <input
+          type="checkbox"
+          checked={dg}
+          onChange={(e) => {
+            setDg(e.target.checked);
+            setFormError(null);
+          }}
+        />
         {t('carrierOnboarding.capDangerousGoods')}
       </label>
+      {dg ? (
+        <div className="rounded-xl border border-clox-border p-3">
+          <p className="text-xs font-semibold text-clox-ink">
+            {t('carrierOnboarding.dgLicenceLabel')}{' '}
+            <span className="text-[var(--status-danger)]">*</span>
+          </p>
+          <p className="mt-1 text-xs text-clox-faint">{t('carrierOnboarding.dgLicenceHint')}</p>
+          <input
+            type="file"
+            accept=".pdf,image/jpeg,image/png,image/webp"
+            className="mt-2 block"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              void uploadDgLicence(f)
+                .then((id) => {
+                  setDgDocId(id);
+                  setDgMsg(t('carrierOnboarding.dgLicenceUploaded'));
+                  setFormError(null);
+                })
+                .catch((err) => setFormError(getErrorDetail(err)));
+            }}
+          />
+          {dgDocId ? (
+            <Button
+              type="button"
+              variant="secondary"
+              className="mt-2"
+              onClick={() => {
+                void openDocumentContent(dgDocId).catch((err) =>
+                  setFormError(getErrorDetail(err)),
+                );
+              }}
+            >
+              {t('compliance.viewDocument')}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={oversize} onChange={(e) => setOversize(e.target.checked)} />
         {t('carrierOnboarding.capOversize')}
       </label>
       <p className="text-xs text-clox-faint">{t('carrierOnboarding.serviceRegionVic')}</p>
-      {mutation.isError ? (
-        <Notice tone="error">{getErrorDetail(mutation.error)}</Notice>
+      {dgMsg ? <Notice tone="success">{dgMsg}</Notice> : null}
+      {formError || mutation.isError ? (
+        <Notice tone="error">{formError ?? getErrorDetail(mutation.error)}</Notice>
       ) : null}
-      <Button type="submit" variant="cta" disabled={mutation.isPending}>
+      <Button type="submit" variant="cta" disabled={mutation.isPending || (dg && !dgDocId)}>
         {mutation.isPending ? t('saving') : t('saveAndContinue')}
       </Button>
     </form>
@@ -793,20 +1027,21 @@ function SubmitStep({
   const confirm = useConfirm();
   const isInfoRequested = data.company.status === 'INFO_REQUESTED';
   const existing = data.uploadedDocs ?? [];
-  const pl = pickLatestDoc(existing, 'PUBLIC_LIABILITY');
-  const cargo = pickLatestDoc(existing, 'CARGO_INSURANCE');
-  const rwc = pickLatestDoc(existing, 'RWC');
+  const pl = pickLatestDoc(
+    existing.filter((d) => !d.vehicleId),
+    'PUBLIC_LIABILITY',
+  );
+  const cargo = pickLatestDoc(
+    existing.filter((d) => !d.vehicleId),
+    'CARGO_INSURANCE',
+  );
   const [plId, setPlId] = useState<string | null>(pl?.id ?? null);
   const [cargoId, setCargoId] = useState<string | null>(cargo?.id ?? null);
-  const [rwcId, setRwcId] = useState<string | null>(rwc?.id ?? null);
   const [msg, setMsg] = useState<string | null>(
-    pl && cargo && rwc ? t('carrierOnboarding.usingPreviousUploads') : null,
+    pl && cargo ? t('carrierOnboarding.usingPreviousUploads') : null,
   );
 
-  async function upload(
-    docType: 'PUBLIC_LIABILITY' | 'CARGO_INSURANCE' | 'RWC',
-    file: File,
-  ) {
+  async function upload(docType: 'PUBLIC_LIABILITY' | 'CARGO_INSURANCE', file: File) {
     const mime = (file.type || 'application/pdf') as
       | 'application/pdf'
       | 'image/jpeg'
@@ -826,10 +1061,10 @@ function SubmitStep({
 
   const submit = useMutation({
     mutationFn: () => {
-      if (!plId || !cargoId || !rwcId) {
-        throw new Error(t('carrierOnboarding.errorUploadPlCargoRwc'));
+      if (!plId || !cargoId) {
+        throw new Error(t('carrierOnboarding.errorUploadPlCargo'));
       }
-      return submitCarrierVerification([plId, cargoId, rwcId]);
+      return submitCarrierVerification([plId, cargoId]);
     },
     onSuccess: () => onSubmitted(),
   });
@@ -846,6 +1081,7 @@ function SubmitStep({
           ? t('carrierOnboarding.resubmitHint')
           : t('carrierOnboarding.submitHint')}
       </p>
+      <p className="text-xs text-clox-faint">{t('carrierOnboarding.submitRwcFleetNote')}</p>
       <div>
         <p className="mb-1 text-xs text-clox-faint">{t('carrierOnboarding.publicLiability')}</p>
         <input
@@ -880,30 +1116,13 @@ function SubmitStep({
           }}
         />
       </div>
-      <div>
-        <p className="mb-1 text-xs text-clox-faint">{t('carrierOnboarding.rwc')}</p>
-        <input
-          type="file"
-          accept=".pdf,image/*"
-          onChange={async (e) => {
-            const f = e.target.files?.[0];
-            if (!f) return;
-            try {
-              setRwcId(await upload('RWC', f));
-              setMsg(t('carrierOnboarding.rwcUploaded'));
-            } catch (err) {
-              setMsg(getErrorDetail(err));
-            }
-          }}
-        />
-      </div>
       {msg ? <Notice tone="success">{msg}</Notice> : null}
       {submit.isError ? (
         <Notice tone="error">{getErrorDetail(submit.error)}</Notice>
       ) : null}
       <Button
         variant="cta"
-        disabled={!plId || !cargoId || !rwcId || submit.isPending}
+        disabled={!plId || !cargoId || submit.isPending}
         onClick={() => {
           void (async () => {
             const ok = await confirm({

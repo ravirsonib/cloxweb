@@ -13,6 +13,41 @@ export const VEHICLE_CLASSES = [
   'BDOUBLE',
 ] as const;
 
+export type VehicleClass = (typeof VEHICLE_CLASSES)[number];
+
+/**
+ * Indicative GVM (kg) by class for form defaults only — carrier must confirm
+ * against the vehicle’s compliance plate / registration papers.
+ */
+const SUGGESTED_GVM_KG: Record<VehicleClass, number> = {
+  UTE: 3500,
+  VAN: 4500,
+  RIGID_1_2T: 8000,
+  RIGID_3_4T: 15_000,
+  SEMI: 42_500,
+  BDOUBLE: 62_500,
+};
+
+/** Indicative tare (kg) defaults paired with suggested GVM. */
+const SUGGESTED_TARE_KG: Record<VehicleClass, number> = {
+  UTE: 2000,
+  VAN: 2500,
+  RIGID_1_2T: 3500,
+  RIGID_3_4T: 7000,
+  SEMI: 15_000,
+  BDOUBLE: 20_000,
+};
+
+export function suggestedGvmKgForClass(vehicleClass: string | null | undefined): number {
+  const key = String(vehicleClass ?? '').toUpperCase() as VehicleClass;
+  return SUGGESTED_GVM_KG[key] ?? SUGGESTED_GVM_KG.RIGID_1_2T;
+}
+
+export function suggestedTareKgForClass(vehicleClass: string | null | undefined): number {
+  const key = String(vehicleClass ?? '').toUpperCase() as VehicleClass;
+  return SUGGESTED_TARE_KG[key] ?? SUGGESTED_TARE_KG.RIGID_1_2T;
+}
+
 /** Keep in sync with api/src/modules/jobs/job-pricing.util.ts (G0-12 ranks). */
 const VEHICLE_CLASS_RANK: Record<string, number> = {
   UTE: 1,

@@ -18,6 +18,9 @@ export type TripSummary = {
     safetyOk: boolean;
     massOk: boolean;
     canStart: boolean;
+    /** False while any surcharge is PENDING_PAYMENT (POD blocked). */
+    canFinalizePod?: boolean;
+    pendingSurcharges?: boolean;
   };
   siteAccess: { maneuverability: string | null; facility: string | null } | null;
   job: {
@@ -51,6 +54,7 @@ export type TripSummary = {
     podStatus?: string;
     signedAt?: string | null;
     signerName?: string | null;
+    hasSignature?: boolean;
     receiverPresentAttested?: boolean;
     goodsPhotoCount?: number;
     podFinalizedAt?: string | null;
@@ -206,8 +210,28 @@ export function tripPodPhoto(
 
 export function tripPodFinalize(tripId: string, jobStopId: string) {
   return http
-    .post<TripSummary>(`/trips/${tripId}/pod/finalize`, { jobStopId })
+    .post<TripSummary>(
+      `/trips/${tripId}/pod/finalize`,
+      { jobStopId },
+      // PDF generation + 3 SMTP sends with attachments often exceeds default 30s.
+      { timeout: 120_000 },
+    )
     .then((r) => r.data);
+}
+
+/** Authenticated blob fetch for POD signature / goods photo preview. */
+export async function fetchTripPodArtifactBlob(
+  tripId: string,
+  jobStopId: string,
+  kind: 'signature' | 'photo',
+  index = 0,
+): Promise<Blob> {
+  const path =
+    kind === 'signature'
+      ? `/trips/${tripId}/pod/artifacts/${jobStopId}/signature`
+      : `/trips/${tripId}/pod/artifacts/${jobStopId}/photos/${index}`;
+  const response = await http.get<Blob>(path, { responseType: 'blob' });
+  return response.data;
 }
 
 export function getSenderTrack(jobId: string) {

@@ -22,8 +22,11 @@ import {
   deleteCarrierDriver,
   disableCarrierDriver,
   getErrorDetail,
+  getIdentityMe,
   inviteCarrierDriver,
   listCarrierDrivers,
+  listDocuments,
+  openDocumentContent,
   reactivateCarrierDriver,
   resendCarrierDriverInvite,
   type CarrierDriverListItem,
@@ -52,6 +55,24 @@ function driverStatusTone(status: string): StatusTone {
   }
 }
 
+function activityStatusTone(activity: string): StatusTone {
+  switch (activity) {
+    case 'ON_BREAK':
+      return 'warn';
+    case 'BREAKDOWN':
+      return 'danger';
+    case 'PENDING_GATES':
+      return 'info';
+    case 'EN_ROUTE_PICKUP':
+    case 'AT_PICKUP':
+    case 'IN_TRANSIT':
+    case 'AT_DROPOFF':
+      return 'ok';
+    default:
+      return 'info';
+  }
+}
+
 export function CarrierDriversPage() {
   const { t } = useTranslation('common');
   const toast = useToast();
@@ -59,6 +80,8 @@ export function CarrierDriversPage() {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [disableTarget, setDisableTarget] = useState<CarrierDriverListItem | null>(null);
+  const [docsTarget, setDocsTarget] = useState<CarrierDriverListItem | null>(null);
+  const [openingDocId, setOpeningDocId] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
@@ -68,9 +91,22 @@ export function CarrierDriversPage() {
     mailSkipped: boolean;
   } | null>(null);
 
+  const meQuery = useQuery({
+    queryKey: ['identity', 'me'],
+    queryFn: () => getIdentityMe(),
+  });
+  const companyId = meQuery.data?.company?.id ?? null;
+
   const driversQuery = useQuery({
     queryKey: ['carrier', 'drivers'],
     queryFn: ({ signal }) => listCarrierDrivers({ signal }),
+  });
+
+  const driverDocsQuery = useQuery({
+    queryKey: ['documents', 'list', companyId, docsTarget?.id],
+    queryFn: () =>
+      listDocuments({ companyId: companyId!, driverId: docsTarget!.id }),
+    enabled: Boolean(companyId && docsTarget?.id),
   });
 
   const schema = z.object({
@@ -166,6 +202,10 @@ export function CarrierDriversPage() {
     return t(`drivers.statuses.${status}`, { defaultValue: status });
   }
 
+  function activityLabel(activity: string) {
+    return t(`drivers.activity.${activity}`, { defaultValue: activity });
+  }
+
   async function onReactivate(row: CarrierDriverListItem) {
     const ok = await confirm({
       title: t('drivers.reactivateTitle'),
@@ -192,8 +232,32 @@ export function CarrierDriversPage() {
   }
 
   function renderStatus(row: CarrierDriverListItem) {
+    const activity = row.activityStatus ?? null;
+    const tripLabel =
+      row.currentTrip?.jobTitle?.trim() ||
+      (row.currentTrip?.jobId ? row.currentTrip.jobId.slice(0, 8) : null);
     return (
-      <StatusPill tone={driverStatusTone(row.status)}>{statusLabel(row.status)}</StatusPill>
+      <div className="flex min-w-[9.5rem] max-w-[15rem] flex-col items-start gap-1">
+        {activity ? (
+          <>
+            <StatusPill tone={activityStatusTone(activity)} className="max-w-full">
+              <span className="truncate">{activityLabel(activity)}</span>
+            </StatusPill>
+            <p className="text-[11px] leading-tight text-clox-mute">
+              {t('drivers.accountStatus', { status: statusLabel(row.status) })}
+            </p>
+          </>
+        ) : (
+          <StatusPill tone={driverStatusTone(row.status)} className="max-w-full">
+            <span className="truncate">{statusLabel(row.status)}</span>
+          </StatusPill>
+        )}
+        {tripLabel ? (
+          <p className="w-full truncate text-[11px] leading-tight text-clox-faint" title={tripLabel}>
+            {tripLabel}
+          </p>
+        ) : null}
+      </div>
     );
   }
 
@@ -220,10 +284,31 @@ export function CarrierDriversPage() {
     return <StatusPill tone={tone}>{t(key, { date })}</StatusPill>;
   }
 
+  async function viewDriverDoc(documentId: string) {
+    setOpeningDocId(documentId);
+    try {
+      await openDocumentContent(documentId);
+    } catch (err) {
+      toast.error(getErrorDetail(err));
+    } finally {
+      setOpeningDocId(null);
+    }
+  }
+
   function renderActions(row: CarrierDriverListItem) {
-    if (row.status === 'SUSPENDED' || row.status === 'DISABLED') {
-      return (
-        <div className="flex flex-wrap gap-2">
+    const isSuspended = row.status === 'SUSPENDED' || row.status === 'DISABLED';
+    return (
+      <div className="inline-flex flex-nowrap items-center gap-1.5 whitespace-nowrap">
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          disabled={busy}
+          onClick={() => setDocsTarget(row)}
+        >
+          {t('drivers.documents')}
+        </Button>
+        {isSuspended ? (
           <Button
             type="button"
             variant="secondary"
@@ -233,21 +318,8 @@ export function CarrierDriversPage() {
           >
             {t('drivers.reactivate')}
           </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            disabled={busy}
-            onClick={() => void onDelete(row)}
-          >
-            {t('drivers.delete')}
-          </Button>
-        </div>
-      );
-    }
-    return (
-      <div className="flex flex-wrap gap-2">
-        {row.status === 'INVITED' ? (
+        ) : null}
+        {!isSuspended && row.status === 'INVITED' ? (
           <Button
             type="button"
             variant="secondary"
@@ -258,7 +330,7 @@ export function CarrierDriversPage() {
             {t('carrierOnboarding.resend')}
           </Button>
         ) : null}
-        {row.status !== 'INVITED' ? (
+        {!isSuspended && row.status !== 'INVITED' ? (
           <Button
             type="button"
             variant="destructive"
@@ -276,7 +348,7 @@ export function CarrierDriversPage() {
         ) : null}
         <Button
           type="button"
-          variant="ghost"
+          variant={isSuspended ? 'destructive' : 'ghost'}
           size="sm"
           disabled={busy}
           onClick={() => void onDelete(row)}
@@ -438,24 +510,22 @@ export function CarrierDriversPage() {
                         </p>
                         <p className="mt-0.5 truncate text-xs text-clox-faint">{row.user.email}</p>
                       </div>
-                      <div className="flex flex-col items-end gap-1">
-                        {renderStatus(row)}
-                        {renderLicenceExpiry(row)}
-                      </div>
+                      <div className="shrink-0">{renderLicenceExpiry(row)}</div>
                     </div>
+                    <div className="mt-3">{renderStatus(row)}</div>
                     {row.disabledReason ? (
                       <p className="mt-2 text-xs text-clox-mute">
                         {t('drivers.reasonLabel')}: {row.disabledReason}
                       </p>
                     ) : null}
-                    <div className="mt-3">{renderActions(row)}</div>
+                    <div className="mt-3 overflow-x-auto">{renderActions(row)}</div>
                   </div>
                 )}
               />
             }
             table={
               <DataTable
-                minWidthClassName="min-w-[56rem]"
+                minWidthClassName="min-w-[72rem]"
                 headers={[
                   t('drivers.colName'),
                   t('drivers.colEmail'),
@@ -465,21 +535,32 @@ export function CarrierDriversPage() {
                   t('drivers.colReason'),
                   t('drivers.colActions'),
                 ]}
+                headerClassNames={[
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  'text-right',
+                ]}
               >
                 {items.map((row) => (
                   <tr
                     key={row.id}
                     className="border-t border-clox-border-soft hover:bg-clox-surface-alt/60"
                   >
-                    <td className="px-4 py-3 text-clox-ink">{row.user.name ?? t('dash')}</td>
-                    <td className="px-4 py-3 text-clox-mute">{row.user.email}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-clox-mute">
+                    <td className="px-4 py-3 align-top text-clox-ink">
+                      {row.user.name ?? t('dash')}
+                    </td>
+                    <td className="px-4 py-3 align-top text-clox-mute">{row.user.email}</td>
+                    <td className="px-4 py-3 align-top font-mono text-xs text-clox-mute">
                       {row.licenceNo ?? t('dash')}
                       {row.licenceClass ? ` · ${row.licenceClass}` : ''}
                     </td>
-                    <td className="px-4 py-3">{renderLicenceExpiry(row)}</td>
-                    <td className="px-4 py-3">{renderStatus(row)}</td>
-                    <td className="max-w-[14rem] px-4 py-3 text-xs text-clox-mute">
+                    <td className="px-4 py-3 align-top">{renderLicenceExpiry(row)}</td>
+                    <td className="px-4 py-3 align-top">{renderStatus(row)}</td>
+                    <td className="max-w-[12rem] px-4 py-3 align-top text-xs text-clox-mute">
                       {row.disabledReason ? (
                         <span className="line-clamp-2" title={row.disabledReason}>
                           {row.disabledReason}
@@ -488,7 +569,7 @@ export function CarrierDriversPage() {
                         t('dash')
                       )}
                     </td>
-                    <td className="px-4 py-3">{renderActions(row)}</td>
+                    <td className="px-4 py-3 align-top text-right">{renderActions(row)}</td>
                   </tr>
                 ))}
               </DataTable>
@@ -561,6 +642,81 @@ export function CarrierDriversPage() {
                 onClick={() => disableMutation.mutate()}
               >
                 {disableMutation.isPending ? t('loading') : t('drivers.disableConfirm')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {docsTarget ? (
+        <div
+          className="clox-dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setDocsTarget(null);
+            }
+          }}
+        >
+          <div className="clox-dialog max-w-lg" role="dialog" aria-modal="true">
+            <h2 className="font-display text-lg font-semibold text-clox-ink">
+              {t('drivers.documentsTitle')}
+            </h2>
+            <p className="mt-2 text-sm text-clox-mute">
+              {t('drivers.documentsBody', {
+                name: docsTarget.user.name ?? docsTarget.user.email,
+              })}
+            </p>
+            {driverDocsQuery.isLoading ? (
+              <p className="mt-4 text-sm text-clox-faint">{t('documentsUpload.loadingDocs')}</p>
+            ) : null}
+            {driverDocsQuery.isError ? (
+              <Notice tone="error" className="mt-4">
+                {getErrorDetail(driverDocsQuery.error)}
+              </Notice>
+            ) : null}
+            {!driverDocsQuery.isLoading &&
+            !driverDocsQuery.isError &&
+            (driverDocsQuery.data?.items.length ?? 0) === 0 ? (
+              <p className="mt-4 text-sm text-clox-faint">{t('documentsUpload.noneYet')}</p>
+            ) : null}
+            {(driverDocsQuery.data?.items.length ?? 0) > 0 ? (
+              <ul className="mt-4 space-y-2">
+                {driverDocsQuery.data!.items.map((doc) => (
+                  <li
+                    key={doc.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-clox-md border border-clox-border bg-clox-surface px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-mono text-xs text-clox-ink">
+                        {doc.docType}
+                        {doc.originalFilename ? ` · ${doc.originalFilename}` : ''}
+                      </p>
+                      <p className="mt-0.5 font-mono text-[11px] text-clox-faint">
+                        {doc.status}
+                        {doc.createdAt
+                          ? ` · ${new Date(doc.createdAt).toLocaleString()}`
+                          : ''}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={openingDocId === doc.id}
+                      onClick={() => void viewDriverDoc(doc.id)}
+                    >
+                      {openingDocId === doc.id
+                        ? t('documentsUpload.opening')
+                        : t('documentsUpload.viewDocument')}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <div className="mt-6 flex justify-end">
+              <Button type="button" variant="secondary" onClick={() => setDocsTarget(null)}>
+                {t('confirm.cancel')}
               </Button>
             </div>
           </div>

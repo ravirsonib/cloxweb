@@ -29,6 +29,7 @@ export type JobSummary = {
     gstCents: number | null;
     incGstCents: number | null;
   };
+  openProposalCount?: number;
   proposals?: Array<{
     id: string;
     status: string;
@@ -131,6 +132,8 @@ export type MarketBoard = {
     routeDistanceKm: number | null;
     routeFatigueBreakMinutes: number;
     billableHours: number | null;
+    pickupAt: string | null;
+    publishedAt: string | null;
     alreadyBid: boolean;
     stopsSummary: string;
   }>;

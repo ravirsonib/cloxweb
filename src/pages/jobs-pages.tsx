@@ -79,6 +79,9 @@ export function JobsListPage() {
               {j.estimate.incGstCents != null
                 ? `$${(j.estimate.incGstCents / 100).toFixed(2)}`
                 : t('dash')}
+              {(j.openProposalCount ?? 0) > 0
+                ? ` · ${t('jobs.openBidsCount', { count: j.openProposalCount })}`
+                : ''}
             </p>
           </Link>
         );
@@ -114,6 +117,7 @@ export function JobsListPage() {
                   t('jobs.colPricing'),
                   t('jobs.colClass'),
                   t('jobs.colEstimate'),
+                  t('jobs.colBids'),
                 ]}
               >
                 {items.map((j) => (
@@ -137,6 +141,11 @@ export function JobsListPage() {
                         ? `$${(j.estimate.incGstCents / 100).toFixed(2)}`
                         : t('dash')}
                     </td>
+                    <td className="px-4 py-3 font-mono text-xs text-clox-mute">
+                      {(j.openProposalCount ?? 0) > 0
+                        ? t('jobs.openBidsCount', { count: j.openProposalCount })
+                        : t('dash')}
+                    </td>
                   </tr>
                 ))}
               </DataTable>
@@ -150,7 +159,6 @@ export function JobsListPage() {
 
 type JobCreateForm = {
   pricingModel: 'PER_KM' | 'HOURLY';
-  hourlyPattern: 'A' | 'B';
   distanceKm: number;
   deadWeightKg: number;
   lengthCm: number;
@@ -162,33 +170,8 @@ type JobCreateForm = {
   siteDisclaimerAccepted: boolean;
 };
 
-function buildDemoStops(values: Pick<JobCreateForm, 'pricingModel' | 'receiverName' | 'receiverEmail'>) {
-  if (values.pricingModel === 'PER_KM') {
-    return [
-      {
-        sequence: 0,
-        stopType: 'PICKUP' as const,
-        addressLine: '1 Collins St',
-        suburb: 'Melbourne',
-        state: 'VIC',
-        postcode: '3000',
-        lat: -37.8136,
-        lng: 144.9631,
-      },
-      {
-        sequence: 1,
-        stopType: 'DROPOFF' as const,
-        addressLine: '100 Airport Dr',
-        suburb: 'Tullamarine',
-        state: 'VIC',
-        postcode: '3045',
-        lat: -37.669,
-        lng: 144.841,
-        receiverName: values.receiverName,
-        receiverEmail: values.receiverEmail,
-      },
-    ];
-  }
+/** Single pickup → single dropoff only (multi-stop / multi-pickup deferred). */
+function buildDemoStops(values: Pick<JobCreateForm, 'receiverName' | 'receiverEmail'>) {
   return [
     {
       sequence: 0,
@@ -203,36 +186,45 @@ function buildDemoStops(values: Pick<JobCreateForm, 'pricingModel' | 'receiverNa
     {
       sequence: 1,
       stopType: 'DROPOFF' as const,
-      addressLine: '50 Swan St',
-      suburb: 'Richmond',
+      addressLine: '100 Airport Dr',
+      suburb: 'Tullamarine',
       state: 'VIC',
-      postcode: '3121',
-      lat: -37.823,
-      lng: 144.997,
+      postcode: '3045',
+      lat: -37.669,
+      lng: 144.841,
       receiverName: values.receiverName,
       receiverEmail: values.receiverEmail,
-    },
-    {
-      sequence: 2,
-      stopType: 'DROPOFF' as const,
-      addressLine: '200 Chapel St',
-      suburb: 'Prahran',
-      state: 'VIC',
-      postcode: '3181',
-      lat: -37.849,
-      lng: 144.993,
-      receiverName: 'Recv B',
-      receiverEmail: 'receiver.b@yopmail.com',
     },
   ];
 }
 
+function buildJobTitle(
+  values: JobCreateForm,
+  stops: ReturnType<typeof buildDemoStops>,
+): string {
+  const pickup = stops.find((s) => s.stopType === 'PICKUP')?.suburb?.trim() || 'Pickup';
+  const dropoffs = stops
+    .filter((s) => s.stopType === 'DROPOFF')
+    .map((s) => s.suburb?.trim())
+    .filter((s): s is string => Boolean(s));
+  const destination =
+    dropoffs.length === 0
+      ? 'Dropoff'
+      : dropoffs.length === 1
+        ? dropoffs[0]!
+        : dropoffs.join(' / ');
+  // Route-first label; pricing model last for board scanning.
+  return `${pickup} → ${destination} · ${values.pricingModel}`;
+}
+
 function buildJobPayload(values: JobCreateForm) {
   const loadTypes = ['GENERAL', ...(values.loadDg ? (['DG'] as const) : [])];
+  const stops = buildDemoStops(values);
   return {
-    title: `${values.pricingModel} QA job`,
+    title: buildJobTitle(values, stops),
     pricingModel: values.pricingModel,
-    hourlyPattern: values.pricingModel === 'HOURLY' ? values.hourlyPattern : undefined,
+    // Pattern A reserved for simple 1 pickup → 1 drop; multi-stop / Pattern B deferred.
+    hourlyPattern: values.pricingModel === 'HOURLY' ? ('A' as const) : undefined,
     pickupAt: new Date(Date.now() + 86_400_000).toISOString(),
     receiverName: values.receiverName,
     receiverEmail: values.receiverEmail,
@@ -245,7 +237,7 @@ function buildJobPayload(values: JobCreateForm) {
     siteManeuverability: 'MODERATE',
     siteFacility: 'GROUND',
     siteDisclaimerAccepted: true as const,
-    stops: buildDemoStops(values),
+    stops,
   };
 }
 
@@ -273,7 +265,6 @@ function JobDraftForm({
 
   const schema = z.object({
     pricingModel: z.enum(['PER_KM', 'HOURLY']),
-    hourlyPattern: z.enum(['A', 'B']),
     distanceKm: z.number().positive(t('validation.distancePositive')),
     deadWeightKg: z.number().positive(t('validation.weightPositive')),
     lengthCm: z.number().positive(t('validation.dimensionPositive')),
@@ -295,15 +286,14 @@ function JobDraftForm({
     resolver: zodResolver(schema),
     defaultValues: {
       pricingModel: 'PER_KM',
-      hourlyPattern: 'A',
       distanceKm: undefined as unknown as number,
       deadWeightKg: 800,
       lengthCm: 120,
       widthCm: 80,
       heightCm: 80,
       loadDg: false,
-      receiverName: 'Recv Site',
-      receiverEmail: 'receiver.qa@yopmail.com',
+      receiverName: '',
+      receiverEmail: '',
       siteDisclaimerAccepted: false,
     },
   });
@@ -328,7 +318,6 @@ function JobDraftForm({
     const savedKm = Number(existing.data.route.distanceKm);
     form.reset({
       pricingModel: existing.data.pricingModel === 'HOURLY' ? 'HOURLY' : 'PER_KM',
-      hourlyPattern: existing.data.hourlyPattern === 'B' ? 'B' : 'A',
       distanceKm: Number.isFinite(savedKm) && savedKm > 0 ? savedKm : (undefined as unknown as number),
       deadWeightKg: Number(existing.data.deadWeightKg) || 800,
       lengthCm: Number(existing.data.lengthCm) || 120,
@@ -361,9 +350,8 @@ function JobDraftForm({
     if (isEdit && !hydratedEdit.current) return;
     let cancelled = false;
     const stops = buildDemoStops({
-      pricingModel,
-      receiverName: receiverName || 'Recv Site',
-      receiverEmail: receiverEmail || 'receiver.qa@yopmail.com',
+      receiverName: receiverName.trim() || 'Receiver',
+      receiverEmail: receiverEmail.trim() || 'receiver@example.com',
     });
     void previewJobRoute({ pricingModel, stops })
       .then((route) => {
@@ -460,30 +448,6 @@ function JobDraftForm({
             },
           ]}
         />
-        {pricingModel === 'HOURLY' ? (
-          <RadioCardGroup
-            name="hourlyPattern"
-            label={t('validation.hourlyPatternLabel')}
-            required
-            error={form.formState.errors.hourlyPattern?.message}
-            value={form.watch('hourlyPattern')}
-            onChange={(next) =>
-              form.setValue('hourlyPattern', next, { shouldValidate: true, shouldDirty: true })
-            }
-            options={[
-              {
-                value: 'A',
-                title: t('jobs.patternA'),
-                description: t('jobs.patternAHint'),
-              },
-              {
-                value: 'B',
-                title: t('jobs.patternB'),
-                description: t('jobs.patternBHint'),
-              },
-            ]}
-          />
-        ) : null}
         <Field
           type="number"
           step="0.1"
@@ -541,15 +505,19 @@ function JobDraftForm({
           {t('jobs.dgLoad')}
         </label>
         <Field
-          label={t('jobs.placeholderReceiverName')}
+          label={t('jobs.receiverNameLabel')}
+          placeholder={t('jobs.placeholderReceiverName')}
           required
+          autoComplete="name"
           error={form.formState.errors.receiverName?.message}
           {...form.register('receiverName')}
         />
         <Field
           type="email"
-          label={t('jobs.placeholderReceiverEmail')}
+          label={t('jobs.receiverEmailLabel')}
+          placeholder={t('jobs.placeholderReceiverEmail')}
           required
+          autoComplete="email"
           error={form.formState.errors.receiverEmail?.message}
           {...form.register('receiverEmail')}
         />

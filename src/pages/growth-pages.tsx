@@ -959,7 +959,7 @@ function MyCompaniesPage({ type }: { type: 'SENDER' | 'CARRIER' }) {
                 minWidthClassName="min-w-[40rem]"
                 headers={[
                   t('growth.legalName'),
-                  t('companies.colStatus'),
+                  t('growth.onboardingStatus'),
                   t('email'),
                   t('growth.referredAt'),
                 ]}

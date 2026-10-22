@@ -1,5 +1,6 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
+
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -7,20 +8,21 @@ import {
   createUploadIntent,
   getErrorDetail,
   getIdentityMe,
+  listDocuments,
+  openDocumentContent,
   submitCompliance,
   uploadDocumentContent,
 } from '@/lib/api';
-import { Button, Notice, Select, useConfirm } from '@/components/ui';
+import { Button, Notice, Select, StatusPill, useConfirm, useToast } from '@/components/ui';
+import type { ComplianceDocumentListItem } from '@/lib/api';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
-
-type UploadedDoc = { id: string; docType: string; contentHash: string };
 
 const SENDER_DOC_TYPES = ['ABN_EXTRACT', 'GOVERNMENT_ID', 'OTHER'] as const;
 const CARRIER_DOC_TYPES = [
   'PUBLIC_LIABILITY',
   'CARGO_INSURANCE',
-  'RWC',
+  'DG_LICENCE',
   'ABN_EXTRACT',
   'OTHER',
 ] as const;
@@ -37,6 +39,8 @@ export function DocumentsUploadPage() {
   const { t } = useTranslation('common');
   const role = useAuthStore((s) => s.role);
   const confirm = useConfirm();
+  const toast = useToast();
+  const qc = useQueryClient();
   const isDriver = role === AppRole.DRIVER;
   const isSender = role === AppRole.SENDER;
   const isCarrier = role === AppRole.TRANSPORT_COMPANY;
@@ -49,12 +53,16 @@ export function DocumentsUploadPage() {
 
   const [file, setFile] = useState<File | null>(null);
   const [docType, setDocType] = useState<string>(docOptions[0]);
-  const [uploaded, setUploaded] = useState<UploadedDoc[]>([]);
+  /** Session uploads queued for compliance submit (sender/carrier KYB). */
+  const [uploadedForSubmit, setUploadedForSubmit] = useState<
+    Array<{ id: string; docType: string }>
+  >([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [openingId, setOpeningId] = useState<string | null>(null);
 
   useEffect(() => {
     setDocType(docOptions[0]);
-    setUploaded([]);
+    setUploadedForSubmit([]);
     setMessage(null);
     setFile(null);
   }, [docOptions]);
@@ -65,6 +73,12 @@ export function DocumentsUploadPage() {
   });
 
   const companyId = me.data?.company?.id ?? null;
+
+  const docsQuery = useQuery({
+    queryKey: ['documents', 'list', companyId, isDriver ? 'self' : 'company'],
+    queryFn: () => listDocuments({ companyId: companyId! }),
+    enabled: Boolean(companyId),
+  });
 
   const caseType = isSender
     ? ('SENDER_KYB' as const)
@@ -96,8 +110,11 @@ export function DocumentsUploadPage() {
         contentHash: uploadedRes.contentHash,
       };
     },
-    onSuccess: (doc) => {
-      setUploaded((prev) => [...prev.filter((d) => d.docType !== doc.docType), doc]);
+    onSuccess: async (doc) => {
+      setUploadedForSubmit((prev) => [
+        ...prev.filter((d) => d.docType !== doc.docType),
+        { id: doc.id, docType: doc.docType },
+      ]);
       setMessage(
         t('documentsUpload.uploadedMessage', {
           docType: doc.docType,
@@ -105,6 +122,7 @@ export function DocumentsUploadPage() {
         }),
       );
       setFile(null);
+      await qc.invalidateQueries({ queryKey: ['documents', 'list'] });
     },
   });
 
@@ -113,10 +131,13 @@ export function DocumentsUploadPage() {
       if (!companyId || !caseType) {
         throw new Error(t('documentsUpload.errorSubmitNotAllowed'));
       }
+      if (uploadedForSubmit.length === 0) {
+        throw new Error(t('documentsUpload.errorChooseFile'));
+      }
       return submitCompliance({
         companyId,
         caseType,
-        documentIds: uploaded.map((d) => d.id),
+        documentIds: uploadedForSubmit.map((d) => d.id),
       });
     },
     onSuccess: (res) => {
@@ -129,10 +150,130 @@ export function DocumentsUploadPage() {
     },
   });
 
+  async function viewDocument(documentId: string) {
+    setOpeningId(documentId);
+    try {
+      await openDocumentContent(documentId);
+    } catch (err) {
+      toast.error(getErrorDetail(err));
+    } finally {
+      setOpeningId(null);
+    }
+  }
+
   const title = isDriver ? t('documentsUpload.driverTitle') : t('documentsUpload.title');
   const subtitle = isDriver
     ? t('documentsUpload.driverSubtitle')
     : t('documentsUpload.subtitle');
+  const storedDocs = docsQuery.data?.items ?? [];
+
+  function ownerKind(doc: ComplianceDocumentListItem): 'company' | 'fleet' | 'driver' {
+    if (doc.ownerKind === 'fleet' || doc.ownerKind === 'driver' || doc.ownerKind === 'company') {
+      return doc.ownerKind;
+    }
+    if (doc.vehicleId) return 'fleet';
+    if (doc.driverId) return 'driver';
+    return 'company';
+  }
+
+  function ownerLabel(doc: ComplianceDocumentListItem): string {
+    const kind = ownerKind(doc);
+    if (kind === 'fleet') {
+      return t('documentsUpload.ownerFleet', {
+        rego: doc.vehicleRegistration?.trim() || t('dash'),
+        label: doc.vehicleLabel?.trim() || t('dash'),
+      });
+    }
+    if (kind === 'driver') {
+      const who =
+        doc.driverName?.trim() ||
+        doc.driverEmail?.trim() ||
+        (doc.driverId ? doc.driverId.slice(0, 8) : t('dash'));
+      return t('documentsUpload.ownerDriver', { name: who });
+    }
+    return t('documentsUpload.ownerCompany');
+  }
+
+  function ownerTone(kind: 'company' | 'fleet' | 'driver'): 'info' | 'ok' | 'warn' {
+    if (kind === 'fleet') return 'ok';
+    if (kind === 'driver') return 'warn';
+    return 'info';
+  }
+
+  const groupedDocs = (() => {
+    const company: ComplianceDocumentListItem[] = [];
+    const fleet: ComplianceDocumentListItem[] = [];
+    const driver: ComplianceDocumentListItem[] = [];
+    for (const doc of storedDocs) {
+      const kind = ownerKind(doc);
+      if (kind === 'fleet') fleet.push(doc);
+      else if (kind === 'driver') driver.push(doc);
+      else company.push(doc);
+    }
+    return { company, fleet, driver };
+  })();
+
+  function renderDocRow(d: ComplianceDocumentListItem) {
+    const kind = ownerKind(d);
+    return (
+      <li
+        key={d.id}
+        className="flex flex-wrap items-center justify-between gap-2 rounded-clox-md border border-clox-border bg-clox-surface px-3 py-2"
+      >
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill tone={ownerTone(kind)}>
+              {kind === 'company'
+                ? t('documentsUpload.scopeCompany')
+                : kind === 'fleet'
+                  ? t('documentsUpload.scopeFleet')
+                  : t('documentsUpload.scopeDriver')}
+            </StatusPill>
+            <span className="font-mono text-xs text-clox-ink">{d.docType}</span>
+          </div>
+          <p className="mt-1 text-xs text-clox-mute">{ownerLabel(d)}</p>
+          <p className="mt-0.5 truncate text-[11px] text-clox-faint">
+            {d.originalFilename ? `${d.originalFilename} · ` : ''}
+            {d.status}
+            {d.createdAt ? ` · ${new Date(d.createdAt).toLocaleString()}` : ''}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          disabled={openingId === d.id}
+          onClick={() => void viewDocument(d.id)}
+        >
+          {openingId === d.id
+            ? t('documentsUpload.opening')
+            : t('documentsUpload.viewDocument')}
+        </Button>
+      </li>
+    );
+  }
+
+  function renderDocGroup(
+    key: 'company' | 'fleet' | 'driver',
+    items: ComplianceDocumentListItem[],
+  ) {
+    if (items.length === 0) return null;
+    const titleKey =
+      key === 'company'
+        ? 'documentsUpload.groupCompany'
+        : key === 'fleet'
+          ? 'documentsUpload.groupFleet'
+          : 'documentsUpload.groupDriver';
+    return (
+      <div key={key} className="mt-4">
+        <h3 className="text-sm font-semibold text-clox-ink">
+          {t(titleKey)}
+          <span className="ml-2 font-normal text-clox-mute">({items.length})</span>
+        </h3>
+        <ul className="mt-2 space-y-2 text-sm">{items.map(renderDocRow)}</ul>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl">
@@ -215,7 +356,9 @@ export function DocumentsUploadPage() {
             <Button
               type="button"
               variant="secondary"
-              disabled={uploaded.length === 0 || submitMutation.isPending || !caseType}
+              disabled={
+                uploadedForSubmit.length === 0 || submitMutation.isPending || !caseType
+              }
               onClick={() => {
                 void (async () => {
                   const ok = await confirm({
@@ -239,20 +382,28 @@ export function DocumentsUploadPage() {
         <h2 className="font-display text-lg font-semibold text-clox-ink">
           {t('documentsUpload.readyDocs')}
         </h2>
-        {uploaded.length === 0 ? (
+        {docsQuery.isLoading ? (
+          <p className="mt-2 text-sm text-clox-faint">{t('documentsUpload.loadingDocs')}</p>
+        ) : null}
+        {docsQuery.isError ? (
+          <Notice tone="error" className="mt-2">
+            {getErrorDetail(docsQuery.error)}
+          </Notice>
+        ) : null}
+        {!docsQuery.isLoading && !docsQuery.isError && storedDocs.length === 0 ? (
           <p className="mt-2 text-sm text-clox-faint">{t('documentsUpload.noneYet')}</p>
-        ) : (
-          <ul className="mt-2 space-y-2 text-sm">
-            {uploaded.map((d) => (
-              <li
-                key={d.id}
-                className="rounded-clox-md border border-clox-border bg-clox-surface px-3 py-2 font-mono text-xs"
-              >
-                {d.docType} · {d.id}
-              </li>
-            ))}
-          </ul>
-        )}
+        ) : null}
+        {storedDocs.length > 0 ? (
+          isCarrier ? (
+            <div>
+              {renderDocGroup('company', groupedDocs.company)}
+              {renderDocGroup('fleet', groupedDocs.fleet)}
+              {renderDocGroup('driver', groupedDocs.driver)}
+            </div>
+          ) : (
+            <ul className="mt-2 space-y-2 text-sm">{storedDocs.map(renderDocRow)}</ul>
+          )
+        ) : null}
       </section>
     </div>
   );

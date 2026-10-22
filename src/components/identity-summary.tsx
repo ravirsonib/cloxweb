@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { RoleBadge } from '@/components/ui';
 import type { IdentityMe } from '@/lib/api/identity.types';
 import { roleBadgeLabel } from '@/lib/role-theme';
+import { AppRole } from '@/shared/types';
 
 export type { IdentityMe };
 
@@ -57,12 +58,22 @@ export function IdentitySummary({
         {me.company ? (
           <>
             <Row
-              label={t('identity.company')}
+              label={t('identity.businessName')}
               value={me.company.legalName || t('dash')}
             />
             <Row
-              label={t('identity.companyStatus')}
-              value={humanStatus(me.company.status, t)}
+              label={
+                me.role === AppRole.SENDER
+                  ? t('identity.senderStatus')
+                  : me.role === AppRole.TRANSPORT_COMPANY
+                    ? t('identity.carrierStatus')
+                    : t('identity.marketplaceStatus')
+              }
+              value={
+                t(`companyStatuses.${me.company.status}`, {
+                  defaultValue: humanStatus(me.company.status, t),
+                })
+              }
             />
           </>
         ) : null}

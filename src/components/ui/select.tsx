@@ -34,6 +34,27 @@ export type SelectProps = Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size'> 
   error?: ReactNode;
 };
 
+/** Flatten option children (string | number | arrays / fragments) into display text. */
+function childrenToLabel(children: ReactNode, fallback: string): string {
+  if (children == null || children === false || children === true) return fallback;
+  if (typeof children === 'string' || typeof children === 'number') {
+    return String(children);
+  }
+  if (Array.isArray(children)) {
+    const joined = children
+      .map((part) => childrenToLabel(part, ''))
+      .join('')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return joined || fallback;
+  }
+  if (isValidElement(children)) {
+    const nested = (children.props as { children?: ReactNode }).children;
+    return childrenToLabel(nested, fallback);
+  }
+  return fallback;
+}
+
 function parseOptions(children: ReactNode): OptionData[] {
   const options: OptionData[] = [];
   Children.forEach(children, (child) => {
@@ -45,10 +66,7 @@ function parseOptions(children: ReactNode): OptionData[] {
       children?: ReactNode;
     };
     const value = props.value == null ? '' : String(props.value);
-    const label =
-      typeof props.children === 'string' || typeof props.children === 'number'
-        ? String(props.children)
-        : value;
+    const label = childrenToLabel(props.children, value);
     options.push({
       value,
       label,

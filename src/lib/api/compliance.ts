@@ -30,12 +30,16 @@ export type ComplianceCaseDocument = {
   expiresAt: string | null;
   originalFilename: string | null;
   createdAt: string;
+  vehicleId?: string | null;
+  vehicleRegistration?: string | null;
+  vehicleLabel?: string | null;
   isNewSinceInfoRequest: boolean;
 };
 
 export type ComplianceCaseDetail = Omit<ComplianceCaseListItem, 'documents'> & {
   decisionNote: string | null;
   infoRequestedAt: string | null;
+  proposedChanges?: Record<string, unknown> | null;
   documents: ComplianceCaseDocument[];
   abrAssist?: {
     configured: boolean;
@@ -86,6 +90,34 @@ export function decideCompliance(
 ) {
   return http
     .post(`/ops/compliance/cases/${id}/${action}`, { note })
+    .then((r) => r.data);
+}
+
+export type ComplianceDocumentListItem = {
+  id: string;
+  companyId: string | null;
+  driverId: string | null;
+  vehicleId: string | null;
+  docType: string;
+  status: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  originalFilename: string | null;
+  contentHash: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** company | fleet | driver — who the document belongs to */
+  ownerKind?: 'company' | 'fleet' | 'driver';
+  vehicleRegistration?: string | null;
+  vehicleLabel?: string | null;
+  driverName?: string | null;
+  driverEmail?: string | null;
+};
+
+export function listDocuments(params: { companyId: string; driverId?: string }) {
+  return http
+    .get<{ items: ComplianceDocumentListItem[] }>('/documents', { params })
     .then((r) => r.data);
 }
 

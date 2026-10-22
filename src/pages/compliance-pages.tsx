@@ -81,6 +81,8 @@ export function ComplianceQueuePage() {
           <option value="SENDER_KYB">SENDER_KYB</option>
           <option value="SENDER_KYC">SENDER_KYC</option>
           <option value="CARRIER_KYB">CARRIER_KYB</option>
+          <option value="CARRIER_FLEET_RWC">CARRIER_FLEET_RWC</option>
+          <option value="COMPANY_PROFILE_CHANGE">COMPANY_PROFILE_CHANGE</option>
           <option value="ADMIN_PARTNER_KYB">ADMIN_PARTNER_KYB</option>
         </Select>
         <label className="mb-0 block w-full sm:w-auto">
@@ -300,6 +302,21 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
         </Notice>
       ) : null}
 
+      {c.caseType === 'COMPANY_PROFILE_CHANGE' ? (
+        <div className="clox-card mt-4 p-4 text-sm">
+          <p className="font-semibold text-clox-ink">{t('compliance.proposedChangesTitle')}</p>
+          <p className="mt-1 text-xs text-clox-mute">{t('compliance.proposedChangesHint')}</p>
+          <pre className="mt-3 overflow-x-auto rounded-clox-md bg-clox-canvas p-3 font-mono text-xs text-clox-ink">
+            {JSON.stringify(c.proposedChanges ?? {}, null, 2)}
+          </pre>
+          {c.decisionNote ? (
+            <p className="mt-2 text-xs text-clox-mute">
+              {t('compliance.submitterNote')}: {c.decisionNote}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {c.abrAssist ? (
         <div className="clox-card mt-4 p-4 text-sm">
           <p className="font-semibold text-clox-ink">{t('compliance.abrTitle')}</p>
@@ -343,6 +360,14 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
                       <StatusPill tone="warn">{t('compliance.docsNewBadge')}</StatusPill>
                     ) : null}
                   </div>
+                  {d.vehicleRegistration || d.vehicleLabel ? (
+                    <p className="mt-0.5 text-xs text-clox-ink">
+                      {t('compliance.docsVehicle', {
+                        rego: d.vehicleRegistration ?? t('dash'),
+                        label: d.vehicleLabel ?? t('dash'),
+                      })}
+                    </p>
+                  ) : null}
                   <p className="mt-0.5 truncate text-clox-faint">{d.originalFilename}</p>
                   <p className="mt-0.5 text-xs text-clox-mute">
                     {t('compliance.docsUploadedAt', {

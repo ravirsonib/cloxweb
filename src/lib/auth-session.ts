@@ -16,6 +16,24 @@ const SAFE_NEXT_PATHS = new Set([
   '/account',
 ]);
 
+const UUID_SEGMENT =
+  '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+
+/** Exact whitelist entries plus dynamic sender job deep-links from email CTAs. */
+function isSafeAppPath(pathname: string): boolean {
+  if (SAFE_NEXT_PATHS.has(pathname)) return true;
+  const jobDetail = new RegExp(`^/jobs/${UUID_SEGMENT}$`, 'i');
+  const jobEdit = new RegExp(`^/jobs/${UUID_SEGMENT}/edit$`, 'i');
+  const jobTrack = new RegExp(`^/jobs/${UUID_SEGMENT}/track$`, 'i');
+  const carrierException = new RegExp(`^/carrier/exceptions/${UUID_SEGMENT}$`, 'i');
+  return (
+    jobDetail.test(pathname) ||
+    jobEdit.test(pathname) ||
+    jobTrack.test(pathname) ||
+    carrierException.test(pathname)
+  );
+}
+
 export function applyAuthTokensToStore(tokens: AuthTokens) {
   const principal = tokens.principal;
   const admin = tokens.admin;
@@ -73,7 +91,7 @@ export function safePostLoginPath(raw: string | null | undefined): string | null
   }
   if (!path.startsWith('/') || path.startsWith('//')) return null;
   const pathname = path.split('?')[0] ?? path;
-  if (!SAFE_NEXT_PATHS.has(pathname)) return null;
+  if (!isSafeAppPath(pathname)) return null;
   return path;
 }
 
@@ -103,8 +121,21 @@ export function roleCanAccessPath(role: AppRole | null | undefined, path: string
   ) {
     return role === AppRole.TRANSPORT_COMPANY;
   }
-  if (pathname === '/sender/onboarding' || pathname === '/jobs') {
+  if (pathname === '/sender/onboarding') {
     return role === AppRole.SENDER;
+  }
+  if (
+    pathname === '/jobs' ||
+    /^\/jobs\/[0-9a-f-]{36}$/i.test(pathname) ||
+    /^\/jobs\/[0-9a-f-]{36}\/(edit|track)$/i.test(pathname)
+  ) {
+    return role === AppRole.SENDER;
+  }
+  if (
+    pathname === '/carrier/exceptions' ||
+    /^\/carrier\/exceptions\/[0-9a-f-]{36}$/i.test(pathname)
+  ) {
+    return role === AppRole.TRANSPORT_COMPANY;
   }
   if (pathname === '/driver/onboarding' || pathname === '/trips') {
     return role === AppRole.DRIVER;

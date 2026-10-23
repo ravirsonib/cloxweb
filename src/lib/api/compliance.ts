@@ -150,25 +150,48 @@ export function uploadDocumentContent(documentId: string, file: File) {
     .then((r) => r.data);
 }
 
-/** Authenticated blob fetch + open in a new tab (Ops visual review). */
+/**
+ * Authenticated blob fetch + open in a new tab.
+ * Opens a placeholder tab synchronously (keeps user-gesture) so popup blockers
+ * do not swallow the view after the async fetch.
+ */
 export async function openDocumentContent(documentId: string) {
+  const preview = window.open('about:blank', '_blank');
   try {
     const response = await http.get<Blob>(`/documents/${documentId}/content`, {
       responseType: 'blob',
+      headers: { Accept: '*/*' },
     });
     const blob = response.data;
+    const contentType = String(response.headers['content-type'] ?? '');
+    if (contentType.includes('application/json')) {
+      const text = await blob.text();
+      let detail = text;
+      try {
+        const parsed = JSON.parse(text) as { detail?: string; title?: string };
+        detail = parsed.detail ?? parsed.title ?? text;
+      } catch {
+        /* keep raw text */
+      }
+      preview?.close();
+      throw new Error(detail || 'Failed to open document');
+    }
     const url = URL.createObjectURL(blob);
-    const opened = window.open(url, '_blank', 'noopener,noreferrer');
-    if (!opened) {
+    if (preview && !preview.closed) {
+      preview.location.href = url;
+    } else {
       const anchor = document.createElement('a');
       anchor.href = url;
       anchor.target = '_blank';
       anchor.rel = 'noopener noreferrer';
+      document.body.appendChild(anchor);
       anchor.click();
+      anchor.remove();
     }
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     return blob;
   } catch (err) {
+    preview?.close();
     if (err instanceof ApiError && err.data instanceof Blob) {
       const text = await err.data.text();
       try {

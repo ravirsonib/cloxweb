@@ -34,6 +34,7 @@ import {
   uploadDocumentContent,
   type CarrierVehicleListItem,
 } from '@/lib/api';
+import { resolveUploadMime } from '@/lib/upload-mime';
 import {
   suggestedGvmKgForClass,
   suggestedTareKgForClass,
@@ -48,14 +49,13 @@ type VehicleForm = {
   gvmKg: number;
 };
 
-type UploadMime = 'application/pdf' | 'image/jpeg' | 'image/png' | 'image/webp';
-
 async function uploadVehicleRwc(companyId: string, vehicleId: string, file: File) {
-  const mime = (file.type || 'application/pdf') as UploadMime;
+  const mime = resolveUploadMime(file);
   const intent = await createUploadIntent({
     companyId,
     docType: 'RWC',
-    originalFilename: file.name,
+    originalFilename:
+      file.name || `rwc.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
     mimeType: mime,
     sizeBytes: file.size,
     vehicleId,
@@ -449,7 +449,8 @@ export function CarrierFleetPage() {
         <input
           id={inputId}
           type="file"
-          accept=".pdf,image/jpeg,image/png,image/webp"
+          accept=".pdf,image/jpeg,image/png,image/webp,image/*"
+          capture="environment"
           className="sr-only"
           disabled={busy || !companyId}
           onChange={(event) => {
@@ -642,7 +643,8 @@ export function CarrierFleetPage() {
                 <p className="mb-2 text-xs text-clox-faint">{t('fleet.rwcHint')}</p>
                 <input
                   type="file"
-                  accept=".pdf,image/jpeg,image/png,image/webp"
+                  accept=".pdf,image/jpeg,image/png,image/webp,image/*"
+                  capture="environment"
                   onChange={(event) => {
                     setRwcFile(event.target.files?.[0] ?? null);
                     setRwcFormError(null);

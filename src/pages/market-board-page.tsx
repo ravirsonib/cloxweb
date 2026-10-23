@@ -72,6 +72,14 @@ export function MarketBoardPage() {
     () => (driversQuery.data?.items ?? []).filter((d) => d.status === 'ACTIVE'),
     [driversQuery.data?.items],
   );
+  const selectableVehicles = useMemo(
+    () => activeVehicles.filter((v) => v.bidAvailable !== false),
+    [activeVehicles],
+  );
+  const selectableDrivers = useMemo(
+    () => activeDrivers.filter((d) => d.bidAvailable !== false),
+    [activeDrivers],
+  );
 
   const schema = z.object({
     amountAud: z.number().positive(t('validation.bidAmountPositive')),
@@ -92,30 +100,38 @@ export function MarketBoardPage() {
   useEffect(() => {
     if (!selectedJob) return;
     const eligibleVehicle =
-      activeVehicles.find((v) =>
+      selectableVehicles.find((v) =>
         isVehicleClassAdequate(v.vehicleClass, selectedJob.minVehicleClass),
       ) ?? null;
     const nextVehicleId = eligibleVehicle?.id ?? '';
-    const nextDriverId = activeDrivers[0]?.id ?? '';
+    const nextDriverId = selectableDrivers[0]?.id ?? '';
     form.setValue('vehicleId', nextVehicleId);
     form.setValue('driverId', nextDriverId);
-  }, [selectedJob, activeVehicles, activeDrivers, form]);
+  }, [selectedJob, selectableVehicles, selectableDrivers, form]);
 
   const selectedVehicle = activeVehicles.find((v) => v.id === vehicleIdWatch);
   const vehicleEligible =
     !!selectedVehicle &&
+    selectedVehicle.bidAvailable !== false &&
     isVehicleClassAdequate(selectedVehicle.vehicleClass, selectedJob?.minVehicleClass);
+  const selectedDriver = activeDrivers.find((d) => d.id === driverIdWatch);
+  const driverEligible = !!selectedDriver && selectedDriver.bidAvailable !== false;
 
   const bid = useMutation({
     mutationFn: (values: BidForm) => {
       if (!jobId) {
         throw new Error(t('market.errorSelectJob'));
       }
-      if (!isVehicleClassAdequate(
-        activeVehicles.find((v) => v.id === values.vehicleId)?.vehicleClass,
-        selectedJob?.minVehicleClass,
-      )) {
+      const vehicle = activeVehicles.find((v) => v.id === values.vehicleId);
+      const driver = activeDrivers.find((d) => d.id === values.driverId);
+      if (!isVehicleClassAdequate(vehicle?.vehicleClass, selectedJob?.minVehicleClass)) {
         throw new Error(t('market.errorVehicleUndersize'));
+      }
+      if (vehicle?.bidAvailable === false) {
+        throw new Error(t('market.errorVehicleBusy'));
+      }
+      if (driver?.bidAvailable === false) {
+        throw new Error(t('market.errorDriverBusy'));
       }
       return submitBid({
         jobId,
@@ -135,6 +151,8 @@ export function MarketBoardPage() {
       });
       setJobId(null);
       await qc.invalidateQueries({ queryKey: ['matching', 'board'] });
+      await qc.invalidateQueries({ queryKey: ['carrier', 'vehicles'] });
+      await qc.invalidateQueries({ queryKey: ['carrier', 'drivers'] });
     },
     onError: (err) => toast.error(getErrorDetail(err)),
   });
@@ -236,11 +254,21 @@ export function MarketBoardPage() {
           >
             <option value="">{t('market.selectVehicle')}</option>
             {activeVehicles.map((v) => {
-              const ok = isVehicleClassAdequate(v.vehicleClass, selectedJob.minVehicleClass);
+              const classOk = isVehicleClassAdequate(v.vehicleClass, selectedJob.minVehicleClass);
+              const busy = v.bidAvailable === false;
+              const disabled = !classOk || busy;
+              const busyHint = busy
+                ? v.activityStatus === 'BID_COMMITTED'
+                  ? t('market.busyOpenBid')
+                  : v.activityStatus === 'PENDING_ASSIGNMENT'
+                    ? t('market.busyPendingAssign')
+                    : t('market.busyOnTrip')
+                : '';
               return (
-                <option key={v.id} value={v.id} disabled={!ok}>
+                <option key={v.id} value={v.id} disabled={disabled}>
                   {v.registration ?? v.label ?? v.id.slice(0, 8)} · {v.vehicleClass ?? t('dash')}
-                  {ok ? '' : ` · ${t('market.notEligible')}`}
+                  {!classOk ? ` · ${t('market.notEligible')}` : ''}
+                  {busy ? ` · ${busyHint}` : ''}
                 </option>
               );
             })}
@@ -255,17 +283,45 @@ export function MarketBoardPage() {
             {...form.register('driverId')}
           >
             <option value="">{t('market.selectDriver')}</option>
-            {activeDrivers.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.user.name ?? d.user.email}
-                {d.licenceClass ? ` · ${d.licenceClass}` : ''}
-              </option>
-            ))}
+            {activeDrivers.map((d) => {
+              const busy = d.bidAvailable === false;
+              const busyHint = busy
+                ? d.activityStatus === 'BID_COMMITTED'
+                  ? t('market.busyOpenBid')
+                  : d.activityStatus === 'PENDING_ASSIGNMENT'
+                    ? t('market.busyPendingAssign')
+                    : t('market.busyOnTrip')
+                : '';
+              return (
+                <option key={d.id} value={d.id} disabled={busy}>
+                  {d.user.name ?? d.user.email}
+                  {d.licenceClass ? ` · ${d.licenceClass}` : ''}
+                  {busy ? ` · ${busyHint}` : ''}
+                </option>
+              );
+            })}
           </Select>
 
-          {vehicleIdWatch && !vehicleEligible ? (
+          {vehicleIdWatch && selectedVehicle?.bidAvailable === false ? (
+            <Notice tone="warn" className="mb-3">
+              {t('market.errorVehicleBusy')}
+            </Notice>
+          ) : null}
+          {vehicleIdWatch &&
+          selectedVehicle?.bidAvailable !== false &&
+          !vehicleEligible ? (
             <Notice tone="warn" className="mb-3">
               {t('market.errorVehicleUndersize')}
+            </Notice>
+          ) : null}
+          {driverIdWatch && !driverEligible ? (
+            <Notice tone="warn" className="mb-3">
+              {t('market.errorDriverBusy')}
+            </Notice>
+          ) : null}
+          {selectableVehicles.length === 0 || selectableDrivers.length === 0 ? (
+            <Notice tone="info" className="mb-3">
+              {t('market.noFleetAvailable')}
             </Notice>
           ) : null}
 
@@ -291,7 +347,14 @@ export function MarketBoardPage() {
             type="submit"
             variant="cta"
             size="block"
-            disabled={bid.isPending || !hasFleet || !vehicleEligible}
+            disabled={
+              bid.isPending ||
+              !hasFleet ||
+              !vehicleEligible ||
+              !driverEligible ||
+              selectableVehicles.length === 0 ||
+              selectableDrivers.length === 0
+            }
           >
             {bid.isPending ? t('submitting') : t('market.submitProposal')}
           </Button>

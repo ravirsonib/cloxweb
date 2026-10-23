@@ -80,8 +80,22 @@ export function abnSchema(requiredMessage: string, invalidMessage: string) {
     .regex(/^\d{11}$/, invalidMessage);
 }
 
-export function optionalPhoneSchema() {
-  return z.string().trim().optional().or(z.literal(''));
+/** Optional AU phone — empty OK; rejects letters/junk; +61 or 0… digits. */
+export function optionalPhoneSchema(invalidMessage: string) {
+  return z
+    .string()
+    .trim()
+    .superRefine((value, ctx) => {
+      if (!value) return;
+      if (!/^[+\d\s().\-]+$/.test(value)) {
+        ctx.addIssue({ code: 'custom', message: invalidMessage });
+        return;
+      }
+      const digits = value.replace(/\D/g, '');
+      if (!/^61\d{8,10}$/.test(digits) && !/^0\d{8,10}$/.test(digits)) {
+        ctx.addIssue({ code: 'custom', message: invalidMessage });
+      }
+    });
 }
 
 export function futureDateSchema(requiredMessage: string, futureMessage: string) {

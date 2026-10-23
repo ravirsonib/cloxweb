@@ -348,6 +348,7 @@
     "nameRequired": "अपना पूरा नाम दर्ज करें।",
     "emailRequired": "मान्य ईमेल पता दर्ज करें।",
     "emailInvalid": "यह मान्य ईमेल पता नहीं लगता।",
+    "phoneInvalid": "मान्य ऑस्ट्रेलियाई फ़ोन नंबर दर्ज करें (जैसे 04xx xxx xxx या +61…)।",
     "termsRequired": "जारी रखने के लिए नियम और गोपनीयता स्वीकार करें।",
     "companyNameRequired": "अपनी कंपनी या ट्रेडिंग नाम दर्ज करें।",
     "legalNameRequired": "इनवॉइस / ABN पर कानूनी नाम दर्ज करें।",
@@ -543,7 +544,13 @@
     "errorSelectVehicle": "योग्य वाहन चुनें।",
     "errorSelectDriver": "सक्रिय ड्राइवर चुनें।",
     "errorNeedActiveFleet": "Bid के लिए कम से कम एक सक्रिय वाहन और एक सक्रिय ड्राइवर चाहिए।",
-    "errorVehicleUndersize": "यह वाहन क्लास इस जॉब के लिए छोटी है।"
+    "errorVehicleUndersize": "यह वाहन क्लास इस जॉब के लिए छोटी है।",
+    "errorVehicleBusy": "यह वाहन पहले से किसी अन्य जॉब पर committed है (open bid, pending accept, या live trip)।",
+    "errorDriverBusy": "यह ड्राइवर पहले से किसी अन्य जॉब पर committed है (open bid, pending accept, या live trip)।",
+    "busyOpenBid": "अन्य जॉब पर open bid",
+    "busyPendingAssign": "accept/payment लंबित",
+    "busyOnTrip": "trip पर",
+    "noFleetAvailable": "कोई खाली vehicle/driver pair नहीं — open bid पूरा/withdraw करें, या live trip खत्म होने दें। एक bid accept करने पर उसी vehicle/driver की अन्य conflicting proposals EXPIRE हो जाती हैं।"
   },
   "exceptions": {
     "title": "यात्रा अपवाद",

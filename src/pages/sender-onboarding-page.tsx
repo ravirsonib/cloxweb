@@ -24,8 +24,10 @@ import {
   RadioCardGroup,
   StepChips,
   useConfirm,
+  useToast,
 } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
+import { resolveUploadMime } from '@/lib/upload-mime';
 import { abnSchema, AU_STATES } from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
@@ -51,6 +53,7 @@ export function SenderOnboardingPage() {
   const { t } = useTranslation();
   const role = useAuthStore((s) => s.role);
   const qc = useQueryClient();
+  const toast = useToast();
   const [viewStep, setViewStep] = useState<string | null>(null);
 
   const query = useQuery({
@@ -85,6 +88,23 @@ export function SenderOnboardingPage() {
       ? (data.step as SenderStepId)
       : 'account_type',
   );
+
+  const refreshAndGo = async (
+    next?: SenderOnboarding,
+    options?: { showSavedToast?: boolean },
+  ) => {
+    const fresh =
+      next ??
+      (await qc.fetchQuery({
+        queryKey: ['sender', 'onboarding'],
+        queryFn: () => getSenderOnboarding(),
+      }));
+    if (options?.showSavedToast !== false) {
+      toast.success(t('saved'));
+    }
+    if (fresh?.step) setViewStep(fresh.step);
+    return fresh;
+  };
 
   return (
     <div className="max-w-2xl">
@@ -138,21 +158,18 @@ export function SenderOnboardingPage() {
         </Notice>
       ) : null}
 
-      {(step === 'account_type' || step === 'invoice') && (
-        <ProfileStep
-          data={data}
-          onSaved={async () => {
-            await qc.invalidateQueries({ queryKey: ['sender', 'onboarding'] });
-          }}
-        />
+      {step === 'account_type' && (
+        <AccountStep data={data} onSaved={refreshAndGo} />
       )}
+
+      {step === 'invoice' && <InvoiceStep data={data} onSaved={refreshAndGo} />}
 
       {step === 'documents' && (
         <DocumentsStep
           companyId={data.company.id}
           accountType={data.company.senderAccountType}
           onSubmitted={async () => {
-            await qc.invalidateQueries({ queryKey: ['sender', 'onboarding'] });
+            await refreshAndGo(undefined, { showSavedToast: false });
           }}
         />
       )}
@@ -207,10 +224,13 @@ export function SenderOnboardingPage() {
   );
 }
 
-type SenderProfileForm = {
+type AccountForm = {
   accountType: 'BUSINESS' | 'INDIVIDUAL';
   legalName: string;
   abn: string;
+};
+
+type InvoiceForm = {
   invoiceLegalName: string;
   invoiceAddressLine1: string;
   invoiceSuburb: string;
@@ -219,12 +239,12 @@ type SenderProfileForm = {
   gstRegistered: boolean;
 };
 
-function ProfileStep({
+function AccountStep({
   data,
   onSaved,
 }: {
   data: SenderOnboarding;
-  onSaved: () => Promise<void>;
+  onSaved: (next?: SenderOnboarding) => Promise<unknown>;
 }) {
   const { t } = useTranslation();
 
@@ -233,18 +253,6 @@ function ProfileStep({
       accountType: z.enum(['BUSINESS', 'INDIVIDUAL']),
       legalName: z.string().trim().min(1, t('validation.legalNameRequired')),
       abn: z.string().trim(),
-      invoiceLegalName: z.string().trim().min(1, t('validation.invoiceLegalNameRequired')),
-      invoiceAddressLine1: z.string().trim().min(1, t('validation.addressRequired')),
-      invoiceSuburb: z.string().trim().min(1, t('validation.suburbRequired')),
-      invoiceState: z
-        .string()
-        .trim()
-        .toUpperCase()
-        .refine((value) => (AU_STATES as readonly string[]).includes(value), {
-          message: t('validation.stateInvalid'),
-        }),
-      invoicePostcode: z.string().trim().regex(/^\d{4}$/, t('validation.postcodeInvalid')),
-      gstRegistered: z.boolean(),
     })
     .superRefine((values, ctx) => {
       if (values.accountType === 'BUSINESS') {
@@ -261,38 +269,26 @@ function ProfileStep({
       }
     });
 
-  const form = useForm<SenderProfileForm>({
+  const form = useForm<AccountForm>({
     resolver: zodResolver(schema),
     defaultValues: {
       accountType: data.company.senderAccountType ?? 'BUSINESS',
       legalName: data.company.legalName || '',
       abn: data.company.abn || '',
-      invoiceLegalName: data.company.invoiceLegalName || data.company.legalName || '',
-      invoiceAddressLine1: data.company.invoiceAddressLine1 || '',
-      invoiceSuburb: data.company.invoiceSuburb || '',
-      invoiceState: data.company.invoiceState || 'VIC',
-      invoicePostcode: data.company.invoicePostcode || '',
-      gstRegistered: data.company.gstRegistered,
     },
   });
 
   const accountType = form.watch('accountType');
 
   const mutation = useMutation({
-    mutationFn: (values: SenderProfileForm) =>
+    mutationFn: (values: AccountForm) =>
       updateSenderProfile({
         accountType: values.accountType,
         legalName: values.legalName,
         abn: values.accountType === 'BUSINESS' ? values.abn : undefined,
-        homeRegionCode: 'VIC',
-        invoiceLegalName: values.invoiceLegalName,
-        invoiceAddressLine1: values.invoiceAddressLine1,
-        invoiceSuburb: values.invoiceSuburb,
-        invoiceState: values.invoiceState,
-        invoicePostcode: values.invoicePostcode,
-        gstRegistered: values.gstRegistered,
+        homeRegionCode: data.company.homeRegionCode || 'VIC',
       }),
-    onSuccess: () => onSaved(),
+    onSuccess: (next) => void onSaved(next),
   });
 
   return (
@@ -301,7 +297,9 @@ function ProfileStep({
       onSubmit={form.handleSubmit((values) => mutation.mutate(values))}
       noValidate
     >
-      <h2 className="mb-4 font-display text-lg font-semibold">{t('senderOnboarding.profileTitle')}</h2>
+      <h2 className="mb-4 font-display text-lg font-semibold">
+        {t('senderOnboarding.stepAccount')}
+      </h2>
       <RadioCardGroup
         name="accountType"
         value={accountType}
@@ -334,6 +332,82 @@ function ProfileStep({
           {...form.register('abn')}
         />
       ) : null}
+      {mutation.isError ? (
+        <Notice tone="error" className="mb-4">
+          {getErrorDetail(mutation.error)}
+        </Notice>
+      ) : null}
+      <Button type="submit" variant="cta" disabled={mutation.isPending}>
+        {mutation.isPending ? t('saving') : t('saveAndContinue')}
+      </Button>
+    </form>
+  );
+}
+
+function InvoiceStep({
+  data,
+  onSaved,
+}: {
+  data: SenderOnboarding;
+  onSaved: (next?: SenderOnboarding) => Promise<unknown>;
+}) {
+  const { t } = useTranslation();
+
+  const schema = z.object({
+    invoiceLegalName: z.string().trim().min(1, t('validation.invoiceLegalNameRequired')),
+    invoiceAddressLine1: z.string().trim().min(1, t('validation.addressRequired')),
+    invoiceSuburb: z.string().trim().min(1, t('validation.suburbRequired')),
+    invoiceState: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .refine((value) => (AU_STATES as readonly string[]).includes(value), {
+        message: t('validation.stateInvalid'),
+      }),
+    invoicePostcode: z.string().trim().regex(/^\d{4}$/, t('validation.postcodeInvalid')),
+    gstRegistered: z.boolean(),
+  });
+
+  const form = useForm<InvoiceForm>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      invoiceLegalName: data.company.invoiceLegalName || data.company.legalName || '',
+      invoiceAddressLine1: data.company.invoiceAddressLine1 || '',
+      invoiceSuburb: data.company.invoiceSuburb || '',
+      invoiceState: data.company.invoiceState || 'VIC',
+      invoicePostcode: data.company.invoicePostcode || '',
+      gstRegistered: data.company.gstRegistered,
+    },
+  });
+
+  const mutation = useMutation({
+    mutationFn: (values: InvoiceForm) => {
+      const accountType = data.company.senderAccountType ?? 'BUSINESS';
+      return updateSenderProfile({
+        accountType,
+        legalName: data.company.legalName,
+        abn: data.company.abn || undefined,
+        homeRegionCode: data.company.homeRegionCode || 'VIC',
+        invoiceLegalName: values.invoiceLegalName,
+        invoiceAddressLine1: values.invoiceAddressLine1,
+        invoiceSuburb: values.invoiceSuburb,
+        invoiceState: values.invoiceState,
+        invoicePostcode: values.invoicePostcode,
+        gstRegistered: values.gstRegistered,
+      });
+    },
+    onSuccess: (next) => void onSaved(next),
+  });
+
+  return (
+    <form
+      className="mt-8"
+      onSubmit={form.handleSubmit((values) => mutation.mutate(values))}
+      noValidate
+    >
+      <h2 className="mb-4 font-display text-lg font-semibold">
+        {t('senderOnboarding.stepInvoice')}
+      </h2>
       <Field
         label={t('senderOnboarding.placeholderInvoiceLegalName')}
         required
@@ -404,15 +478,11 @@ function DocumentsStep({
   const upload = useMutation({
     mutationFn: async () => {
       if (!file) throw new Error(t('senderOnboarding.errorChooseFile'));
-      const mime = (file.type || 'application/pdf') as
-        | 'application/pdf'
-        | 'image/jpeg'
-        | 'image/png'
-        | 'image/webp';
+      const mime = resolveUploadMime(file);
       const intent = await createUploadIntent({
         companyId,
         docType,
-        originalFilename: file.name,
+        originalFilename: file.name || `capture.${mime === 'image/png' ? 'png' : 'jpg'}`,
         mimeType: mime,
         sizeBytes: file.size,
       });
@@ -442,8 +512,14 @@ function DocumentsStep({
       </p>
       <input
         type="file"
-        accept=".pdf,image/jpeg,image/png,image/webp"
-        onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+        accept=".pdf,image/jpeg,image/png,image/webp,image/*"
+        capture="environment"
+        onChange={(e) => {
+          upload.reset();
+          submit.reset();
+          setMessage(null);
+          setFile(e.target.files?.[0] ?? null);
+        }}
       />
       {(upload.isError || submit.isError) && (
         <Notice tone="error">{getErrorDetail(upload.error ?? submit.error)}</Notice>
@@ -495,7 +571,10 @@ function PaymentStep({ mock, onDone }: { mock: boolean; onDone: () => Promise<vo
 
   const confirm = useMutation({
     mutationFn: () => confirmSenderPayment(mock ? undefined : undefined),
-    onSuccess: () => onDone(),
+    onSuccess: () => {
+      setSetupInfo(null);
+      void onDone();
+    },
   });
 
   return (
@@ -511,10 +590,25 @@ function PaymentStep({ mock, onDone }: { mock: boolean; onDone: () => Promise<vo
       )}
       {setupInfo ? <Notice tone="success">{setupInfo}</Notice> : null}
       <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" disabled={setup.isPending} onClick={() => setup.mutate()}>
+        <Button
+          variant="secondary"
+          disabled={setup.isPending}
+          onClick={() => {
+            // Clear sticky Confirm-before-setup error under the upcoming success notice.
+            confirm.reset();
+            setup.mutate();
+          }}
+        >
           {t('senderOnboarding.createSetupIntent')}
         </Button>
-        <Button variant="cta" disabled={confirm.isPending} onClick={() => confirm.mutate()}>
+        <Button
+          variant="cta"
+          disabled={confirm.isPending}
+          onClick={() => {
+            setup.reset();
+            confirm.mutate();
+          }}
+        >
           {t('senderOnboarding.confirmPaymentReady')}
         </Button>
       </div>

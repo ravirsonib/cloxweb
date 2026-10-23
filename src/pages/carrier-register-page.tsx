@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { getErrorDetail, peekCompanyInvite, registerCarrier } from '@/lib/api';
 import { BrandLogo } from '@/components/brand-logo';
 import { Button, Field, Notice } from '@/components/ui';
+import { optionalPhoneSchema } from '@/lib/validation';
 
 type Form = {
   name: string;
@@ -36,7 +37,7 @@ export function CarrierRegisterPage() {
       .trim()
       .min(1, t('validation.emailRequired'))
       .email(t('validation.emailInvalid')),
-    phone: z.string(),
+    phone: optionalPhoneSchema(t('validation.phoneInvalid')),
     acceptedTerms: z.boolean().refine((value) => value === true, {
       message: t('validation.termsRequired'),
     }),
@@ -114,6 +115,9 @@ export function CarrierRegisterPage() {
           />
           <Field
             label={t('phoneOptional')}
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
             error={form.formState.errors.phone?.message}
             {...form.register('phone')}
           />

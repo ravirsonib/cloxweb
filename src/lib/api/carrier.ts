@@ -110,11 +110,19 @@ export type FleetRwcCompliance = {
   documentStatus: string | null;
 };
 
+export type FleetCommittedJob = {
+  id: string;
+  title: string | null;
+};
+
 export type CarrierVehicleListItem = {
   id: string;
   status: string;
-  /** Live trip activity when assigned to an open trip (ON_BREAK, IN_TRANSIT, …). */
+  /** Live trip / bid commitment label (ON_BREAK, IN_TRANSIT, BID_COMMITTED, …). */
   activityStatus?: string | null;
+  /** False when on trip, pending assignment, or open bid on another job. */
+  bidAvailable?: boolean;
+  committedJob?: FleetCommittedJob | null;
   currentTrip?: {
     id: string;
     status: string;
@@ -142,8 +150,11 @@ export type CarrierVehicleListItem = {
 export type CarrierDriverListItem = {
   id: string;
   status: string;
-  /** Live trip activity when on an active assignment (ON_BREAK, IN_TRANSIT, …). */
+  /** Live trip / bid commitment label (ON_BREAK, IN_TRANSIT, BID_COMMITTED, …). */
   activityStatus?: string | null;
+  /** False when on trip, pending assignment, or open bid on another job. */
+  bidAvailable?: boolean;
+  committedJob?: FleetCommittedJob | null;
   currentTrip?: {
     id: string;
     status: string;

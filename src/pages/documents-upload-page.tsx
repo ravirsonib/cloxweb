@@ -15,6 +15,7 @@ import {
 } from '@/lib/api';
 import { Button, Notice, Select, StatusPill, useConfirm, useToast } from '@/components/ui';
 import type { ComplianceDocumentListItem } from '@/lib/api';
+import { resolveUploadMime } from '@/lib/upload-mime';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -78,6 +79,9 @@ export function DocumentsUploadPage() {
     queryKey: ['documents', 'list', companyId, isDriver ? 'self' : 'company'],
     queryFn: () => listDocuments({ companyId: companyId! }),
     enabled: Boolean(companyId),
+    // Always refresh so APPROVED docs after Ops review are not stuck behind a stale empty cache.
+    refetchOnMount: 'always',
+    staleTime: 0,
   });
 
   const caseType = isSender
@@ -90,15 +94,12 @@ export function DocumentsUploadPage() {
     mutationFn: async () => {
       if (!file) throw new Error(t('documentsUpload.errorChooseFile'));
       if (!companyId) throw new Error(t('documentsUpload.errorNoCompany'));
-      const mime = (file.type || 'application/pdf') as
-        | 'application/pdf'
-        | 'image/jpeg'
-        | 'image/png'
-        | 'image/webp';
+      const mime = resolveUploadMime(file);
       const intent = await createUploadIntent({
         companyId,
         docType,
-        originalFilename: file.name,
+        originalFilename:
+          file.name || `capture.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
         mimeType: mime,
         sizeBytes: file.size,
       });
@@ -140,13 +141,15 @@ export function DocumentsUploadPage() {
         documentIds: uploadedForSubmit.map((d) => d.id),
       });
     },
-    onSuccess: (res) => {
+    onSuccess: async (res) => {
+      setUploadedForSubmit([]);
       setMessage(
         t('documentsUpload.submittedMessage', {
           id: res.id.slice(0, 8),
           companyStatus: res.companyStatus,
         }),
       );
+      await qc.invalidateQueries({ queryKey: ['documents', 'list'] });
     },
   });
 
@@ -324,8 +327,14 @@ export function DocumentsUploadPage() {
           </span>
           <input
             type="file"
-            accept=".pdf,image/jpeg,image/png,image/webp"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            accept=".pdf,image/jpeg,image/png,image/webp,image/*"
+            capture="environment"
+            onChange={(e) => {
+              uploadMutation.reset();
+              submitMutation.reset();
+              setMessage(null);
+              setFile(e.target.files?.[0] ?? null);
+            }}
             className="block w-full text-sm text-clox-mute"
           />
         </label>

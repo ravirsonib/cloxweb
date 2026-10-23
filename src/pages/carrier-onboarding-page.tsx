@@ -24,6 +24,7 @@ import {
 } from '@/lib/api';
 import { Button, Field, Notice, Select, StepChips, useConfirm } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
+import { resolveUploadMime } from '@/lib/upload-mime';
 import {
   abnSchema,
   suggestedGvmKgForClass,
@@ -85,8 +86,10 @@ export function CarrierOnboardingPage() {
   const [viewStep, setViewStep] = useState<string | null>(null);
 
   const serverStep = query.data?.step;
+  // Seed once only — do not yank the user off Fleet after RWC upload when the
+  // server step advances; steps call setViewStep explicitly on Continue.
   useEffect(() => {
-    if (serverStep) setViewStep(serverStep);
+    if (serverStep) setViewStep((prev) => prev ?? serverStep);
   }, [serverStep]);
 
   if (role !== AppRole.TRANSPORT_COMPANY) {
@@ -108,6 +111,11 @@ export function CarrierOnboardingPage() {
       queryFn: () => getCarrierOnboarding(),
     });
     return result;
+  };
+  const refreshAndGo = async () => {
+    const fresh = await refresh();
+    if (fresh?.step) setViewStep(fresh.step);
+    return fresh;
   };
 
   return (
@@ -159,23 +167,36 @@ export function CarrierOnboardingPage() {
         </Notice>
       ) : null}
 
-      {step === 'profile' && <ProfileStep data={data} onSaved={refresh} />}
+      {step === 'profile' && <ProfileStep data={data} onSaved={refreshAndGo} />}
       {step === 'documents' && (
-        <DocumentsStep companyId={data.company.id} onSubmitted={refresh} />
+        <DocumentsStep
+          companyId={data.company.id}
+          uploadedDocs={data.uploadedDocs}
+          onUploaded={refresh}
+          onSubmitted={refreshAndGo}
+        />
       )}
-      {step === 'connect' && <ConnectStep mock={data.stripeMock} onDone={refresh} />}
-      {step === 'vehicles' && <VehiclesStep data={data} onSaved={refresh} />}
-      {step === 'drivers' && <DriversStep data={data} onSaved={refresh} />}
+      {step === 'connect' && (
+        <ConnectStep mock={data.stripeMock} onDone={refreshAndGo} />
+      )}
+      {step === 'vehicles' && (
+        <VehiclesStep
+          data={data}
+          onSaved={refresh}
+          onContinue={refreshAndGo}
+        />
+      )}
+      {step === 'drivers' && <DriversStep data={data} onSaved={refreshAndGo} />}
       {step === 'capabilities' && (
         <CapabilitiesStep
           data={data}
           onSaved={async (next) => {
             const fresh = next ?? (await refresh());
-            if (fresh.step) setViewStep(fresh.step);
+            if (fresh?.step) setViewStep(fresh.step);
           }}
         />
       )}
-      {step === 'submit' && <SubmitStep data={data} onSubmitted={refresh} />}
+      {step === 'submit' && <SubmitStep data={data} onSubmitted={refreshAndGo} />}
       {step === 'waiting_ops' && (
         <Notice tone="warn" className="mt-8" title={t('waitingForOps')}>
           <p>
@@ -315,28 +336,56 @@ function ProfileStep({
   );
 }
 
+function pickCompanyDoc(
+  docs: NonNullable<CarrierOnboarding['uploadedDocs']> | undefined,
+  docType: string,
+) {
+  const matches = (docs ?? []).filter((d) => d.docType === docType && !d.vehicleId);
+  return (
+    matches.find((d) => d.status === 'UPLOADED') ??
+    matches.find((d) => d.status === 'UNDER_REVIEW') ??
+    matches.find((d) => d.status === 'APPROVED') ??
+    matches[0]
+  );
+}
+
 function DocumentsStep({
   companyId,
+  uploadedDocs,
+  onUploaded,
   onSubmitted,
 }: {
   companyId: string;
+  uploadedDocs?: CarrierOnboarding['uploadedDocs'];
+  onUploaded: () => Promise<CarrierOnboarding | void>;
   onSubmitted: () => Promise<CarrierOnboarding | void>;
 }) {
   const { t } = useTranslation();
-  const [plId, setPlId] = useState<string | null>(null);
-  const [cargoId, setCargoId] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const existingPl = pickCompanyDoc(uploadedDocs, 'PUBLIC_LIABILITY');
+  const existingCargo = pickCompanyDoc(uploadedDocs, 'CARGO_INSURANCE');
+  const [plId, setPlId] = useState<string | null>(existingPl?.id ?? null);
+  const [cargoId, setCargoId] = useState<string | null>(existingCargo?.id ?? null);
+  const [message, setMessage] = useState<string | null>(
+    existingPl && existingCargo ? t('carrierOnboarding.usingPreviousUploads') : null,
+  );
+
+  useEffect(() => {
+    const pl = pickCompanyDoc(uploadedDocs, 'PUBLIC_LIABILITY');
+    const cargo = pickCompanyDoc(uploadedDocs, 'CARGO_INSURANCE');
+    if (pl?.id) setPlId(pl.id);
+    if (cargo?.id) setCargoId(cargo.id);
+    if (pl && cargo) {
+      setMessage(t('carrierOnboarding.usingPreviousUploads'));
+    }
+  }, [uploadedDocs, t]);
 
   async function upload(docType: 'PUBLIC_LIABILITY' | 'CARGO_INSURANCE', file: File) {
-    const mime = (file.type || 'application/pdf') as
-      | 'application/pdf'
-      | 'image/jpeg'
-      | 'image/png'
-      | 'image/webp';
+    const mime = resolveUploadMime(file);
     const intent = await createUploadIntent({
       companyId,
       docType,
-      originalFilename: file.name,
+      originalFilename:
+        file.name || `capture.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
       mimeType: mime,
       sizeBytes: file.size,
     });
@@ -347,16 +396,18 @@ function DocumentsStep({
 
   const uploadPl = useMutation({
     mutationFn: async (file: File) => upload('PUBLIC_LIABILITY', file),
-    onSuccess: (id) => {
+    onSuccess: async (id) => {
       setPlId(id);
       setMessage(t('carrierOnboarding.publicLiabilityUploaded'));
+      await onUploaded();
     },
   });
   const uploadCargo = useMutation({
     mutationFn: async (file: File) => upload('CARGO_INSURANCE', file),
-    onSuccess: (id) => {
+    onSuccess: async (id) => {
       setCargoId(id);
       setMessage(t('carrierOnboarding.cargoInsuranceUploaded'));
+      await onUploaded();
     },
   });
 
@@ -369,12 +420,58 @@ function DocumentsStep({
         })}
       </p>
       <p className="text-xs text-clox-faint">{t('carrierOnboarding.docsRwcFleetHint')}</p>
+      {existingPl || existingCargo ? (
+        <ul className="space-y-1 rounded-xl border border-clox-border bg-clox-surface p-3 text-xs text-clox-mute">
+          {existingPl ? (
+            <li>
+              PUBLIC_LIABILITY · {existingPl.status}
+              {existingPl.id ? (
+                <>
+                  {' · '}
+                  <button
+                    type="button"
+                    className="font-semibold text-clox-orange hover:underline"
+                    onClick={() => {
+                      void openDocumentContent(existingPl.id).catch(() => undefined);
+                    }}
+                  >
+                    {t('documentsUpload.viewDocument')}
+                  </button>
+                </>
+              ) : null}
+            </li>
+          ) : null}
+          {existingCargo ? (
+            <li>
+              CARGO_INSURANCE · {existingCargo.status}
+              {existingCargo.id ? (
+                <>
+                  {' · '}
+                  <button
+                    type="button"
+                    className="font-semibold text-clox-orange hover:underline"
+                    onClick={() => {
+                      void openDocumentContent(existingCargo.id).catch(() => undefined);
+                    }}
+                  >
+                    {t('documentsUpload.viewDocument')}
+                  </button>
+                </>
+              ) : null}
+            </li>
+          ) : null}
+        </ul>
+      ) : null}
       <div>
         <p className="mb-1 text-xs text-clox-faint">{t('carrierOnboarding.publicLiability')}</p>
         <input
           type="file"
-          accept=".pdf,image/jpeg,image/png,image/webp"
+          accept=".pdf,image/jpeg,image/png,image/webp,image/*"
+          capture="environment"
           onChange={(e) => {
+            uploadPl.reset();
+            uploadCargo.reset();
+            setMessage(null);
             const f = e.target.files?.[0];
             if (f) uploadPl.mutate(f);
           }}
@@ -384,8 +481,12 @@ function DocumentsStep({
         <p className="mb-1 text-xs text-clox-faint">{t('carrierOnboarding.cargoInsurance')}</p>
         <input
           type="file"
-          accept=".pdf,image/jpeg,image/png,image/webp"
+          accept=".pdf,image/jpeg,image/png,image/webp,image/*"
+          capture="environment"
           onChange={(e) => {
+            uploadPl.reset();
+            uploadCargo.reset();
+            setMessage(null);
             const f = e.target.files?.[0];
             if (f) uploadCargo.mutate(f);
           }}
@@ -431,7 +532,10 @@ function ConnectStep({
   });
   const confirm = useMutation({
     mutationFn: () => confirmCarrierConnect(),
-    onSuccess: () => onDone(),
+    onSuccess: () => {
+      setInfo(null);
+      void onDone();
+    },
   });
   return (
     <div className="mt-8 space-y-4">
@@ -446,10 +550,24 @@ function ConnectStep({
       )}
       {info ? <Notice tone="success">{info}</Notice> : null}
       <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" disabled={setup.isPending} onClick={() => setup.mutate()}>
+        <Button
+          variant="secondary"
+          disabled={setup.isPending}
+          onClick={() => {
+            confirm.reset();
+            setup.mutate();
+          }}
+        >
           {t('carrierOnboarding.createConnectAccount')}
         </Button>
-        <Button variant="cta" disabled={confirm.isPending} onClick={() => confirm.mutate()}>
+        <Button
+          variant="cta"
+          disabled={confirm.isPending}
+          onClick={() => {
+            setup.reset();
+            confirm.mutate();
+          }}
+        >
           {t('carrierOnboarding.confirmPayoutsReady')}
         </Button>
       </div>
@@ -468,9 +586,11 @@ type VehicleForm = {
 function VehiclesStep({
   data,
   onSaved,
+  onContinue,
 }: {
   data: CarrierOnboarding;
   onSaved: () => Promise<CarrierOnboarding | void>;
+  onContinue: () => Promise<CarrierOnboarding | void>;
 }) {
   const { t } = useTranslation();
   const [rwcMsg, setRwcMsg] = useState<string | null>(null);
@@ -521,15 +641,12 @@ function VehiclesStep({
   }, [watchedClass, setValue]);
 
   async function uploadRwcForVehicle(vehicleId: string, file: File) {
-    const mime = (file.type || 'application/pdf') as
-      | 'application/pdf'
-      | 'image/jpeg'
-      | 'image/png'
-      | 'image/webp';
+    const mime = resolveUploadMime(file);
     const intent = await createUploadIntent({
       companyId: data.company.id,
       docType: 'RWC',
-      originalFilename: file.name,
+      originalFilename:
+        file.name || `rwc.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
       mimeType: mime,
       sizeBytes: file.size,
       vehicleId,
@@ -613,11 +730,13 @@ function VehiclesStep({
                   {t('carrierOnboarding.rwc')} ({t('carrierOnboarding.rwcPerVehicle')})
                   <input
                     type="file"
-                    accept=".pdf,image/jpeg,image/png,image/webp"
+                    accept=".pdf,image/jpeg,image/png,image/webp,image/*"
+                    capture="environment"
                     className="mt-1 block"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
                       if (!f) return;
+                      setRwcFormError(null);
                       void uploadRwcForVehicle(v.id, f)
                         .then(async () => {
                           setRwcMsg(t('carrierOnboarding.rwcUploaded'));
@@ -699,7 +818,8 @@ function VehiclesStep({
           <p className="mb-2 text-xs text-clox-faint">{t('fleet.rwcHint')}</p>
           <input
             type="file"
-            accept=".pdf,image/jpeg,image/png,image/webp"
+            accept=".pdf,image/jpeg,image/png,image/webp,image/*"
+            capture="environment"
             onChange={(e) => {
               setRwcFile(e.target.files?.[0] ?? null);
               setRwcFormError(null);
@@ -717,7 +837,7 @@ function VehiclesStep({
             {mutation.isPending ? t('saving') : t('carrierOnboarding.addVehicle')}
           </Button>
           {allActiveHaveRwc ? (
-            <Button type="button" variant="secondary" onClick={() => void onSaved()}>
+            <Button type="button" variant="secondary" onClick={() => void onContinue()}>
               {t('continue')}
             </Button>
           ) : null}
@@ -905,15 +1025,12 @@ function CapabilitiesStep({
   const [formError, setFormError] = useState<string | null>(null);
 
   async function uploadDgLicence(file: File) {
-    const mime = (file.type || 'application/pdf') as
-      | 'application/pdf'
-      | 'image/jpeg'
-      | 'image/png'
-      | 'image/webp';
+    const mime = resolveUploadMime(file);
     const intent = await createUploadIntent({
       companyId: data.company.id,
       docType: 'DG_LICENCE',
-      originalFilename: file.name,
+      originalFilename:
+        file.name || `dg.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
       mimeType: mime,
       sizeBytes: file.size,
     });
@@ -988,16 +1105,17 @@ function CapabilitiesStep({
           <p className="mt-1 text-xs text-clox-faint">{t('carrierOnboarding.dgLicenceHint')}</p>
           <input
             type="file"
-            accept=".pdf,image/jpeg,image/png,image/webp"
+            accept=".pdf,image/jpeg,image/png,image/webp,image/*"
+            capture="environment"
             className="mt-2 block"
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (!f) return;
+              setFormError(null);
               void uploadDgLicence(f)
                 .then((id) => {
                   setDgDocId(id);
                   setDgMsg(t('carrierOnboarding.dgLicenceUploaded'));
-                  setFormError(null);
                 })
                 .catch((err) => setFormError(getErrorDetail(err)));
             }}
@@ -1072,15 +1190,12 @@ function SubmitStep({
   );
 
   async function upload(docType: 'PUBLIC_LIABILITY' | 'CARGO_INSURANCE', file: File) {
-    const mime = (file.type || 'application/pdf') as
-      | 'application/pdf'
-      | 'image/jpeg'
-      | 'image/png'
-      | 'image/webp';
+    const mime = resolveUploadMime(file);
     const intent = await createUploadIntent({
       companyId: data.company.id,
       docType,
-      originalFilename: file.name,
+      originalFilename:
+        file.name || `capture.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
       mimeType: mime,
       sizeBytes: file.size,
     });

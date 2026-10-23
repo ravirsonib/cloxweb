@@ -354,6 +354,7 @@
     "nameRequired": "Enter your full name.",
     "emailRequired": "Enter a valid email address.",
     "emailInvalid": "That doesn’t look like a valid email address.",
+    "phoneInvalid": "Enter a valid Australian phone number (e.g. 04xx xxx xxx or +61…).",
     "termsRequired": "Accept Terms & Privacy to continue.",
     "companyNameRequired": "Enter your company or trading name.",
     "legalNameRequired": "Enter the legal name on the invoice / ABN record.",
@@ -549,7 +550,13 @@
     "errorSelectVehicle": "Select an eligible vehicle.",
     "errorSelectDriver": "Select an active driver.",
     "errorNeedActiveFleet": "You need at least one active vehicle and one active driver to bid.",
-    "errorVehicleUndersize": "That vehicle class is too small for this job."
+    "errorVehicleUndersize": "That vehicle class is too small for this job.",
+    "errorVehicleBusy": "That vehicle is already committed on another job (open bid, pending accept, or live trip).",
+    "errorDriverBusy": "That driver is already committed on another job (open bid, pending accept, or live trip).",
+    "busyOpenBid": "open bid elsewhere",
+    "busyPendingAssign": "pending accept/payment",
+    "busyOnTrip": "on trip",
+    "noFleetAvailable": "No free vehicle/driver pair — finish or withdraw the open bid, or wait for the live trip to complete. Accepting a bid expires conflicting proposals on other jobs for the same vehicle or driver."
   },
   "exceptions": {
     "title": "Trip exceptions",

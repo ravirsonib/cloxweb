@@ -509,11 +509,16 @@ export function DriverTripDetailPage() {
     !podBlockedBySurcharge &&
     (activePodStatus === 'SIGNED' || Boolean(activePodStop?.signedAt)) &&
     activePhotoCount >= 1;
-  /** After POD finalize (or trip end), lock break / location / notify / report. */
+  /**
+   * Lock break / location / notify / report / POD capture while finalize is in
+   * flight, and after POD finalize (or trip end).
+   */
   const tripActionsLocked =
+    podFinalize.isPending ||
     activePodStatus === 'FINALIZED' ||
     tripData.status === 'COMPLETED' ||
     tripData.status === 'CANCELLED';
+  const podCaptureLocked = tripActionsLocked || podBlockedBySurcharge;
   const signaturePreviewUrl = remoteSignatureUrl ?? localSignaturePreview;
   const photoPreviewUrls =
     remotePhotoUrls.length > 0 ? remotePhotoUrls : localPhotoPreviews;
@@ -810,14 +815,14 @@ export function DriverTripDetailPage() {
                     placeholder={t('trips.podSignerPlaceholder')}
                     value={signerName}
                     onChange={(e) => setSignerName(e.target.value)}
-                    disabled={podBlockedBySurcharge}
+                    disabled={podCaptureLocked}
                   />
                   <label className="flex items-start gap-2 text-sm text-clox-ink">
                     <input
                       type="checkbox"
                       className="mt-1"
                       checked={attestPresent}
-                      disabled={podBlockedBySurcharge}
+                      disabled={podCaptureLocked}
                       onChange={(e) => setAttestPresent(e.target.checked)}
                     />
                     <span>{t('trips.podAttestPresent')}</span>
@@ -829,10 +834,10 @@ export function DriverTripDetailPage() {
                     height={140}
                     className={cn(
                       'w-full rounded-clox-sm border border-clox-border bg-white touch-none',
-                      podBlockedBySurcharge ? 'pointer-events-none opacity-50' : '',
+                      podCaptureLocked ? 'pointer-events-none opacity-50' : '',
                     )}
                     onPointerDown={(e) => {
-                      if (podBlockedBySurcharge) return;
+                      if (podCaptureLocked) return;
                       drawingRef.current = true;
                       const canvas = canvasRef.current;
                       const ctx = canvas?.getContext('2d');
@@ -868,7 +873,7 @@ export function DriverTripDetailPage() {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      disabled={podBlockedBySurcharge}
+                      disabled={podCaptureLocked}
                       onClick={() => {
                         const canvas = canvasRef.current;
                         const ctx = canvas?.getContext('2d');
@@ -884,7 +889,7 @@ export function DriverTripDetailPage() {
                       variant="secondary"
                       size="sm"
                       disabled={
-                        podBlockedBySurcharge ||
+                        podCaptureLocked ||
                         podSign.isPending ||
                         !attestPresent ||
                         signerName.trim().length < 2 ||
@@ -906,7 +911,7 @@ export function DriverTripDetailPage() {
                     <label
                       className={cn(
                         'clox-btn clox-btn-secondary cursor-pointer px-3 py-1.5 text-[12.5px]',
-                        podBlockedBySurcharge || podPhoto.isPending
+                        podCaptureLocked || podPhoto.isPending
                           ? 'pointer-events-none opacity-60'
                           : '',
                       )}
@@ -918,7 +923,7 @@ export function DriverTripDetailPage() {
                         capture="environment"
                         className="sr-only"
                         disabled={
-                          podBlockedBySurcharge || podPhoto.isPending || !activePodStopId
+                          podCaptureLocked || podPhoto.isPending || !activePodStopId
                         }
                         onChange={(e) => {
                           const input = e.currentTarget;
@@ -951,11 +956,11 @@ export function DriverTripDetailPage() {
                       size="sm"
                       disabled={podFinalize.isPending || !canFinalizePod}
                       onClick={() => {
-                        if (!activePodStopId) return;
+                        if (!activePodStopId || podFinalize.isPending) return;
                         podFinalize.mutate(activePodStopId);
                       }}
                     >
-                      {t('trips.podFinalize')}
+                      {podFinalize.isPending ? t('loading') : t('trips.podFinalize')}
                     </Button>
                   </div>
                 </>
@@ -1041,6 +1046,7 @@ export function DriverTripDetailPage() {
               <Select
                 label={t('trips.reportKind')}
                 value={reportKind}
+                disabled={tripActionsLocked || report.isPending}
                 onChange={(event) => {
                   const next = event.target.value as TripExceptionKind;
                   setReportKind(next);
@@ -1061,6 +1067,7 @@ export function DriverTripDetailPage() {
                 value={reportReason}
                 onChange={(event) => setReportReason(event.target.value)}
                 placeholder={t('trips.reportReasonPlaceholder')}
+                disabled={tripActionsLocked || report.isPending}
               />
               <label className="block">
                 <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
@@ -1073,6 +1080,7 @@ export function DriverTripDetailPage() {
                   placeholder={t('trips.reportNotePlaceholder')}
                   maxLength={2000}
                   required
+                  disabled={tripActionsLocked || report.isPending}
                 />
               </label>
               {reportKind === 'VEHICLE_BREAKDOWN' ? (
@@ -1083,7 +1091,7 @@ export function DriverTripDetailPage() {
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
                     className="block w-full text-sm text-clox-mute file:mr-3 file:rounded-clox-md file:border-0 file:bg-clox-surface file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-clox-ink"
-                    disabled={photoUploading || report.isPending}
+                    disabled={tripActionsLocked || photoUploading || report.isPending}
                     onChange={(event) => {
                       const file = event.target.files?.[0];
                       if (file) void uploadBreakdownPhoto(file);

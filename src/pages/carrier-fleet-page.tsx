@@ -449,8 +449,7 @@ export function CarrierFleetPage() {
         <input
           id={inputId}
           type="file"
-          accept=".pdf,image/jpeg,image/png,image/webp,image/*"
-          capture="environment"
+          accept=".pdf,image/jpeg,image/png,image/webp"
           className="sr-only"
           disabled={busy || !companyId}
           onChange={(event) => {
@@ -482,7 +481,7 @@ export function CarrierFleetPage() {
   function renderActions(row: CarrierVehicleListItem) {
     const isParked = row.status === 'SUSPENDED' || row.status === 'RETIRED';
     return (
-      <div className="inline-flex flex-nowrap items-center gap-1.5 whitespace-nowrap">
+      <div className="inline-flex max-w-full flex-wrap items-center gap-1.5 sm:flex-nowrap sm:whitespace-nowrap">
         {renderRwcView(row)}
         {renderRwcUpload(row)}
         {isParked ? (
@@ -636,31 +635,31 @@ export function CarrierFleetPage() {
                 error={form.formState.errors.tareKg?.message}
                 {...form.register('tareKg', { valueAsNumber: true })}
               />
-              <div className="sm:col-span-2 lg:col-span-3">
+              <div className="clox-file-field mb-0 sm:col-span-2 lg:col-span-3">
                 <p className="mb-1.5 text-[12.5px] font-semibold text-clox-ink">
                   {t('fleet.rwcLabel')}
                 </p>
                 <p className="mb-2 text-xs text-clox-faint">{t('fleet.rwcHint')}</p>
                 <input
                   type="file"
-                  accept=".pdf,image/jpeg,image/png,image/webp,image/*"
-                  capture="environment"
+                  accept=".pdf,image/jpeg,image/png,image/webp"
+                  className="clox-file-input"
                   onChange={(event) => {
                     setRwcFile(event.target.files?.[0] ?? null);
                     setRwcFormError(null);
                   }}
                 />
                 {rwcFile ? (
-                  <p className="mt-1 text-xs text-clox-mute">{rwcFile.name}</p>
+                  <p className="mt-2 text-xs text-clox-mute">{rwcFile.name}</p>
                 ) : null}
               </div>
             </div>
             {rwcFormError || addMutation.isError ? (
-              <Notice tone="error" className="mt-3">
+              <Notice tone="error" className="mt-4">
                 {rwcFormError ?? getErrorDetail(addMutation.error)}
               </Notice>
             ) : null}
-            <div className="mt-4">
+            <div className="clox-form-actions">
               <Button type="submit" variant="cta" disabled={busy || !companyId}>
                 {addMutation.isPending ? t('saving') : t('fleet.addVehicle')}
               </Button>

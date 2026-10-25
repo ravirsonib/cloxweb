@@ -1,4 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { setAppLocale } from '@/lib/i18n';
 import { cn } from '@/lib/cn';
@@ -12,8 +21,12 @@ const options: { locale: AppLocale; label: string }[] = [
 export function LanguageSwitcher({ className = '' }: { className?: string }) {
   const { i18n, t } = useTranslation('common');
   const current = (i18n.language?.startsWith('hi') ? 'hi' : 'en') as AppLocale;
+  const listboxId = useId();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const [popoverStyle, setPopoverStyle] = useState<CSSProperties>({});
 
   function switchTo(locale: AppLocale) {
     setOpen(false);
@@ -21,12 +34,58 @@ export function LanguageSwitcher({ className = '' }: { className?: string }) {
     setAppLocale(locale);
   }
 
+  const updatePopoverPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const width = Math.max(rect.width, 168);
+    const gap = 4;
+    const left = Math.min(Math.max(8, rect.right - width), window.innerWidth - width - 8);
+    const spaceBelow = window.innerHeight - rect.bottom - gap;
+    const openUp = spaceBelow < 120 && rect.top > spaceBelow;
+
+    if (openUp) {
+      setPopoverStyle({
+        position: 'fixed',
+        left,
+        width,
+        bottom: window.innerHeight - rect.top + gap,
+        top: 'auto',
+      });
+    } else {
+      setPopoverStyle({
+        position: 'fixed',
+        left,
+        width,
+        top: rect.bottom + gap,
+        bottom: 'auto',
+      });
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePopoverPosition();
+    window.addEventListener('resize', updatePopoverPosition);
+    window.addEventListener('scroll', updatePopoverPosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePopoverPosition);
+      window.removeEventListener('scroll', updatePopoverPosition, true);
+    };
+  }, [open, updatePopoverPosition]);
+
   useEffect(() => {
+    if (!open) return;
     function onPointerDown(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
+      setOpen(false);
     }
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
     }
     document.addEventListener('mousedown', onPointerDown);
     document.addEventListener('keydown', onKeyDown);
@@ -34,15 +93,56 @@ export function LanguageSwitcher({ className = '' }: { className?: string }) {
       document.removeEventListener('mousedown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, []);
+  }, [open]);
+
+  const listbox =
+    open && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            ref={popoverRef}
+            id={listboxId}
+            role="listbox"
+            aria-label={t('language')}
+            className="clox-select-popover overflow-hidden p-0"
+            style={popoverStyle}
+          >
+            {options.map((option) => {
+              const active = option.locale === current;
+              return (
+                <button
+                  key={option.locale}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  className={cn(
+                    'flex w-full px-4 py-3 text-left text-[0.95rem] transition',
+                    active
+                      ? 'bg-clox-surface-alt font-bold text-clox-ink'
+                      : 'text-clox-text hover:bg-clox-accent-tint hover:text-clox-accent-deep',
+                  )}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    switchTo(option.locale);
+                  }}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>,
+          document.body,
+        )
+      : null;
 
   return (
     <div ref={rootRef} className={cn('relative', className)}>
       <button
+        ref={triggerRef}
         type="button"
         className="inline-flex items-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium text-clox-mute transition hover:bg-clox-surface-alt hover:text-clox-ink"
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls={listboxId}
         aria-label={t('language')}
         onClick={() => setOpen((value) => !value)}
       >
@@ -74,38 +174,7 @@ export function LanguageSwitcher({ className = '' }: { className?: string }) {
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
-
-      {open ? (
-        <div
-          role="listbox"
-          aria-label={t('language')}
-          className="absolute right-0 top-full z-[1001] mt-1 min-w-[10.5rem] overflow-hidden rounded-clox-md border border-clox-border bg-clox-surface shadow-clox-2"
-        >
-          {options.map((option) => {
-            const active = option.locale === current;
-            return (
-              <button
-                key={option.locale}
-                type="button"
-                role="option"
-                aria-selected={active}
-                className={cn(
-                  'flex w-full px-4 py-3 text-left text-[0.95rem] transition',
-                  active
-                    ? 'bg-clox-surface-alt font-bold text-clox-ink'
-                    : 'text-clox-text hover:bg-clox-accent-tint hover:text-clox-accent-deep',
-                )}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  switchTo(option.locale);
-                }}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
+      {listbox}
     </div>
   );
 }

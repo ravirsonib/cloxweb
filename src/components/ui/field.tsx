@@ -21,7 +21,7 @@ export function FieldShell({
   htmlFor,
 }: FieldShellProps) {
   return (
-    <div className={cn('mb-4 last:mb-0', className)}>
+    <div className={cn('mb-4 min-w-0 last:mb-0', className)}>
       {label ? (
         <label
           htmlFor={htmlFor}

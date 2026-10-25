@@ -140,11 +140,12 @@ export function LeadsPage() {
   function statusSelect(lead: LeadListItem) {
     return (
       <div
-        className="min-w-[9.5rem]"
+        className="min-w-0 w-full sm:min-w-[9.5rem] sm:w-auto"
         onMouseDown={stopRowNav}
         onClick={stopRowNav}
       >
         <Select
+          className="mb-0"
           aria-label={t('admin.colStatus')}
           value={lead.status}
           disabled={busy}
@@ -267,7 +268,7 @@ export function LeadsPage() {
                   getKey={(lead) => lead.id}
                   renderItem={(lead) => (
                     <div className={dataCardClassName}>
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
                           <Link
                             to={`/leads/${lead.id}`}

@@ -19,9 +19,12 @@ import {
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import {
   Button,
+  CardCollection,
+  DataCard,
   DataTable,
   Field,
   Notice,
+  ResponsiveDataView,
   SearchableSelect,
   Select,
   StatusPill,
@@ -237,7 +240,7 @@ export function OpsPartnersPage() {
   function renderActions(row: PartnerAdminListItem) {
     const companyStatus = row.company?.status;
     return (
-      <div className="flex flex-wrap items-center justify-end gap-2">
+      <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
         {row.openCase ? (
           <Link
             to={`/compliance/${row.openCase.id}`}
@@ -423,60 +426,105 @@ export function OpsPartnersPage() {
           </div>
         ) : null}
         {items.length > 0 ? (
-          <div className="mt-4 overflow-x-auto">
-            <DataTable
-              minWidthClassName="min-w-[56rem]"
-              headers={[
-                t('opsPartners.colPartner'),
-                t('opsPartners.colRole'),
-                t('opsPartners.colStatus'),
-                t('opsPartners.colCompanyStatus'),
-                t('opsPartners.colScope'),
-                t('opsPartners.colActions'),
-              ]}
-            >
-              {items.map((row) => (
-                <tr key={row.id} className="border-t border-clox-border-soft">
-                  <td className="px-4 py-3">
-                    <p className="font-medium text-clox-ink">
-                      {row.company?.legalName || row.name || row.email}
-                    </p>
-                    <p className="text-xs text-clox-faint">{row.email}</p>
-                    {row.company?.abn ? (
-                      <p className="font-mono text-xs text-clox-faint">ABN {row.company.abn}</p>
-                    ) : null}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">{row.role}</td>
-                  <td className="px-4 py-3">
-                    <StatusPill tone={adminPartnerStatusTone(row.status)}>{row.status}</StatusPill>
-                  </td>
-                  <td className="px-4 py-3">
-                    {row.company?.status ? (
-                      <StatusPill tone={companyStatusTone(row.company.status)}>
-                        {t(`companyStatuses.${row.company.status}`, {
-                          defaultValue: row.company.status,
-                        })}
-                      </StatusPill>
-                    ) : (
-                      t('dash')
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-clox-mute">
-                    {(row.scopes ?? [])
-                      .map((s) => [s.regionCode, s.territoryCode].filter(Boolean).join('/'))
-                      .join(', ') || t('dash')}
-                  </td>
-                  <td className="px-4 py-3 text-right">{renderActions(row)}</td>
-                </tr>
-              ))}
-            </DataTable>
+          <div className="mt-4">
+            <ResponsiveDataView
+              cards={
+                <CardCollection>
+                  {items.map((row) => (
+                    <DataCard key={row.id}>
+                      <div className="flex min-w-0 items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-clox-ink">
+                            {row.company?.legalName || row.name || row.email}
+                          </p>
+                          <p className="truncate text-xs text-clox-faint">{row.email}</p>
+                        </div>
+                        <StatusPill tone={adminPartnerStatusTone(row.status)}>
+                          {row.status}
+                        </StatusPill>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-clox-mute">
+                        <span className="font-mono">{row.role}</span>
+                        {row.company?.status ? (
+                          <StatusPill tone={companyStatusTone(row.company.status)}>
+                            {t(`companyStatuses.${row.company.status}`, {
+                              defaultValue: row.company.status,
+                            })}
+                          </StatusPill>
+                        ) : null}
+                      </div>
+                      <p className="mt-2 text-xs text-clox-faint">
+                        {(row.scopes ?? [])
+                          .map((s) => [s.regionCode, s.territoryCode].filter(Boolean).join('/'))
+                          .join(', ') || t('dash')}
+                      </p>
+                      <div className="mt-3">{renderActions(row)}</div>
+                    </DataCard>
+                  ))}
+                </CardCollection>
+              }
+              table={
+                <DataTable
+                  minWidthClassName="min-w-[56rem]"
+                  headers={[
+                    t('opsPartners.colPartner'),
+                    t('opsPartners.colRole'),
+                    t('opsPartners.colStatus'),
+                    t('opsPartners.colCompanyStatus'),
+                    t('opsPartners.colScope'),
+                    t('opsPartners.colActions'),
+                  ]}
+                >
+                  {items.map((row) => (
+                    <tr key={row.id} className="border-t border-clox-border-soft">
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-clox-ink">
+                          {row.company?.legalName || row.name || row.email}
+                        </p>
+                        <p className="text-xs text-clox-faint">{row.email}</p>
+                        {row.company?.abn ? (
+                          <p className="font-mono text-xs text-clox-faint">
+                            ABN {row.company.abn}
+                          </p>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs">{row.role}</td>
+                      <td className="px-4 py-3">
+                        <StatusPill tone={adminPartnerStatusTone(row.status)}>
+                          {row.status}
+                        </StatusPill>
+                      </td>
+                      <td className="px-4 py-3">
+                        {row.company?.status ? (
+                          <StatusPill tone={companyStatusTone(row.company.status)}>
+                            {t(`companyStatuses.${row.company.status}`, {
+                              defaultValue: row.company.status,
+                            })}
+                          </StatusPill>
+                        ) : (
+                          t('dash')
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-clox-mute">
+                        {(row.scopes ?? [])
+                          .map((s) =>
+                            [s.regionCode, s.territoryCode].filter(Boolean).join('/'),
+                          )
+                          .join(', ') || t('dash')}
+                      </td>
+                      <td className="px-4 py-3 text-right">{renderActions(row)}</td>
+                    </tr>
+                  ))}
+                </DataTable>
+              }
+            />
           </div>
         ) : null}
       </section>
 
       {disableTarget ? (
-        <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-          <div className="clox-card w-full max-w-md p-5 shadow-clox-2">
+        <div className="clox-dialog-backdrop" role="presentation">
+          <div className="clox-dialog" role="dialog" aria-modal="true">
             <h3 className="font-display text-lg font-semibold text-clox-ink">
               {t('opsPartners.disableTitle')}
             </h3>

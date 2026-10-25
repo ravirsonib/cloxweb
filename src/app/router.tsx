@@ -6,6 +6,7 @@ import { AdminRole, AppRole } from '@/shared/types';
 import { HomePage } from '@/pages/home-page';
 import { AuditPage } from '@/pages/audit-page';
 import { LeadDetailPage } from '@/pages/lead-detail-page';
+import { AdminJobDetailPage, AdminJobsPage } from '@/pages/admin-jobs-page';
 import { CompaniesPage } from '@/pages/companies-page';
 import { LeadsPage } from '@/pages/leads-page';
 import { LoginPage } from '@/pages/login-page';
@@ -133,6 +134,22 @@ export function AppRouter() {
           element={
             <SuperOnly>
               <CompaniesPage />
+            </SuperOnly>
+          }
+        />
+        <Route
+          path="/admin-jobs"
+          element={
+            <SuperOnly>
+              <AdminJobsPage />
+            </SuperOnly>
+          }
+        />
+        <Route
+          path="/admin-jobs/:id"
+          element={
+            <SuperOnly>
+              <AdminJobDetailPage />
             </SuperOnly>
           }
         />

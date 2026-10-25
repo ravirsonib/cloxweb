@@ -345,7 +345,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
       htmlFor={fieldId}
       className={className}
     >
-      <div ref={rootRef} className="relative">
+      <div ref={rootRef} className="relative min-w-0 w-full">
         <select
           {...rest}
           ref={hiddenRef}

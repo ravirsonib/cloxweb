@@ -15,6 +15,8 @@ import {
   publishJob,
   recommendVehicle,
   updateJob,
+  updateJobReceiver,
+  type JobSummary,
 } from '@/lib/api';
 import {
   Button,
@@ -247,7 +249,185 @@ export function JobCreatePage() {
 
 export function JobEditPage() {
   const { id = '' } = useParams();
-  return <JobDraftForm mode="edit" jobId={id} />;
+  const { t } = useTranslation('common');
+  const role = useAuthStore((s) => s.role);
+  const navigate = useNavigate();
+  const toast = useToast();
+
+  const existing = useQuery({
+    queryKey: ['jobs', id],
+    queryFn: () => getSenderJob(id),
+    enabled: role === AppRole.SENDER && Boolean(id),
+  });
+
+  useEffect(() => {
+    if (!existing.data?.editability) return;
+    if (existing.data.editability.mode === 'NONE') {
+      toast.warn(existing.data.editability.reason || t('jobs.editNotAllowed'));
+      navigate(`/jobs/${id}`, { replace: true });
+    }
+  }, [existing.data, id, navigate, t, toast]);
+
+  if (role !== AppRole.SENDER) return <Navigate to="/" replace />;
+  if (existing.isLoading) return <LoadingBlock label={t('jobs.loadingDetail')} />;
+  if (existing.isError || !existing.data) {
+    return <Notice tone="error">{getErrorDetail(existing.error)}</Notice>;
+  }
+
+  const mode = existing.data.editability?.mode ?? 'NONE';
+  if (mode === 'RECEIVER') {
+    return <JobReceiverForm jobId={id} job={existing.data} />;
+  }
+  if (mode === 'FULL') {
+    return <JobDraftForm mode="edit" jobId={id} />;
+  }
+  return <LoadingBlock label={t('jobs.loadingDetail')} />;
+}
+
+function JobReceiverForm({ jobId, job }: { jobId: string; job: JobSummary }) {
+  const { t } = useTranslation('common');
+  const navigate = useNavigate();
+  const toast = useToast();
+  const qc = useQueryClient();
+
+  const dropoffs = (job.stops ?? []).filter((s) => s.stopType === 'DROPOFF' && s.id);
+
+  const schema = z.object({
+    receiverName: z.string().trim().min(1, t('validation.receiverNameRequired')),
+    receiverEmail: z
+      .string()
+      .trim()
+      .min(1, t('validation.receiverEmailRequired'))
+      .email(t('validation.receiverEmailInvalid')),
+    receiverPhone: z.string().trim().optional(),
+  });
+
+  type ReceiverForm = z.infer<typeof schema>;
+
+  const form = useForm<ReceiverForm>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      receiverName: job.receiverName || '',
+      receiverEmail: job.receiverEmail || '',
+      receiverPhone: job.receiverPhone || '',
+    },
+  });
+
+  const [stopReceivers, setStopReceivers] = useState<
+    Record<string, { receiverName: string; receiverEmail: string }>
+  >(() => {
+    const initial: Record<string, { receiverName: string; receiverEmail: string }> = {};
+    for (const s of dropoffs) {
+      if (!s.id) continue;
+      initial[s.id] = {
+        receiverName: s.receiverName || job.receiverName || '',
+        receiverEmail: s.receiverEmail || job.receiverEmail || '',
+      };
+    }
+    return initial;
+  });
+
+  const mutation = useMutation({
+    mutationFn: (values: ReceiverForm) =>
+      updateJobReceiver(jobId, {
+        receiverName: values.receiverName.trim(),
+        receiverEmail: values.receiverEmail.trim(),
+        receiverPhone: values.receiverPhone?.trim() || null,
+        stops: dropoffs
+          .filter((s): s is typeof s & { id: string } => Boolean(s.id))
+          .map((s) => ({
+            id: s.id,
+            receiverName: stopReceivers[s.id]?.receiverName?.trim() || null,
+            receiverEmail: stopReceivers[s.id]?.receiverEmail?.trim() || null,
+          })),
+      }),
+    onSuccess: async () => {
+      toast.success(t('jobs.receiverUpdated'));
+      await qc.invalidateQueries({ queryKey: ['jobs', jobId] });
+      navigate(`/jobs/${jobId}`, { replace: true });
+    },
+  });
+
+  return (
+    <div>
+      <Link to={`/jobs/${jobId}`} className="text-sm text-clox-orange hover:underline">
+        ← {t('jobs.backToJob')}
+      </Link>
+      <h1 className="mt-2 font-display text-2xl font-bold text-clox-ink">
+        {t('jobs.editReceiverTitle')}
+      </h1>
+      <p className="mt-1 text-sm text-clox-mute">{t('jobs.editReceiverHint')}</p>
+      <form
+        className="mt-8 max-w-lg space-y-4"
+        onSubmit={form.handleSubmit((values) => mutation.mutate(values))}
+        noValidate
+      >
+        <Field
+          label={t('jobs.receiverName')}
+          required
+          error={form.formState.errors.receiverName?.message}
+          {...form.register('receiverName')}
+        />
+        <Field
+          label={t('jobs.receiverEmail')}
+          required
+          type="email"
+          error={form.formState.errors.receiverEmail?.message}
+          {...form.register('receiverEmail')}
+        />
+        <Field
+          label={t('jobs.receiverPhone')}
+          {...form.register('receiverPhone')}
+        />
+        {dropoffs.length > 1
+          ? dropoffs.map((s) =>
+              s.id ? (
+                <div key={s.id} className="rounded border border-clox-line p-3">
+                  <p className="mb-2 text-sm font-medium text-clox-ink">
+                    {t('jobs.dropoffReceiver', {
+                      suburb: s.suburb ?? s.sequence,
+                    })}
+                  </p>
+                  <Field
+                    label={t('jobs.receiverName')}
+                    value={stopReceivers[s.id]?.receiverName ?? ''}
+                    onChange={(e) =>
+                      setStopReceivers((prev) => ({
+                        ...prev,
+                        [s.id!]: {
+                          receiverName: e.target.value,
+                          receiverEmail: prev[s.id!]?.receiverEmail ?? '',
+                        },
+                      }))
+                    }
+                  />
+                  <Field
+                    label={t('jobs.receiverEmail')}
+                    type="email"
+                    value={stopReceivers[s.id]?.receiverEmail ?? ''}
+                    onChange={(e) =>
+                      setStopReceivers((prev) => ({
+                        ...prev,
+                        [s.id!]: {
+                          receiverName: prev[s.id!]?.receiverName ?? '',
+                          receiverEmail: e.target.value,
+                        },
+                      }))
+                    }
+                  />
+                </div>
+              ) : null,
+            )
+          : null}
+        {mutation.isError ? (
+          <Notice tone="error">{getErrorDetail(mutation.error)}</Notice>
+        ) : null}
+        <Button type="submit" variant="cta" disabled={mutation.isPending}>
+          {mutation.isPending ? t('submitting') : t('jobs.saveReceiver')}
+        </Button>
+      </form>
+    </div>
+  );
 }
 
 function JobDraftForm({
@@ -310,9 +490,13 @@ function JobDraftForm({
 
   useEffect(() => {
     if (!existing.data) return;
-    if (existing.data.status !== 'DRAFT') {
-      toast.warn(t('jobs.editDraftOnly'));
+    if (existing.data.editability?.mode === 'NONE') {
+      toast.warn(existing.data.editability.reason || t('jobs.editNotAllowed'));
       navigate(`/jobs/${jobId}`, { replace: true });
+      return;
+    }
+    if (existing.data.editability?.mode === 'RECEIVER') {
+      navigate(`/jobs/${jobId}/edit`, { replace: true });
       return;
     }
     const savedKm = Number(existing.data.route.distanceKm);
@@ -668,11 +852,32 @@ export function JobDetailPage() {
         ) : null}
       </ul>
 
-      {j.status === 'DRAFT' ? (
+      {j.editability?.mode && j.editability.mode !== 'NONE' ? (
         <div className="mt-6 flex flex-wrap gap-2">
           <Link to={`/jobs/${j.id}/edit`} className="clox-btn clox-btn-secondary inline-flex">
-            {t('jobs.editDraft')}
+            {j.editability.mode === 'RECEIVER' ? t('jobs.editReceiver') : t('jobs.editJob')}
           </Link>
+          {j.status === 'DRAFT' ? (
+            <Button
+              variant="cta"
+              disabled={publish.isPending}
+              onClick={() => {
+                void (async () => {
+                  const ok = await confirm({
+                    title: t('confirm.publishJobTitle'),
+                    description: t('confirm.publishJobBody'),
+                    confirmLabel: t('jobs.publish'),
+                  });
+                  if (ok) publish.mutate();
+                })();
+              }}
+            >
+              {t('jobs.publish')}
+            </Button>
+          ) : null}
+        </div>
+      ) : j.status === 'DRAFT' ? (
+        <div className="mt-6 flex flex-wrap gap-2">
           <Button
             variant="cta"
             disabled={publish.isPending}
@@ -690,6 +895,9 @@ export function JobDetailPage() {
             {t('jobs.publish')}
           </Button>
         </div>
+      ) : null}
+      {j.editability?.mode === 'RECEIVER' ? (
+        <p className="mt-2 text-xs text-clox-mute">{t('jobs.editReceiverHint')}</p>
       ) : null}
 
       <h2 className="mt-8 font-display text-lg font-semibold text-clox-ink">

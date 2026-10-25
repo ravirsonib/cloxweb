@@ -298,7 +298,7 @@ export function CarrierDriversPage() {
   function renderActions(row: CarrierDriverListItem) {
     const isSuspended = row.status === 'SUSPENDED' || row.status === 'DISABLED';
     return (
-      <div className="inline-flex flex-nowrap items-center gap-1.5 whitespace-nowrap">
+      <div className="inline-flex max-w-full flex-wrap items-center gap-1.5 sm:flex-nowrap sm:whitespace-nowrap">
         <Button
           type="button"
           variant="secondary"
@@ -363,7 +363,7 @@ export function CarrierDriversPage() {
     <div className="relative" aria-busy={busy || undefined}>
       {inviting ? (
         <div
-          className="clox-dialog-backdrop z-40"
+          className="clox-dialog-backdrop"
           role="status"
           aria-live="polite"
           aria-label={t('drivers.inviting')}

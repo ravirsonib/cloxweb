@@ -1,5 +1,7 @@
 import { http } from '@/lib/http';
 
+export type JobEditMode = 'FULL' | 'RECEIVER' | 'NONE';
+
 export type JobSummary = {
   id: string;
   status: string;
@@ -7,6 +9,7 @@ export type JobSummary = {
   title: string | null;
   receiverName?: string | null;
   receiverEmail?: string | null;
+  receiverPhone?: string | null;
   deadWeightKg?: number | null;
   lengthCm?: number | null;
   widthCm?: number | null;
@@ -30,6 +33,8 @@ export type JobSummary = {
     incGstCents: number | null;
   };
   openProposalCount?: number;
+  editability?: { mode: JobEditMode; reason: string };
+  trip?: { id: string; status: string } | null;
   proposals?: Array<{
     id: string;
     status: string;
@@ -61,10 +66,13 @@ export type JobSummary = {
     escalatedAt: string | null;
   } | null;
   stops: Array<{
+    id?: string;
     sequence: number;
     stopType: string;
     suburb: string | null;
     state: string | null;
+    receiverName?: string | null;
+    receiverEmail?: string | null;
   }>;
 };
 
@@ -153,6 +161,22 @@ export function createJob(payload: Record<string, unknown>) {
 
 export function updateJob(id: string, payload: Record<string, unknown>) {
   return http.patch<JobSummary>(`/jobs/${id}`, payload).then((r) => r.data);
+}
+
+export function updateJobReceiver(
+  id: string,
+  payload: {
+    receiverName: string;
+    receiverEmail: string;
+    receiverPhone?: string | null;
+    stops?: Array<{
+      id: string;
+      receiverName?: string | null;
+      receiverEmail?: string | null;
+    }>;
+  },
+) {
+  return http.patch<JobSummary>(`/jobs/${id}/receiver`, payload).then((r) => r.data);
 }
 
 export function publishJob(id: string) {

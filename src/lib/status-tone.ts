@@ -43,3 +43,58 @@ export function adminPartnerStatusTone(status: string): StatusTone {
       return 'neutral';
   }
 }
+
+/** Marketplace job lifecycle. */
+export function jobStatusTone(status: string): StatusTone {
+  switch (status) {
+    case 'COMPLETED':
+      return 'ok';
+    case 'CANCELLED':
+    case 'EXPIRED':
+      return 'danger';
+    case 'IN_TRANSIT':
+    case 'ASSIGNED':
+      return 'info';
+    case 'PUBLISHED':
+    case 'BIDDING':
+      return 'warn';
+    case 'DRAFT':
+    default:
+      return 'neutral';
+  }
+}
+
+/** Job assignment lifecycle. */
+export function assignmentStatusTone(status: string): StatusTone {
+  switch (status) {
+    case 'LOCKED':
+    case 'COMPLETED':
+      return 'ok';
+    case 'CANCELLED':
+      return 'danger';
+    case 'PENDING':
+      return 'warn';
+    default:
+      return 'neutral';
+  }
+}
+
+/** Trip lifecycle. */
+export function tripStatusTone(status: string): StatusTone {
+  switch (status) {
+    case 'COMPLETED':
+      return 'ok';
+    case 'CANCELLED':
+    case 'BREAKDOWN':
+      return 'danger';
+    case 'IN_TRANSIT':
+    case 'EN_ROUTE_PICKUP':
+    case 'AT_PICKUP':
+    case 'AT_DROPOFF':
+      return 'info';
+    case 'PENDING_GATES':
+      return 'warn';
+    default:
+      return 'neutral';
+  }
+}

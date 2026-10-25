@@ -5,17 +5,22 @@ import { useTranslation } from 'react-i18next';
 import { Link, Navigate } from 'react-router-dom';
 import { z } from 'zod';
 import {
+  confirmDocument,
+  createUploadIntent,
   getDriverAssignability,
   getDriverOnboarding,
   getErrorDetail,
   submitDriverProfile,
+  uploadDocumentContent,
   type DriverOnboarding,
 } from '@/lib/api';
 import { Button, Field, Notice, Select } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
+import { resolveUploadMime } from '@/lib/upload-mime';
 import { futureDateSchema, LICENCE_CLASSES } from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
+import { useEffect, useState } from 'react';
 
 export function DriverOnboardingPage() {
   const { t } = useTranslation();
@@ -77,7 +82,14 @@ export function DriverOnboardingPage() {
         </div>
       ) : null}
 
-      {step === 'licence' ? <LicenceStep onSaved={refresh} /> : null}
+      {step === 'licence' ? (
+        <LicenceStep
+          data={data}
+          onSaved={refresh}
+          companyId={data.company?.id ?? null}
+          driverId={data.driver.id}
+        />
+      ) : null}
 
       {step === 'complete' ? (
         <div className="mt-8 space-y-4">
@@ -130,8 +142,20 @@ type LicenceForm = {
   nhvrAcknowledged: boolean;
 };
 
-function LicenceStep({ onSaved }: { onSaved: () => Promise<void> }) {
+function LicenceStep({
+  data,
+  onSaved,
+  companyId,
+  driverId,
+}: {
+  data: DriverOnboarding;
+  onSaved: () => Promise<void>;
+  companyId: string | null;
+  driverId: string;
+}) {
   const { t } = useTranslation();
+  const [licenceFile, setLicenceFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
 
   const schema = z.object({
     licenceNo: z.string().trim().min(1, t('validation.licenceNoRequired')),
@@ -147,31 +171,85 @@ function LicenceStep({ onSaved }: { onSaved: () => Promise<void> }) {
     }),
   });
 
+  const licenceClassDefault = (LICENCE_CLASSES as readonly string[]).includes(
+    data.driver.licenceClass ?? '',
+  )
+    ? (data.driver.licenceClass as (typeof LICENCE_CLASSES)[number])
+    : 'C';
+  const expiryDefault = data.driver.licenceExpiry
+    ? data.driver.licenceExpiry.slice(0, 10)
+    : '2030-12-31';
+
   const form = useForm<LicenceForm>({
     resolver: zodResolver(schema),
     defaultValues: {
-      licenceNo: '',
-      licenceClass: 'C',
-      licenceExpiry: '2030-12-31',
-      nhvrAcknowledged: false,
+      licenceNo: data.driver.licenceNo || '',
+      licenceClass: licenceClassDefault,
+      licenceExpiry: expiryDefault,
+      nhvrAcknowledged: Boolean(data.driver.nhvrAcknowledgedAt),
     },
   });
 
+  useEffect(() => {
+    const nextClass = (LICENCE_CLASSES as readonly string[]).includes(data.driver.licenceClass ?? '')
+      ? (data.driver.licenceClass as (typeof LICENCE_CLASSES)[number])
+      : 'C';
+    form.reset({
+      licenceNo: data.driver.licenceNo || '',
+      licenceClass: nextClass,
+      licenceExpiry: data.driver.licenceExpiry
+        ? data.driver.licenceExpiry.slice(0, 10)
+        : '2030-12-31',
+      nhvrAcknowledged: Boolean(data.driver.nhvrAcknowledgedAt),
+    });
+  }, [
+    data.driver.licenceNo,
+    data.driver.licenceClass,
+    data.driver.licenceExpiry,
+    data.driver.nhvrAcknowledgedAt,
+    form,
+  ]);
+
   const mutation = useMutation({
-    mutationFn: (values: LicenceForm) =>
-      submitDriverProfile({
+    mutationFn: async (values: LicenceForm) => {
+      if (!companyId) {
+        throw new Error(t('driverOnboarding.errorNoCompany'));
+      }
+      if (!licenceFile) {
+        throw new Error(t('driverOnboarding.errorLicenceFileRequired'));
+      }
+      const mime = resolveUploadMime(licenceFile);
+      const intent = await createUploadIntent({
+        companyId,
+        driverId,
+        docType: 'DRIVER_LICENCE',
+        originalFilename:
+          licenceFile.name ||
+          `licence.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
+        mimeType: mime,
+        sizeBytes: licenceFile.size,
+      });
+      const uploadedRes = await uploadDocumentContent(intent.id, licenceFile);
+      await confirmDocument(intent.id, uploadedRes.contentHash);
+      return submitDriverProfile({
         licenceNo: values.licenceNo.trim(),
         licenceClass: values.licenceClass,
         licenceExpiry: values.licenceExpiry,
         nhvrAcknowledged: true,
-      }),
+        licenceDocumentId: intent.id,
+      });
+    },
     onSuccess: () => onSaved(),
   });
 
   return (
     <form
       className="mt-8 max-w-lg"
-      onSubmit={form.handleSubmit((values) => mutation.mutate(values))}
+      onSubmit={form.handleSubmit((values) => {
+        setFileError(licenceFile ? null : t('driverOnboarding.errorLicenceFileRequired'));
+        if (!licenceFile) return;
+        mutation.mutate(values);
+      })}
       noValidate
     >
       <h2 className="font-display text-lg font-semibold">{t('driverOnboarding.licenceTitle')}</h2>
@@ -203,6 +281,27 @@ function LicenceStep({ onSaved }: { onSaved: () => Promise<void> }) {
         error={form.formState.errors.licenceExpiry?.message}
         {...form.register('licenceExpiry')}
       />
+      <div className="clox-file-field">
+        <label className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
+          {t('driverOnboarding.licenceUploadLabel')}
+          <span className="text-[var(--status-danger)]"> *</span>
+        </label>
+        <input
+          type="file"
+          accept="application/pdf,image/jpeg,image/png,image/webp"
+          className="clox-file-input"
+          onChange={(e) => {
+            const next = e.target.files?.[0] ?? null;
+            setLicenceFile(next);
+            setFileError(null);
+          }}
+        />
+        {fileError ? (
+          <p className="mt-2 text-[12px] font-medium text-[var(--status-danger)]" role="alert">
+            {fileError}
+          </p>
+        ) : null}
+      </div>
       <label className="mb-4 flex items-start gap-2 text-sm text-clox-mute">
         <input type="checkbox" className="mt-1 accent-clox-accent" {...form.register('nhvrAcknowledged')} />
         <span>
@@ -215,13 +314,15 @@ function LicenceStep({ onSaved }: { onSaved: () => Promise<void> }) {
         </span>
       </label>
       {mutation.isError ? (
-        <Notice tone="error" className="mb-4">
+        <Notice tone="error" className="mb-0">
           {getErrorDetail(mutation.error)}
         </Notice>
       ) : null}
-      <Button type="submit" variant="cta" disabled={mutation.isPending}>
-        {mutation.isPending ? t('submitting') : t('driverOnboarding.submitAndActivate')}
-      </Button>
+      <div className="clox-form-actions">
+        <Button type="submit" variant="cta" disabled={mutation.isPending || !companyId}>
+          {mutation.isPending ? t('submitting') : t('driverOnboarding.submitAndActivate')}
+        </Button>
+      </div>
     </form>
   );
 }

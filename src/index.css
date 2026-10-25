@@ -184,10 +184,70 @@
 
 @layer components {
   .clox-field-control {
-    @apply w-full border bg-clox-surface px-3 py-2.5 text-sm text-clox-text outline-none transition;
+    @apply w-full min-w-0 border bg-clox-surface px-3 py-2 text-sm text-clox-text outline-none transition;
     border-color: var(--clox-border);
     border-radius: 8px;
     font-family: var(--font-body);
+    /* Avoid iOS zoom + oversized touch targets feeling like giant cards */
+    font-size: 16px;
+    max-width: 100%;
+  }
+
+  @media (min-width: 640px) {
+    .clox-field-control {
+      font-size: 0.875rem; /* text-sm */
+      padding-top: 0.625rem;
+      padding-bottom: 0.625rem;
+    }
+  }
+
+  /** File picker — consistent look + room before submit/upload actions */
+  .clox-file-input {
+    @apply block w-full max-w-full text-sm text-clox-mute;
+    font-family: var(--font-body);
+  }
+
+  .clox-file-input::file-selector-button {
+    margin-right: 0.75rem;
+    border: 0;
+    border-radius: 8px;
+    background: var(--clox-surface-alt);
+    color: var(--clox-ink);
+    padding: 0.5rem 0.85rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    font-family: var(--font-body);
+    cursor: pointer;
+  }
+
+  .clox-file-input:hover::file-selector-button {
+    filter: brightness(0.97);
+  }
+
+  .clox-file-input:disabled {
+    @apply cursor-not-allowed opacity-60;
+  }
+
+  .clox-file-field {
+    @apply mb-4 min-w-0;
+  }
+
+  /** Action row under a file chooser — keeps submit/upload spaced and aligned */
+  .clox-form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--clox-border);
+  }
+
+  @media (max-width: 639px) {
+    .clox-form-actions > .clox-btn,
+    .clox-form-actions > a.clox-btn {
+      width: 100%;
+    }
   }
 
   .clox-field-control::placeholder {
@@ -210,7 +270,7 @@
   }
 
   .clox-select-trigger {
-    @apply flex items-center gap-2 text-left;
+    @apply flex min-w-0 items-center gap-2 overflow-hidden text-left;
     padding-right: 10px;
     cursor: pointer;
   }
@@ -233,7 +293,8 @@
 
   .clox-select-popover {
     position: fixed;
-    z-index: 70;
+    /* Above dialogs (80) so options remain clickable in modals / mobile sheets */
+    z-index: 100;
     max-height: 16rem;
     overflow-y: auto;
     padding: 4px;
@@ -277,7 +338,7 @@
 
   .clox-toast-viewport {
     position: fixed;
-    z-index: 80;
+    z-index: 110;
     right: 16px;
     bottom: 16px;
     display: flex;
@@ -320,7 +381,7 @@
   }
 
   .clox-radio-card {
-    @apply flex w-full flex-col items-start gap-1 border px-3.5 py-3 text-left transition;
+    @apply flex w-full min-w-0 flex-col items-start gap-0.5 border px-3 py-2.5 text-left transition sm:gap-1 sm:px-3.5 sm:py-3;
     border-color: var(--clox-border);
     border-radius: 10px;
     background: var(--clox-surface);
@@ -358,14 +419,32 @@
   }
 
   .clox-step-chips {
-    @apply flex flex-wrap gap-2;
+    @apply flex max-w-full gap-2;
+    /* Mobile: keep a reachable horizontal strip so later steps stay on-screen */
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    padding-bottom: 2px;
+  }
+
+  @media (min-width: 640px) {
+    .clox-step-chips {
+      flex-wrap: wrap;
+      overflow-x: visible;
+    }
   }
 
   .clox-step-chip {
-    @apply inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium;
+    @apply inline-flex max-w-[70vw] shrink-0 items-center rounded-md px-2.5 py-1 text-xs font-medium sm:max-w-none;
     background: var(--clox-surface);
     color: var(--clox-faint);
     border: 1px solid var(--clox-border);
+  }
+
+  .clox-step-chip-label {
+    @apply truncate;
   }
 
   .clox-step-chip-active {
@@ -395,10 +474,20 @@
   }
 
   .clox-btn {
-    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap border text-sm font-semibold transition;
+    @apply inline-flex max-w-full items-center justify-center gap-2 whitespace-nowrap border text-sm font-semibold transition;
     border-radius: 8px;
     padding: 9px 16px;
     font-family: var(--font-body);
+  }
+
+  /* Primary form CTAs stretch on phones so they stay tappable and on-screen */
+  @media (max-width: 639px) {
+    form > .clox-btn-primary,
+    form > .clox-btn-cta,
+    form > button.clox-btn-primary,
+    form > button.clox-btn-cta {
+      width: 100%;
+    }
   }
 
   .clox-btn:disabled {
@@ -441,6 +530,16 @@
     color: var(--clox-text);
   }
 
+  .clox-btn-warn {
+    background: var(--status-warn-bg);
+    color: var(--status-warn);
+    border-color: var(--status-warn-bd);
+  }
+
+  .clox-btn-warn:hover:not(:disabled) {
+    filter: brightness(1.05);
+  }
+
   .clox-btn-destructive {
     background: var(--status-danger-bg);
     color: var(--status-danger);
@@ -473,20 +572,36 @@
     inset: 0;
     z-index: 80;
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     justify-content: center;
-    padding: 1rem;
+    padding: 0.75rem;
     background: rgba(16, 25, 43, 0.55);
+  }
+
+  @media (min-width: 640px) {
+    .clox-dialog-backdrop {
+      align-items: center;
+      padding: 1rem;
+    }
   }
 
   .clox-dialog {
     width: 100%;
     max-width: 28rem;
+    max-height: min(90dvh, 40rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
     background: var(--clox-surface);
     border: 1px solid var(--clox-border);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-2, var(--shadow-1));
-    padding: 1.5rem;
+    padding: 1.25rem;
+  }
+
+  @media (min-width: 640px) {
+    .clox-dialog {
+      padding: 1.5rem;
+    }
   }
 
   .clox-panel {

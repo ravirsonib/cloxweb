@@ -191,6 +191,9 @@ export function CarrierOnboardingPage() {
         <CapabilitiesStep
           data={data}
           onSaved={async (next) => {
+            if (next) {
+              qc.setQueryData(['carrier', 'onboarding'], next);
+            }
             const fresh = next ?? (await refresh());
             if (fresh?.step) setViewStep(fresh.step);
           }}
@@ -295,6 +298,12 @@ function ProfileStep({
       abn: data.company.abn || '',
     },
   });
+  useEffect(() => {
+    form.reset({
+      legalName: data.company.legalName || '',
+      abn: data.company.abn || '',
+    });
+  }, [data.company.legalName, data.company.abn, form]);
   const mutation = useMutation({
     mutationFn: (values: CarrierProfileForm) =>
       updateCarrierProfile({
@@ -462,12 +471,14 @@ function DocumentsStep({
           ) : null}
         </ul>
       ) : null}
-      <div>
-        <p className="mb-1 text-xs text-clox-faint">{t('carrierOnboarding.publicLiability')}</p>
+      <div className="clox-file-field mb-0 space-y-2">
+        <p className="text-[12.5px] font-semibold text-clox-ink">
+          {t('carrierOnboarding.publicLiability')}
+        </p>
         <input
           type="file"
-          accept=".pdf,image/jpeg,image/png,image/webp,image/*"
-          capture="environment"
+          accept=".pdf,image/jpeg,image/png,image/webp"
+          className="clox-file-input"
           onChange={(e) => {
             uploadPl.reset();
             uploadCargo.reset();
@@ -477,12 +488,14 @@ function DocumentsStep({
           }}
         />
       </div>
-      <div>
-        <p className="mb-1 text-xs text-clox-faint">{t('carrierOnboarding.cargoInsurance')}</p>
+      <div className="clox-file-field mb-0 space-y-2">
+        <p className="text-[12.5px] font-semibold text-clox-ink">
+          {t('carrierOnboarding.cargoInsurance')}
+        </p>
         <input
           type="file"
-          accept=".pdf,image/jpeg,image/png,image/webp,image/*"
-          capture="environment"
+          accept=".pdf,image/jpeg,image/png,image/webp"
+          className="clox-file-input"
           onChange={(e) => {
             uploadPl.reset();
             uploadCargo.reset();
@@ -498,13 +511,15 @@ function DocumentsStep({
           {getErrorDetail(uploadPl.error ?? uploadCargo.error)}
         </Notice>
       )}
-      <Button
-        variant="cta"
-        disabled={!plId || !cargoId}
-        onClick={() => void onSubmitted()}
-      >
-        {t('carrierOnboarding.continueDocsSaved')}
-      </Button>
+      <div className="clox-form-actions">
+        <Button
+          variant="cta"
+          disabled={!plId || !cargoId}
+          onClick={() => void onSubmitted()}
+        >
+          {t('carrierOnboarding.continueDocsSaved')}
+        </Button>
+      </div>
       <p className="text-xs text-clox-faint">{t('carrierOnboarding.docsSavedHint')}</p>
     </div>
   );
@@ -660,6 +675,8 @@ function VehiclesStep({
       if (!rwcFile) {
         throw new Error(t('fleet.rwcRequiredError'));
       }
+      // Persist vehicle first so a later RWC/network failure does not look like
+      // "add failed" after refresh (vehicle already exists).
       const onboarding = await addCarrierVehicle({
         label: values.label,
         registration: values.registration,
@@ -676,7 +693,17 @@ function VehiclesStep({
       if (!created) {
         throw new Error(t('fleet.rwcRequiredError'));
       }
-      await uploadRwcForVehicle(created.id, rwcFile);
+      try {
+        await uploadRwcForVehicle(created.id, rwcFile);
+      } catch (err) {
+        const detail = getErrorDetail(err);
+        throw new Error(
+          t('carrierOnboarding.vehicleSavedRwcFailed', {
+            detail,
+            defaultValue: `Vehicle saved, but RWC upload failed: ${detail}. Upload RWC on the vehicle below, then continue.`,
+          }),
+        );
+      }
       return onboarding;
     },
     onSuccess: async () => {
@@ -692,7 +719,15 @@ function VehiclesStep({
       setRwcMsg(t('carrierOnboarding.rwcUploaded'));
       await onSaved();
     },
-    onError: (error) => setRwcFormError(getErrorDetail(error)),
+    onError: async (error) => {
+      // Refresh so a persisted vehicle appears even when RWC/network failed.
+      try {
+        await onSaved();
+      } catch {
+        /* ignore refresh errors */
+      }
+      setRwcFormError(getErrorDetail(error));
+    },
   });
 
   const activeVehicles = data.vehicles.filter((v) => v.status === 'ACTIVE');
@@ -730,9 +765,8 @@ function VehiclesStep({
                   {t('carrierOnboarding.rwc')} ({t('carrierOnboarding.rwcPerVehicle')})
                   <input
                     type="file"
-                    accept=".pdf,image/jpeg,image/png,image/webp,image/*"
-                    capture="environment"
-                    className="mt-1 block"
+                    accept=".pdf,image/jpeg,image/png,image/webp"
+                    className="clox-file-input mt-2"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
                       if (!f) return;
@@ -810,29 +844,29 @@ function VehiclesStep({
           error={form.formState.errors.tareKg?.message}
           {...form.register('tareKg', { valueAsNumber: true })}
         />
-        <div className="mb-4">
-          <p className="mb-1 text-xs font-semibold text-clox-ink">
+        <div className="clox-file-field">
+          <p className="mb-1.5 text-[12.5px] font-semibold text-clox-ink">
             {t('fleet.rwcLabel')}{' '}
             <span className="text-[var(--status-danger)]">*</span>
           </p>
           <p className="mb-2 text-xs text-clox-faint">{t('fleet.rwcHint')}</p>
           <input
             type="file"
-            accept=".pdf,image/jpeg,image/png,image/webp,image/*"
-            capture="environment"
+            accept=".pdf,image/jpeg,image/png,image/webp"
+            className="clox-file-input"
             onChange={(e) => {
               setRwcFile(e.target.files?.[0] ?? null);
               setRwcFormError(null);
             }}
           />
-          {rwcFile ? <p className="mt-1 text-xs text-clox-mute">{rwcFile.name}</p> : null}
+          {rwcFile ? <p className="mt-2 text-xs text-clox-mute">{rwcFile.name}</p> : null}
         </div>
         {rwcFormError || mutation.isError ? (
-          <Notice tone="error" className="mb-4">
+          <Notice tone="error" className="mb-0">
             {rwcFormError ?? getErrorDetail(mutation.error)}
           </Notice>
         ) : null}
-        <div className="flex flex-wrap gap-2">
+        <div className="clox-form-actions">
           <Button type="submit" variant="cta" disabled={mutation.isPending}>
             {mutation.isPending ? t('saving') : t('carrierOnboarding.addVehicle')}
           </Button>
@@ -905,7 +939,7 @@ function DriversStep({
     <div className="relative mt-8 space-y-4" aria-busy={busy || undefined}>
       {inviting ? (
         <div
-          className="clox-dialog-backdrop z-40"
+          className="clox-dialog-backdrop"
           role="status"
           aria-live="polite"
           aria-label={t('drivers.inviting')}
@@ -1024,6 +1058,23 @@ function CapabilitiesStep({
   );
   const [formError, setFormError] = useState<string | null>(null);
 
+  useEffect(() => {
+    setDg(data.company.capabilities.includes('DG'));
+    setReefer(data.company.capabilities.includes('REEFER'));
+    setOversize(data.company.capabilities.includes('OVERSIZE'));
+    setTailLift(
+      data.company.capabilities.length === 0 || data.company.capabilities.includes('TAIL_LIFT'),
+    );
+    const dgDoc = (data.uploadedDocs ?? []).find(
+      (d) =>
+        d.docType === 'DG_LICENCE' &&
+        !d.vehicleId &&
+        (d.status === 'UPLOADED' || d.status === 'UNDER_REVIEW' || d.status === 'APPROVED'),
+    );
+    setDgDocId(dgDoc?.id ?? null);
+    setDgMsg(dgDoc ? t('carrierOnboarding.dgLicenceUploaded') : null);
+  }, [data.company.capabilities, data.uploadedDocs, t]);
+
   async function uploadDgLicence(file: File) {
     const mime = resolveUploadMime(file);
     const intent = await createUploadIntent({
@@ -1105,9 +1156,8 @@ function CapabilitiesStep({
           <p className="mt-1 text-xs text-clox-faint">{t('carrierOnboarding.dgLicenceHint')}</p>
           <input
             type="file"
-            accept=".pdf,image/jpeg,image/png,image/webp,image/*"
-            capture="environment"
-            className="mt-2 block"
+            accept=".pdf,image/jpeg,image/png,image/webp"
+            className="clox-file-input mt-3"
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (!f) return;
@@ -1121,18 +1171,19 @@ function CapabilitiesStep({
             }}
           />
           {dgDocId ? (
-            <Button
-              type="button"
-              variant="secondary"
-              className="mt-2"
-              onClick={() => {
-                void openDocumentContent(dgDocId).catch((err) =>
-                  setFormError(getErrorDetail(err)),
-                );
-              }}
-            >
-              {t('compliance.viewDocument')}
-            </Button>
+            <div className="clox-form-actions mt-3">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  void openDocumentContent(dgDocId).catch((err) =>
+                    setFormError(getErrorDetail(err)),
+                  );
+                }}
+              >
+                {t('compliance.viewDocument')}
+              </Button>
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -1145,9 +1196,11 @@ function CapabilitiesStep({
       {formError || mutation.isError ? (
         <Notice tone="error">{formError ?? getErrorDetail(mutation.error)}</Notice>
       ) : null}
-      <Button type="submit" variant="cta" disabled={mutation.isPending || (dg && !dgDocId)}>
-        {mutation.isPending ? t('saving') : t('saveAndContinue')}
-      </Button>
+      <div className="clox-form-actions">
+        <Button type="submit" variant="cta" disabled={mutation.isPending || (dg && !dgDocId)}>
+          {mutation.isPending ? t('saving') : t('saveAndContinue')}
+        </Button>
+      </div>
     </form>
   );
 }
@@ -1227,11 +1280,14 @@ function SubmitStep({
           : t('carrierOnboarding.submitHint')}
       </p>
       <p className="text-xs text-clox-faint">{t('carrierOnboarding.submitRwcFleetNote')}</p>
-      <div>
-        <p className="mb-1 text-xs text-clox-faint">{t('carrierOnboarding.publicLiability')}</p>
+      <div className="clox-file-field mb-0 space-y-2">
+        <p className="text-[12.5px] font-semibold text-clox-ink">
+          {t('carrierOnboarding.publicLiability')}
+        </p>
         <input
           type="file"
           accept=".pdf,image/*"
+          className="clox-file-input"
           onChange={async (e) => {
             const f = e.target.files?.[0];
             if (!f) return;
@@ -1244,11 +1300,14 @@ function SubmitStep({
           }}
         />
       </div>
-      <div>
-        <p className="mb-1 text-xs text-clox-faint">{t('carrierOnboarding.cargoInsurance')}</p>
+      <div className="clox-file-field mb-0 space-y-2">
+        <p className="text-[12.5px] font-semibold text-clox-ink">
+          {t('carrierOnboarding.cargoInsurance')}
+        </p>
         <input
           type="file"
           accept=".pdf,image/*"
+          className="clox-file-input"
           onChange={async (e) => {
             const f = e.target.files?.[0];
             if (!f) return;
@@ -1265,28 +1324,30 @@ function SubmitStep({
       {submit.isError ? (
         <Notice tone="error">{getErrorDetail(submit.error)}</Notice>
       ) : null}
-      <Button
-        variant="cta"
-        disabled={!plId || !cargoId || submit.isPending}
-        onClick={() => {
-          void (async () => {
-            const ok = await confirm({
-              title: t('confirm.submitComplianceTitle'),
-              description: t('confirm.submitComplianceBody'),
-              confirmLabel: isInfoRequested
-                ? t('carrierOnboarding.resubmitComplianceCase')
-                : t('carrierOnboarding.submitComplianceCase'),
-            });
-            if (ok) submit.mutate();
-          })();
-        }}
-      >
-        {submit.isPending
-          ? t('submitting')
-          : isInfoRequested
-            ? t('carrierOnboarding.resubmitComplianceCase')
-            : t('carrierOnboarding.submitComplianceCase')}
-      </Button>
+      <div className="clox-form-actions">
+        <Button
+          variant="cta"
+          disabled={!plId || !cargoId || submit.isPending}
+          onClick={() => {
+            void (async () => {
+              const ok = await confirm({
+                title: t('confirm.submitComplianceTitle'),
+                description: t('confirm.submitComplianceBody'),
+                confirmLabel: isInfoRequested
+                  ? t('carrierOnboarding.resubmitComplianceCase')
+                  : t('carrierOnboarding.submitComplianceCase'),
+              });
+              if (ok) submit.mutate();
+            })();
+          }}
+        >
+          {submit.isPending
+            ? t('submitting')
+            : isInfoRequested
+              ? t('carrierOnboarding.resubmitComplianceCase')
+              : t('carrierOnboarding.submitComplianceCase')}
+        </Button>
+      </div>
     </div>
   );
 }

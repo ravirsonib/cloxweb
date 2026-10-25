@@ -321,36 +321,35 @@ export function DocumentsUploadPage() {
             </option>
           ))}
         </Select>
-        <label className="mb-4 block">
+        <label className="clox-file-field block">
           <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
             {t('documentsUpload.fileLabel')}
           </span>
           <input
             type="file"
-            accept=".pdf,image/jpeg,image/png,image/webp,image/*"
-            capture="environment"
+            accept=".pdf,image/jpeg,image/png,image/webp"
             onChange={(e) => {
               uploadMutation.reset();
               submitMutation.reset();
               setMessage(null);
               setFile(e.target.files?.[0] ?? null);
             }}
-            className="block w-full text-sm text-clox-mute"
+            className="clox-file-input"
           />
         </label>
 
         {uploadMutation.isError || submitMutation.isError ? (
-          <Notice tone="error" className="mb-4">
+          <Notice tone="error" className="mb-0">
             {getErrorDetail(uploadMutation.error ?? submitMutation.error)}
           </Notice>
         ) : null}
         {message ? (
-          <Notice tone="success" className="mb-4">
+          <Notice tone="success" className="mb-0">
             {message}
           </Notice>
         ) : null}
 
-        <div className="flex flex-wrap gap-2">
+        <div className="clox-form-actions">
           <Button
             type="button"
             variant="cta"

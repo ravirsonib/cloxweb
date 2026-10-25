@@ -8,6 +8,7 @@ const buttonVariants = cva('clox-btn', {
       primary: 'clox-btn-primary',
       secondary: 'clox-btn-secondary',
       ghost: 'clox-btn-ghost',
+      warn: 'clox-btn-warn',
       destructive: 'clox-btn-destructive',
       cta: 'clox-btn-cta',
     },

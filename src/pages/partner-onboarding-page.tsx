@@ -276,7 +276,7 @@ export function PartnerOnboardingPage() {
                 </p>
                 {editable ? (
                   <input
-                    className="mt-3 block w-full text-sm"
+                    className="clox-file-input mt-3"
                     type="file"
                     accept="application/pdf,image/jpeg,image/png,image/webp"
                     disabled={uploading === docType}
@@ -290,9 +290,11 @@ export function PartnerOnboardingPage() {
               </div>
             );
           })}
-          <Button type="button" variant="secondary" onClick={() => setStep('declarations')}>
-            {t('partnerOnboarding.continue')}
-          </Button>
+          <div className="clox-form-actions">
+            <Button type="button" variant="secondary" onClick={() => setStep('declarations')}>
+              {t('partnerOnboarding.continue')}
+            </Button>
+          </div>
         </div>
       ) : null}
 
@@ -329,20 +331,22 @@ export function PartnerOnboardingPage() {
             <span>{t('partnerOnboarding.declNonCompete')}</span>
           </label>
           {editable ? (
-            <Button
-              type="button"
-              variant="cta"
-              disabled={
-                !declAccuracy ||
-                !declNda ||
-                !declNonCompete ||
-                submitMutation.isPending ||
-                !canEdit
-              }
-              onClick={() => submitMutation.mutate()}
-            >
-              {submitMutation.isPending ? t('loading') : t('partnerOnboarding.submit')}
-            </Button>
+            <div className="clox-form-actions">
+              <Button
+                type="button"
+                variant="cta"
+                disabled={
+                  !declAccuracy ||
+                  !declNda ||
+                  !declNonCompete ||
+                  submitMutation.isPending ||
+                  !canEdit
+                }
+                onClick={() => submitMutation.mutate()}
+              >
+                {submitMutation.isPending ? t('loading') : t('partnerOnboarding.submit')}
+              </Button>
+            </div>
           ) : null}
         </div>
       ) : null}

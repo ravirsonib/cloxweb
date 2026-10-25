@@ -242,3 +242,104 @@ export async function exportLeadsCsv(
   URL.revokeObjectURL(url);
   return blob;
 }
+
+export type AdminJobListItem = {
+  id: string;
+  status: string;
+  title: string | null;
+  pricingModel: string;
+  receiverName: string | null;
+  receiverEmail: string | null;
+  estimateIncGstCents: number | null;
+  createdAt: string;
+  updatedAt: string;
+  publishedAt: string | null;
+  senderCompany: {
+    id: string;
+    legalName: string;
+    email: string | null;
+    type: string;
+  };
+  assignment: {
+    id: string;
+    status: string;
+    lockedAt: string | null;
+    carrierCompany: { id: string; legalName: string } | null;
+  } | null;
+  trip: { id: string; status: string; startedAt: string | null; completedAt: string | null } | null;
+  proposalCount: number;
+  canHardDelete: boolean;
+  canSoftDelete: boolean;
+};
+
+export type AdminJobDetail = AdminJobListItem & {
+  stops: Array<{
+    id: string;
+    sequence: number;
+    stopType: string;
+    suburb: string | null;
+    state: string | null;
+    addressLine: string | null;
+    receiverName: string | null;
+    receiverEmail: string | null;
+  }>;
+  proposals: Array<{
+    id: string;
+    status: string;
+    amountIncGstCents: number;
+    etaMinutes: number | null;
+    createdAt: string;
+    carrierCompany: { id: string; legalName: string };
+  }>;
+  paymentEvents: Array<{
+    id: string;
+    status: string;
+    amountIncGstCents: number;
+    stripePaymentIntentId: string | null;
+    createdAt: string;
+  }>;
+};
+
+export type AdminJobListQuery = {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  status?: string;
+};
+
+export function listAdminJobs(
+  query: AdminJobListQuery = {},
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .get<Paginated<AdminJobListItem>>('/admin/jobs', {
+      params: query,
+      signal: options?.signal,
+      paramsSerializer: { indexes: null },
+    })
+    .then((res) => res.data);
+}
+
+export function getAdminJob(id: string, options?: { signal?: AbortSignal }) {
+  return http
+    .get<AdminJobDetail>(`/admin/jobs/${id}`, { signal: options?.signal })
+    .then((res) => res.data);
+}
+
+export function hardDeleteAdminJob(id: string, options?: { signal?: AbortSignal }) {
+  return http
+    .delete<{ id: string; deleted: true; mode: 'hard' }>(`/admin/jobs/${id}`, {
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export function softDeleteAdminJob(id: string, options?: { signal?: AbortSignal }) {
+  return http
+    .post<{ id: string; deleted: false; mode: 'soft'; status: string }>(
+      `/admin/jobs/${id}/soft-delete`,
+      undefined,
+      { signal: options?.signal },
+    )
+    .then((res) => res.data);
+}

@@ -97,13 +97,14 @@ export function DriverTripsPage() {
 }
 
 function startLockReason(
-  gates: { paid: boolean; safetyOk: boolean; massOk: boolean },
+  gates: { paid: boolean; safetyOk: boolean; massOk: boolean; complianceOk?: boolean },
   t: (key: string) => string,
 ): string {
   const missing: string[] = [];
   if (!gates.paid) missing.push(t('trips.gatePaid'));
   if (!gates.safetyOk) missing.push(t('trips.gateSafety'));
   if (!gates.massOk) missing.push(t('trips.gateMass'));
+  if (gates.complianceOk === false) missing.push(t('trips.gateCompliance'));
   return missing.join(', ');
 }
 
@@ -1084,13 +1085,13 @@ export function DriverTripDetailPage() {
                 />
               </label>
               {reportKind === 'VEHICLE_BREAKDOWN' ? (
-                <div className="space-y-2">
+                <div className="clox-file-field mb-0 space-y-2">
                   <Notice tone="warn">{t('trips.reportPhotoRequired')}</Notice>
                   <p className="text-xs text-clox-mute">{t('trips.reportPhotoHint')}</p>
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
-                    className="block w-full text-sm text-clox-mute file:mr-3 file:rounded-clox-md file:border-0 file:bg-clox-surface file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-clox-ink"
+                    className="clox-file-input"
                     disabled={tripActionsLocked || photoUploading || report.isPending}
                     onChange={(event) => {
                       const file = event.target.files?.[0];
@@ -1112,7 +1113,7 @@ export function DriverTripDetailPage() {
               {report.isError ? (
                 <Notice tone="error">{getErrorDetail(report.error)}</Notice>
               ) : null}
-              <div className="flex flex-wrap gap-2">
+              <div className="clox-form-actions">
                 <Button
                   type="button"
                   variant="secondary"

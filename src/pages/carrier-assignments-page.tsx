@@ -67,16 +67,17 @@ export function CarrierAssignmentsPage() {
     enabled: role === AppRole.TRANSPORT_COMPANY,
   });
 
+  /** Prefetch so reassign dialog already has full ACTIVE fleet/driver lists. */
   const vehiclesQuery = useQuery({
     queryKey: ['carrier', 'vehicles'],
     queryFn: ({ signal }) => listCarrierVehicles({ signal }),
-    enabled: role === AppRole.TRANSPORT_COMPANY && !!reassignTarget,
+    enabled: role === AppRole.TRANSPORT_COMPANY,
   });
 
   const driversQuery = useQuery({
     queryKey: ['carrier', 'drivers'],
     queryFn: ({ signal }) => listCarrierDrivers({ signal }),
-    enabled: role === AppRole.TRANSPORT_COMPANY && !!reassignTarget,
+    enabled: role === AppRole.TRANSPORT_COMPANY,
   });
 
   const reassignMutation = useMutation({
@@ -151,7 +152,7 @@ export function CarrierAssignmentsPage() {
   const driverOptions: Array<{
     id: string;
     licenceClass: string | null;
-    user: { name: string | null; email: string };
+    user: { name: string | null; email: string | null };
   }> = (() => {
     const byId = new Map(
       activeDrivers.map((d) => [
@@ -173,6 +174,8 @@ export function CarrierAssignmentsPage() {
     }
     return [...byId.values()];
   })();
+  const fleetListsLoading = vehiclesQuery.isLoading || driversQuery.isLoading;
+  const fleetListsError = vehiclesQuery.isError || driversQuery.isError;
   const selectedVehicleOk =
     !reassignTarget ||
     !vehicleId ||
@@ -268,12 +271,12 @@ export function CarrierAssignmentsPage() {
             getKey={(exc) => exc.id}
             mode="list"
             renderItem={(exc) => (
-              <DataCard className="flex items-center justify-between gap-3 py-3">
-                <div>
+              <DataCard className="flex flex-wrap items-center justify-between gap-3 py-3">
+                <div className="min-w-0">
                   <span className="text-sm font-medium text-clox-ink">
                     {exc.kind === 'WAITING' ? t('surcharges.kindWaiting') : t('surcharges.kindMass')}
                   </span>
-                  <span className="ml-2 font-mono text-xs text-clox-mute">
+                  <span className="ml-2 break-all font-mono text-xs text-clox-mute">
                     ${(exc.amountIncGstCents / 100).toFixed(2)} · {exc.status}
                   </span>
                 </div>
@@ -310,12 +313,30 @@ export function CarrierAssignmentsPage() {
                 minClass: reassignTarget.job.minVehicleClass ?? t('dash'),
               })}
             </p>
+            <p className="mt-1 text-xs text-clox-mute">
+              {t('assignments.reassignPickHint', {
+                vehicles: activeVehicles.length,
+                drivers: activeDrivers.length,
+              })}
+            </p>
+
+            {fleetListsLoading ? (
+              <Notice tone="info" className="mt-3">
+                {t('assignments.reassignLoadingFleet')}
+              </Notice>
+            ) : null}
+            {fleetListsError ? (
+              <Notice tone="error" className="mt-3">
+                {getErrorDetail(vehiclesQuery.error ?? driversQuery.error)}
+              </Notice>
+            ) : null}
 
             <Select
               className="mt-4"
               label={t('market.assignVehicle')}
               required
               value={vehicleId}
+              disabled={fleetListsLoading}
               onChange={(event) => setVehicleId(event.target.value)}
             >
               <option value="">{t('market.selectVehicle')}</option>
@@ -338,6 +359,7 @@ export function CarrierAssignmentsPage() {
               label={t('market.assignDriver')}
               required
               value={driverId}
+              disabled={fleetListsLoading}
               onChange={(event) => setDriverId(event.target.value)}
             >
               <option value="">{t('market.selectDriver')}</option>
@@ -347,6 +369,17 @@ export function CarrierAssignmentsPage() {
                 </option>
               ))}
             </Select>
+
+            {!fleetListsLoading && activeVehicles.length === 0 ? (
+              <Notice tone="warn" className="mt-3">
+                {t('assignments.reassignNoActiveVehicles')}
+              </Notice>
+            ) : null}
+            {!fleetListsLoading && activeDrivers.length === 0 ? (
+              <Notice tone="warn" className="mt-3">
+                {t('assignments.reassignNoActiveDrivers')}
+              </Notice>
+            ) : null}
 
             {!selectedVehicleOk ? (
               <Notice tone="warn" className="mt-3">
@@ -402,6 +435,8 @@ export function CarrierAssignmentsPage() {
                 type="button"
                 disabled={
                   reassignMutation.isPending ||
+                  fleetListsLoading ||
+                  fleetListsError ||
                   !vehicleId ||
                   !driverId ||
                   reason.trim().length < 3 ||

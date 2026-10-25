@@ -146,6 +146,8 @@ export function uploadDocumentContent(documentId: string, file: File) {
     .put<{ id: string; status: string; contentHash: string; sizeBytes: number }>(
       `/documents/${documentId}/content`,
       form,
+      // Document uploads (RWC / licence / KYB) often exceed the default 30s on mobile.
+      { timeout: 120_000 },
     )
     .then((r) => r.data);
 }

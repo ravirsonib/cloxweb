@@ -33,6 +33,7 @@ export type DriverOnboarding = {
   goNoGo: {
     companyLinked: boolean;
     licenceValid: boolean;
+    licenceDocumentUploaded: boolean;
     nhvrAcknowledged: boolean;
     active: boolean;
     canBeAssigned: boolean;
@@ -59,7 +60,7 @@ export function submitDriverProfile(payload: {
   licenceClass: string;
   licenceExpiry: string;
   nhvrAcknowledged: true;
-  licenceDocumentId?: string;
+  licenceDocumentId: string;
 }) {
   return http.put<DriverOnboarding>('/driver/profile', payload).then((r) => r.data);
 }

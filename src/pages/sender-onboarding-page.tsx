@@ -99,6 +99,11 @@ export function SenderOnboardingPage() {
         queryKey: ['sender', 'onboarding'],
         queryFn: () => getSenderOnboarding(),
       }));
+    // Mutation responses must update the cache — otherwise prev/next steps
+    // remount with stale empty fields (ABN, invoice, etc.).
+    if (next) {
+      qc.setQueryData(['sender', 'onboarding'], next);
+    }
     if (options?.showSavedToast !== false) {
       toast.success(t('saved'));
     }
@@ -231,6 +236,7 @@ type AccountForm = {
 };
 
 type InvoiceForm = {
+  abn: string;
   invoiceLegalName: string;
   invoiceAddressLine1: string;
   invoiceSuburb: string;
@@ -278,6 +284,19 @@ function AccountStep({
     },
   });
 
+  useEffect(() => {
+    form.reset({
+      accountType: data.company.senderAccountType ?? 'BUSINESS',
+      legalName: data.company.legalName || '',
+      abn: data.company.abn || '',
+    });
+  }, [
+    data.company.senderAccountType,
+    data.company.legalName,
+    data.company.abn,
+    form,
+  ]);
+
   const accountType = form.watch('accountType');
 
   const mutation = useMutation({
@@ -285,7 +304,7 @@ function AccountStep({
       updateSenderProfile({
         accountType: values.accountType,
         legalName: values.legalName,
-        abn: values.accountType === 'BUSINESS' ? values.abn : undefined,
+        abn: values.accountType === 'BUSINESS' ? values.abn.replace(/\s/g, '') : undefined,
         homeRegionCode: data.company.homeRegionCode || 'VIC',
       }),
     onSuccess: (next) => void onSaved(next),
@@ -353,24 +372,44 @@ function InvoiceStep({
 }) {
   const { t } = useTranslation();
 
-  const schema = z.object({
-    invoiceLegalName: z.string().trim().min(1, t('validation.invoiceLegalNameRequired')),
-    invoiceAddressLine1: z.string().trim().min(1, t('validation.addressRequired')),
-    invoiceSuburb: z.string().trim().min(1, t('validation.suburbRequired')),
-    invoiceState: z
-      .string()
-      .trim()
-      .toUpperCase()
-      .refine((value) => (AU_STATES as readonly string[]).includes(value), {
-        message: t('validation.stateInvalid'),
-      }),
-    invoicePostcode: z.string().trim().regex(/^\d{4}$/, t('validation.postcodeInvalid')),
-    gstRegistered: z.boolean(),
-  });
+  const isBusiness = (data.company.senderAccountType ?? 'BUSINESS') === 'BUSINESS';
+
+  const schema = z
+    .object({
+      abn: z.string().trim(),
+      invoiceLegalName: z.string().trim().min(1, t('validation.invoiceLegalNameRequired')),
+      invoiceAddressLine1: z.string().trim().min(1, t('validation.addressRequired')),
+      invoiceSuburb: z.string().trim().min(1, t('validation.suburbRequired')),
+      invoiceState: z
+        .string()
+        .trim()
+        .toUpperCase()
+        .refine((value) => (AU_STATES as readonly string[]).includes(value), {
+          message: t('validation.stateInvalid'),
+        }),
+      invoicePostcode: z.string().trim().regex(/^\d{4}$/, t('validation.postcodeInvalid')),
+      gstRegistered: z.boolean(),
+    })
+    .superRefine((values, ctx) => {
+      if (!isBusiness) return;
+      // Prefer form value; fall back to ABN already saved on account step.
+      const candidate = (values.abn || data.company.abn || '').replace(/\s/g, '');
+      const abn = abnSchema(t('validation.abnRequired'), t('validation.abnInvalid')).safeParse(
+        candidate,
+      );
+      if (!abn.success) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['abn'],
+          message: abn.error.issues[0]?.message ?? t('validation.abnInvalid'),
+        });
+      }
+    });
 
   const form = useForm<InvoiceForm>({
     resolver: zodResolver(schema),
     defaultValues: {
+      abn: data.company.abn || '',
       invoiceLegalName: data.company.invoiceLegalName || data.company.legalName || '',
       invoiceAddressLine1: data.company.invoiceAddressLine1 || '',
       invoiceSuburb: data.company.invoiceSuburb || '',
@@ -380,13 +419,41 @@ function InvoiceStep({
     },
   });
 
+  useEffect(() => {
+    form.reset({
+      abn: data.company.abn || '',
+      invoiceLegalName: data.company.invoiceLegalName || data.company.legalName || '',
+      invoiceAddressLine1: data.company.invoiceAddressLine1 || '',
+      invoiceSuburb: data.company.invoiceSuburb || '',
+      invoiceState: data.company.invoiceState || 'VIC',
+      invoicePostcode: data.company.invoicePostcode || '',
+      gstRegistered: data.company.gstRegistered,
+    });
+  }, [
+    data.company.abn,
+    data.company.invoiceLegalName,
+    data.company.legalName,
+    data.company.invoiceAddressLine1,
+    data.company.invoiceSuburb,
+    data.company.invoiceState,
+    data.company.invoicePostcode,
+    data.company.gstRegistered,
+    form,
+  ]);
+
   const mutation = useMutation({
     mutationFn: (values: InvoiceForm) => {
       const accountType = data.company.senderAccountType ?? 'BUSINESS';
+      const nextAbn = values.abn.replace(/\s/g, '');
       return updateSenderProfile({
         accountType,
-        legalName: data.company.legalName,
-        abn: data.company.abn || undefined,
+        legalName: data.company.legalName || values.invoiceLegalName,
+        // Omit abn when unchanged/empty so server keeps the account-step ABN.
+        ...(accountType === 'BUSINESS' && nextAbn
+          ? { abn: nextAbn }
+          : accountType === 'BUSINESS' && !data.company.abn
+            ? { abn: '' }
+            : {}),
         homeRegionCode: data.company.homeRegionCode || 'VIC',
         invoiceLegalName: values.invoiceLegalName,
         invoiceAddressLine1: values.invoiceAddressLine1,
@@ -408,6 +475,15 @@ function InvoiceStep({
       <h2 className="mb-4 font-display text-lg font-semibold">
         {t('senderOnboarding.stepInvoice')}
       </h2>
+      {isBusiness ? (
+        <Field
+          label={t('abn')}
+          required
+          inputMode="numeric"
+          error={form.formState.errors.abn?.message}
+          {...form.register('abn')}
+        />
+      ) : null}
       <Field
         label={t('senderOnboarding.placeholderInvoiceLegalName')}
         required
@@ -510,22 +586,24 @@ function DocumentsStep({
       <p className="text-sm text-clox-mute">
         {t('senderOnboarding.docsRequired', { docType })}
       </p>
-      <input
-        type="file"
-        accept=".pdf,image/jpeg,image/png,image/webp,image/*"
-        capture="environment"
-        onChange={(e) => {
-          upload.reset();
-          submit.reset();
-          setMessage(null);
-          setFile(e.target.files?.[0] ?? null);
-        }}
-      />
+      <div className="clox-file-field mb-0">
+        <input
+          type="file"
+          accept=".pdf,image/jpeg,image/png,image/webp"
+          className="clox-file-input"
+          onChange={(e) => {
+            upload.reset();
+            submit.reset();
+            setMessage(null);
+            setFile(e.target.files?.[0] ?? null);
+          }}
+        />
+      </div>
       {(upload.isError || submit.isError) && (
         <Notice tone="error">{getErrorDetail(upload.error ?? submit.error)}</Notice>
       )}
       {message ? <Notice tone="success">{message}</Notice> : null}
-      <div className="flex flex-wrap gap-2">
+      <div className="clox-form-actions">
         <Button
           variant="secondary"
           disabled={!file || upload.isPending}

@@ -117,6 +117,9 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           <NavLink to="/companies" className={navItemClass} onClick={onNavigate}>
             {t('nav.companies')}
           </NavLink>
+          <NavLink to="/admin-jobs" className={navItemClass} onClick={onNavigate}>
+            {t('nav.adminJobs')}
+          </NavLink>
           <NavLink to="/audit" className={navItemClass} onClick={onNavigate}>
             {t('nav.audit')}
           </NavLink>
@@ -238,7 +241,7 @@ function DriverCabShell({ children }: { children?: ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-lg flex-1 px-4 py-5 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] text-clox-text">
+      <main className="mx-auto w-full min-w-0 max-w-lg flex-1 overflow-x-clip px-3 py-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] text-clox-text sm:px-4 sm:py-5">
         {children ?? <Outlet />}
       </main>
 
@@ -349,12 +352,12 @@ function OpsShell({ children }: { children?: ReactNode }) {
         </div>
       </aside>
 
-      <div className="lg:pl-[222px]">
-        <header className="sticky top-0 z-30 flex h-[58px] items-center justify-between gap-3 border-b border-clox-border bg-clox-surface px-4 sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
+      <div className="min-w-0 overflow-x-clip lg:pl-[222px]">
+        <header className="sticky top-0 z-30 flex h-[58px] items-center justify-between gap-2 border-b border-clox-border bg-clox-surface px-3 sm:gap-3 sm:px-6">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <button
               type="button"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-clox-surface-alt text-clox-mute lg:hidden"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-clox-surface-alt text-clox-mute lg:hidden"
               aria-label={t('nav.openMenu')}
               onClick={() => setMobileOpen(true)}
             >
@@ -377,7 +380,7 @@ function OpsShell({ children }: { children?: ReactNode }) {
             <RoleBadge role={role} className="hidden sm:inline-flex" />
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <LanguageSwitcher />
             <Button variant="secondary" size="sm" onClick={() => void signOut()}>
               {t('signOut')}
@@ -385,7 +388,7 @@ function OpsShell({ children }: { children?: ReactNode }) {
           </div>
         </header>
 
-        <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
+        <main className="mx-auto min-w-0 max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
           {children ?? <Outlet />}
         </main>
       </div>

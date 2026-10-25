@@ -22,6 +22,7 @@ import {
   Field,
   Notice,
   RoleBadge,
+  Select,
   useConfirm,
   useToast,
 } from '@/components/ui';
@@ -295,23 +296,19 @@ function CompanyProfileSection({
             onChange={(e) => setAcn(e.target.value)}
             disabled={Boolean(pending)}
           />
-          <label className="mb-0 block">
-            <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
-              {t('account.homeRegion')}
-            </span>
-            <select
-              className="clox-field-control w-full"
-              value={homeRegionCode}
-              disabled={Boolean(pending)}
-              onChange={(e) => setHomeRegionCode(e.target.value)}
-            >
-              {AU_STATES.map((code) => (
-                <option key={code} value={code}>
-                  {code}
-                </option>
-              ))}
-            </select>
-          </label>
+          <Select
+            className="mb-0"
+            label={t('account.homeRegion')}
+            value={homeRegionCode}
+            disabled={Boolean(pending)}
+            onChange={(e) => setHomeRegionCode(e.target.value)}
+          >
+            {AU_STATES.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </Select>
         </div>
         {kind === 'sender' ? (
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -333,23 +330,19 @@ function CompanyProfileSection({
               onChange={(e) => setInvoiceSuburb(e.target.value)}
               disabled={Boolean(pending)}
             />
-            <label className="mb-0 block">
-              <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
-                {t('account.invoiceState')}
-              </span>
-              <select
-                className="clox-field-control w-full"
-                value={invoiceState}
-                disabled={Boolean(pending)}
-                onChange={(e) => setInvoiceState(e.target.value)}
-              >
-                {AU_STATES.map((code) => (
-                  <option key={code} value={code}>
-                    {code}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <Select
+              className="mb-0"
+              label={t('account.invoiceState')}
+              value={invoiceState}
+              disabled={Boolean(pending)}
+              onChange={(e) => setInvoiceState(e.target.value)}
+            >
+              {AU_STATES.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </Select>
             <Field
               label={t('account.invoicePostcode')}
               value={invoicePostcode}

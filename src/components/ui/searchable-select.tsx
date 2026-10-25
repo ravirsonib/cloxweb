@@ -1,4 +1,15 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Search } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { FieldShell } from './field';
@@ -46,10 +57,14 @@ export function SearchableSelect({
   clearLabel = 'Clear',
 }: SearchableSelectProps) {
   const id = useId();
+  const listboxId = `${id}-listbox`;
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [popoverStyle, setPopoverStyle] = useState<CSSProperties>({});
 
   const selected = options.find((o) => o.value === value) ?? null;
 
@@ -62,18 +77,67 @@ export function SearchableSelect({
     });
   }, [options, query]);
 
+  const close = useCallback(() => {
+    setOpen(false);
+    setQuery('');
+  }, []);
+
+  const updatePopoverPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const maxHeight = 280;
+    const gap = 4;
+    const spaceBelow = window.innerHeight - rect.bottom - gap;
+    const spaceAbove = rect.top - gap;
+    const openUp = spaceBelow < Math.min(maxHeight, 160) && spaceAbove > spaceBelow;
+    const width = Math.max(rect.width, 160);
+    const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
+
+    if (openUp) {
+      setPopoverStyle({
+        position: 'fixed',
+        left,
+        width,
+        bottom: window.innerHeight - rect.top + gap,
+        top: 'auto',
+        maxHeight: Math.min(maxHeight, Math.max(140, spaceAbove)),
+      });
+    } else {
+      setPopoverStyle({
+        position: 'fixed',
+        left,
+        width,
+        top: rect.bottom + gap,
+        bottom: 'auto',
+        maxHeight: Math.min(maxHeight, Math.max(140, spaceBelow)),
+      });
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePopoverPosition();
+    window.addEventListener('resize', updatePopoverPosition);
+    window.addEventListener('scroll', updatePopoverPosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePopoverPosition);
+      window.removeEventListener('scroll', updatePopoverPosition, true);
+    };
+  }, [open, updatePopoverPosition, filtered.length]);
+
   useEffect(() => {
     if (!open) return;
     const onDoc = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-        setQuery('');
-      }
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
+      close();
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setOpen(false);
-        setQuery('');
+        event.preventDefault();
+        close();
+        triggerRef.current?.focus();
       }
     };
     document.addEventListener('mousedown', onDoc);
@@ -82,7 +146,7 @@ export function SearchableSelect({
       document.removeEventListener('mousedown', onDoc);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open]);
+  }, [open, close]);
 
   useEffect(() => {
     if (open) {
@@ -90,49 +154,16 @@ export function SearchableSelect({
     }
   }, [open]);
 
-  return (
-    <FieldShell
-      label={label}
-      hint={hint}
-      error={error}
-      required={required}
-      className={className}
-      htmlFor={id}
-    >
-      <div ref={rootRef} className="relative">
-        <button
-          id={id}
-          type="button"
-          disabled={disabled}
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          className={cn(
-            'clox-field-control flex w-full items-center justify-between gap-2 text-left',
-            disabled && 'cursor-not-allowed opacity-60',
-          )}
-          onClick={() => {
-            if (disabled) return;
-            setOpen((v) => !v);
-            setQuery('');
-          }}
-        >
-          <span className={cn('min-w-0 truncate', !selected && 'text-clox-faint')}>
-            {selected ? (
-              <>
-                <span className="font-medium text-clox-ink">{selected.label}</span>
-                {selected.hint ? (
-                  <span className="ml-1.5 text-clox-mute">{selected.hint}</span>
-                ) : null}
-              </>
-            ) : (
-              placeholder
-            )}
-          </span>
-          <ChevronDown className="h-4 w-4 shrink-0 text-clox-faint" aria-hidden />
-        </button>
-
-        {open ? (
-          <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-clox-md border border-clox-border bg-clox-surface shadow-clox-2">
+  const listbox =
+    open && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            ref={popoverRef}
+            id={listboxId}
+            role="listbox"
+            className="clox-select-popover overflow-hidden p-0"
+            style={popoverStyle}
+          >
             <div className="flex items-center gap-2 border-b border-clox-border-soft px-3 py-2">
               <Search className="h-3.5 w-3.5 shrink-0 text-clox-faint" aria-hidden />
               <input
@@ -146,13 +177,12 @@ export function SearchableSelect({
                   if (e.key === 'Enter' && filtered[0] && !filtered[0].disabled) {
                     e.preventDefault();
                     onChange(filtered[0].value);
-                    setOpen(false);
-                    setQuery('');
+                    close();
                   }
                 }}
               />
             </div>
-            <ul role="listbox" className="max-h-56 overflow-y-auto py-1">
+            <ul className="max-h-56 overflow-y-auto py-1">
               {allowClear && value ? (
                 <li>
                   <button
@@ -160,8 +190,7 @@ export function SearchableSelect({
                     className="flex w-full px-3 py-2 text-left text-sm text-clox-mute hover:bg-clox-surface-alt"
                     onClick={() => {
                       onChange('');
-                      setOpen(false);
-                      setQuery('');
+                      close();
                     }}
                   >
                     {clearLabel}
@@ -190,8 +219,7 @@ export function SearchableSelect({
                         onClick={() => {
                           if (opt.disabled) return;
                           onChange(opt.value);
-                          setOpen(false);
-                          setQuery('');
+                          close();
                         }}
                       >
                         <span className="min-w-0">
@@ -223,8 +251,59 @@ export function SearchableSelect({
                 })
               )}
             </ul>
-          </div>
-        ) : null}
+          </div>,
+          document.body,
+        )
+      : null;
+
+  return (
+    <FieldShell
+      label={label}
+      hint={hint}
+      error={error}
+      required={required}
+      className={className}
+      htmlFor={id}
+    >
+      <div ref={rootRef} className="relative min-w-0 w-full">
+        <button
+          ref={triggerRef}
+          id={id}
+          type="button"
+          disabled={disabled}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-controls={listboxId}
+          className={cn(
+            'clox-field-control flex w-full min-w-0 items-center justify-between gap-2 overflow-hidden text-left',
+            open && 'clox-select-trigger-open',
+            disabled && 'cursor-not-allowed opacity-60',
+          )}
+          onClick={() => {
+            if (disabled) return;
+            setOpen((v) => !v);
+            setQuery('');
+          }}
+        >
+          <span className={cn('min-w-0 truncate', !selected && 'text-clox-faint')}>
+            {selected ? (
+              <>
+                <span className="font-medium text-clox-ink">{selected.label}</span>
+                {selected.hint ? (
+                  <span className="ml-1.5 text-clox-mute">{selected.hint}</span>
+                ) : null}
+              </>
+            ) : (
+              placeholder
+            )}
+          </span>
+          <ChevronDown
+            className={cn('clox-select-chevron', open && 'clox-select-chevron-open')}
+            size={16}
+            aria-hidden
+          />
+        </button>
+        {listbox}
       </div>
     </FieldShell>
   );

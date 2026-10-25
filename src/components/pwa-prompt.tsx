@@ -46,7 +46,7 @@ export function PwaPrompt() {
 
   if (needRefresh) {
     return (
-      <div className="fixed inset-x-0 bottom-0 z-[60] border-t border-clox-border bg-clox-surface p-4 shadow-clox-2">
+      <div className="clox-pwa-banner fixed inset-x-0 bottom-0 z-[60] border-t border-clox-border bg-clox-surface p-4 shadow-clox-2">
         <div className="mx-auto flex max-w-lg flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-clox-text">{t('pwa.updateReady')}</p>
           <div className="flex gap-2">
@@ -65,7 +65,7 @@ export function PwaPrompt() {
   if (!installEvent || dismissedInstall) return null;
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-[60] border-t border-clox-border bg-clox-surface p-4 shadow-clox-2">
+    <div className="clox-pwa-banner fixed inset-x-0 bottom-0 z-[60] border-t border-clox-border bg-clox-surface p-4 shadow-clox-2">
       <div className="mx-auto flex max-w-lg flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-clox-text">{t('pwa.installHint')}</p>
         <div className="flex gap-2">

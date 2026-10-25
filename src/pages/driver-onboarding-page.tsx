@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate } from 'react-router-dom';
 import { z } from 'zod';
@@ -21,6 +21,19 @@ import { futureDateSchema, LICENCE_CLASSES } from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 import { useEffect, useState } from 'react';
+
+function formatLicenceSubmitError(error: unknown, fallback: (err: unknown) => string): string {
+  const detail = fallback(error);
+  if (/licenceDocumentId/i.test(detail)) {
+    return detail.includes('uuid') || /invalid/i.test(detail)
+      ? detail
+      : 'Upload your driver licence document (PDF or image) before submitting.';
+  }
+  if (/DRIVER_LICENCE_DOC_REQUIRED/i.test(detail)) {
+    return 'A usable driver licence document is required before activation. Upload the file and try again.';
+  }
+  return detail;
+}
 
 export function DriverOnboardingPage() {
   const { t } = useTranslation();
@@ -229,6 +242,9 @@ function LicenceStep({
         mimeType: mime,
         sizeBytes: licenceFile.size,
       });
+      if (!intent?.id) {
+        throw new Error(t('driverOnboarding.errorLicenceFileRequired'));
+      }
       const uploadedRes = await uploadDocumentContent(intent.id, licenceFile);
       await confirmDocument(intent.id, uploadedRes.contentHash);
       return submitDriverProfile({
@@ -246,14 +262,33 @@ function LicenceStep({
     <form
       className="mt-8 max-w-lg"
       onSubmit={form.handleSubmit((values) => {
-        setFileError(licenceFile ? null : t('driverOnboarding.errorLicenceFileRequired'));
-        if (!licenceFile) return;
+        const missingFile = !licenceFile;
+        setFileError(missingFile ? t('driverOnboarding.errorLicenceFileRequired') : null);
+        if (missingFile) return;
         mutation.mutate(values);
       })}
       noValidate
     >
       <h2 className="font-display text-lg font-semibold">{t('driverOnboarding.licenceTitle')}</h2>
-      <p className="mb-4 mt-1 text-sm text-clox-mute">{t('driverOnboarding.licenceHint')}</p>
+      <p className="mb-3 mt-1 text-sm text-clox-mute">{t('driverOnboarding.licenceHint')}</p>
+      <Notice tone="info" className="mb-4">
+        {t('driverOnboarding.licenceUploadRequiredNotice')}
+      </Notice>
+
+      <FileInput
+        label={t('driverOnboarding.licenceUploadLabel')}
+        required
+        hint={t('driverOnboarding.licenceUploadHint')}
+        accept="application/pdf,image/jpeg,image/png,image/webp"
+        fileName={licenceFile?.name ?? null}
+        error={fileError}
+        onChange={(e) => {
+          const next = e.target.files?.[0] ?? null;
+          setLicenceFile(next);
+          setFileError(null);
+        }}
+      />
+
       <Field
         label={t('driverOnboarding.placeholderLicenceNumber')}
         required
@@ -281,36 +316,28 @@ function LicenceStep({
         error={form.formState.errors.licenceExpiry?.message}
         {...form.register('licenceExpiry')}
       />
-      <FileInput
-        label={
-          <>
-            {t('driverOnboarding.licenceUploadLabel')}
-            <span className="text-[var(--status-danger)]"> *</span>
-          </>
-        }
-        accept="application/pdf,image/jpeg,image/png,image/webp"
-        fileName={licenceFile?.name ?? null}
-        onChange={(e) => {
-          const next = e.target.files?.[0] ?? null;
-          setLicenceFile(next);
-          setFileError(null);
-        }}
+
+      <Controller
+        name="nhvrAcknowledged"
+        control={form.control}
+        render={({ field, fieldState }) => (
+          <ChoiceCheck
+            className="mb-4"
+            checked={field.value}
+            onBlur={field.onBlur}
+            name={field.name}
+            ref={field.ref}
+            error={fieldState.error?.message}
+            onChange={(e) => field.onChange(e.target.checked)}
+          >
+            {t('driverOnboarding.nhvrCheckbox')}
+          </ChoiceCheck>
+        )}
       />
-      {fileError ? (
-        <p className="-mt-2 mb-4 text-[12px] font-medium text-[var(--status-danger)]" role="alert">
-          {fileError}
-        </p>
-      ) : null}
-      <ChoiceCheck
-        className="mb-4"
-        error={form.formState.errors.nhvrAcknowledged?.message}
-        {...form.register('nhvrAcknowledged')}
-      >
-        {t('driverOnboarding.nhvrCheckbox')}
-      </ChoiceCheck>
+
       {mutation.isError ? (
         <Notice tone="error" className="mb-0">
-          {getErrorDetail(mutation.error)}
+          {formatLicenceSubmitError(mutation.error, getErrorDetail)}
         </Notice>
       ) : null}
       <div className="clox-form-actions">

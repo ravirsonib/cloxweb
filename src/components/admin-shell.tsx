@@ -277,8 +277,10 @@ function CabTab({
       end={end}
       className={({ isActive }) => cn('cab-tab', isActive && 'is-active')}
     >
-      <Icon className="h-[18px] w-[18px]" aria-hidden strokeWidth={1.9} />
-      <span>{label}</span>
+      <span className="cab-tab-icon" aria-hidden>
+        <Icon className="h-[18px] w-[18px]" strokeWidth={1.9} />
+      </span>
+      <span className="cab-tab-label">{label}</span>
     </NavLink>
   );
 }
@@ -312,8 +314,8 @@ function DriverCabShell({ children }: { children?: ReactNode }) {
   }
 
   return (
-    <div className="cab-shell flex min-h-dvh flex-col" data-role={theme} data-theme="cab">
-      <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-clox-border bg-clox-surface px-4">
+    <div className="cab-shell" data-role={theme} data-theme="cab">
+      <header className="cab-header">
         <div className="flex min-w-0 items-center gap-2.5">
           <BrandLogo variant="light" markOnly className="h-7 w-7 shrink-0 rounded-lg object-contain" />
           <div className="min-w-0">
@@ -336,22 +338,23 @@ function DriverCabShell({ children }: { children?: ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto w-full min-w-0 max-w-lg flex-1 overflow-x-clip px-3 py-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] text-clox-text sm:px-4 sm:py-5">
-        {children ?? <Outlet />}
+      {/*
+        Scroll lives ONLY on main (min-h-0 + overflow-y-auto). Tab bar is in-flow
+        below main so it never covers CTAs and never blocks scroll.
+      */}
+      <main className="cab-main">
+        <div className="cab-main-inner">{children ?? <Outlet />}</div>
       </main>
 
-      <nav
-        className="cab-tabbar fixed inset-x-0 bottom-0 z-40 flex"
-        aria-label={t('nav.main')}
-      >
-        <CabTab to="/" end label={t('nav.home')} icon={navIconForPath('/')} />
-        <CabTab to="/trips" label={t('nav.myTrips')} icon={navIconForPath('/trips')} />
+      <nav className="cab-tabbar" aria-label={t('nav.main')}>
+        <CabTab to="/" end label={t('nav.cabHome')} icon={navIconForPath('/')} />
+        <CabTab to="/trips" label={t('nav.cabTrips')} icon={navIconForPath('/trips')} />
         <CabTab
           to="/driver/onboarding"
-          label={t('nav.driverOnboarding')}
+          label={t('nav.cabOnboarding')}
           icon={navIconForPath('/driver/onboarding')}
         />
-        <CabTab to="/account" label={t('nav.account')} icon={navIconForPath('/account')} />
+        <CabTab to="/account" label={t('nav.cabAccount')} icon={navIconForPath('/account')} />
       </nav>
     </div>
   );
@@ -451,7 +454,7 @@ function OpsShell({ children }: { children?: ReactNode }) {
         </div>
       </aside>
 
-      <div className="min-w-0 overflow-x-clip lg:pl-[222px]">
+      <div className="min-w-0 overflow-x-hidden lg:pl-[222px]">
         <header className="sticky top-0 z-30 flex h-[58px] items-center justify-between gap-2 border-b border-clox-border bg-clox-surface px-3 sm:gap-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <button

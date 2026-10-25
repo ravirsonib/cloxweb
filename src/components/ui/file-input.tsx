@@ -13,6 +13,8 @@ import { cn } from '@/lib/cn';
 type FileInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & {
   label?: ReactNode;
   hint?: ReactNode;
+  error?: ReactNode;
+  required?: boolean;
   /** Controlled selected filename (optional; otherwise derived from last change). */
   fileName?: string | null;
 };
@@ -21,6 +23,8 @@ export const FileInput = forwardRef<HTMLInputElement, FileInputProps>(function F
   {
     label,
     hint,
+    error,
+    required,
     fileName,
     className,
     id,
@@ -47,15 +51,20 @@ export const FileInput = forwardRef<HTMLInputElement, FileInputProps>(function F
   return (
     <div className={cn('clox-file-field mb-4', className)}>
       {label ? (
-        <label htmlFor={inputId} className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
-          {label}
-        </label>
+        <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
+          <label htmlFor={inputId}>{label}</label>
+          {required ? <span className="ml-0.5 text-[var(--status-danger)]">*</span> : null}
+        </span>
       ) : null}
       {hint ? <p className="mb-2 text-xs text-clox-faint">{hint}</p> : null}
-      <label
-        htmlFor={inputId}
-        className={cn('clox-file-drop', disabled && 'clox-file-drop-disabled')}
+      <div
+        className={cn(
+          'clox-file-drop',
+          disabled && 'clox-file-drop-disabled',
+          error && 'clox-file-drop-error',
+        )}
       >
+        {/* Full-area hit target — more reliable than sr-only + label on mobile */}
         <input
           ref={ref}
           id={inputId}
@@ -63,7 +72,8 @@ export const FileInput = forwardRef<HTMLInputElement, FileInputProps>(function F
           accept={accept}
           capture={capture}
           disabled={disabled}
-          className="sr-only"
+          aria-invalid={error ? true : undefined}
+          className="clox-file-drop-input"
           onChange={handleChange}
           {...props}
         />
@@ -78,7 +88,12 @@ export const FileInput = forwardRef<HTMLInputElement, FileInputProps>(function F
         ) : (
           <span className="clox-file-drop-hint">{t('fileInput.hint')}</span>
         )}
-      </label>
+      </div>
+      {error ? (
+        <p className="mt-1.5 text-[12px] font-medium text-[var(--status-danger)]" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 });

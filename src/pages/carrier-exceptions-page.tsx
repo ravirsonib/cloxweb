@@ -266,12 +266,13 @@ export function CarrierExceptionDetailPage() {
     }
     return [...byId.values()];
   })();
-  const driverOptions: Array<{
+  type DriverOption = {
     id: string;
     licenceClass: string | null;
     user: { name: string | null; email: string | null };
-  }> = (() => {
-    const byId = new Map(
+  };
+  const driverOptions: DriverOption[] = (() => {
+    const byId = new Map<string, DriverOption>(
       activeDrivers.map((d) => [
         d.id,
         {
@@ -285,7 +286,7 @@ export function CarrierExceptionDetailPage() {
       if (!byId.has(c.driverId)) {
         byId.set(c.driverId, {
           id: c.driverId,
-          licenceClass: null,
+          licenceClass: c.driver.licenceClass,
           user: { name: c.driver.name, email: c.driver.email },
         });
       }

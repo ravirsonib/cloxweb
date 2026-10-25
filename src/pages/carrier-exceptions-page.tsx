@@ -25,6 +25,10 @@ import {
   releaseTripException,
   type TripExceptionRow,
 } from '@/lib/api';
+import {
+  carrierDriverSelectLabel,
+  carrierVehicleSelectLabel,
+} from '@/lib/fleet-select-labels';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -233,6 +237,61 @@ export function CarrierExceptionDetailPage() {
     escalateMut.isPending ||
     releaseMut.isPending;
   const recommended = candidates.data?.recommended ?? null;
+  const vehicleOptions: Array<{
+    id: string;
+    registration: string | null;
+    label: string | null;
+    vehicleClass: string | null;
+  }> = (() => {
+    const byId = new Map(
+      activeVehicles.map((v) => [
+        v.id,
+        {
+          id: v.id,
+          registration: v.registration,
+          label: v.label,
+          vehicleClass: v.vehicleClass,
+        },
+      ]),
+    );
+    for (const c of candidates.data?.items ?? []) {
+      if (!byId.has(c.vehicleId)) {
+        byId.set(c.vehicleId, {
+          id: c.vehicleId,
+          registration: c.vehicle.registration,
+          label: null,
+          vehicleClass: c.vehicle.vehicleClass,
+        });
+      }
+    }
+    return [...byId.values()];
+  })();
+  const driverOptions: Array<{
+    id: string;
+    licenceClass: string | null;
+    user: { name: string | null; email: string | null };
+  }> = (() => {
+    const byId = new Map(
+      activeDrivers.map((d) => [
+        d.id,
+        {
+          id: d.id,
+          licenceClass: d.licenceClass,
+          user: { name: d.user.name, email: d.user.email },
+        },
+      ]),
+    );
+    for (const c of candidates.data?.items ?? []) {
+      if (!byId.has(c.driverId)) {
+        byId.set(c.driverId, {
+          id: c.driverId,
+          licenceClass: null,
+          user: { name: c.driver.name, email: c.driver.email },
+        });
+      }
+    }
+    return [...byId.values()];
+  })();
 
   return (
     <div>
@@ -296,9 +355,12 @@ export function CarrierExceptionDetailPage() {
         >
           <p className="text-sm">
             {t('exceptions.suggestLine', {
-              vehicle: recommended.vehicle.registration ?? recommended.vehicleId.slice(0, 8),
+              vehicle:
+                recommended.vehicle.registration?.trim() ||
+                recommended.vehicle.vehicleClass ||
+                'Fleet vehicle',
               vehicleClass: recommended.vehicle.vehicleClass ?? t('dash'),
-              driver: recommended.driver.name ?? recommended.driver.email ?? t('dash'),
+              driver: carrierDriverSelectLabel(recommended.driver),
               score: recommended.score,
             })}
           </p>
@@ -314,8 +376,8 @@ export function CarrierExceptionDetailPage() {
                       setDriverId(c.driverId);
                     }}
                   >
-                    {c.score} · {c.vehicle.registration ?? c.vehicleId.slice(0, 8)} ·{' '}
-                    {c.driver.name ?? c.driver.email}
+                    {c.score} · {carrierVehicleSelectLabel(c.vehicle, t('dash'))} ·{' '}
+                    {carrierDriverSelectLabel(c.driver)}
                   </button>
                 </li>
               ))}
@@ -346,9 +408,9 @@ export function CarrierExceptionDetailPage() {
               onChange={(event) => setVehicleId(event.target.value)}
             >
               <option value="">{t('market.selectVehicle')}</option>
-              {activeVehicles.map((v) => (
+              {vehicleOptions.map((v) => (
                 <option key={v.id} value={v.id}>
-                  {v.registration ?? v.label ?? v.id.slice(0, 8)} · {v.vehicleClass ?? t('dash')}
+                  {carrierVehicleSelectLabel(v, t('dash'))}
                 </option>
               ))}
             </Select>
@@ -359,10 +421,9 @@ export function CarrierExceptionDetailPage() {
               onChange={(event) => setDriverId(event.target.value)}
             >
               <option value="">{t('market.selectDriver')}</option>
-              {activeDrivers.map((d) => (
+              {driverOptions.map((d) => (
                 <option key={d.id} value={d.id}>
-                  {d.user.name ?? d.user.email}
-                  {d.licenceClass ? ` · ${d.licenceClass}` : ''}
+                  {carrierDriverSelectLabel(d)}
                 </option>
               ))}
             </Select>

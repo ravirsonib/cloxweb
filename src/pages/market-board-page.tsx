@@ -24,6 +24,10 @@ import {
 } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
 import { cn } from '@/lib/cn';
+import {
+  carrierDriverSelectLabel,
+  carrierVehicleSelectLabel,
+} from '@/lib/fleet-select-labels';
 import { isVehicleClassAdequate } from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
@@ -266,7 +270,7 @@ export function MarketBoardPage() {
                 : '';
               return (
                 <option key={v.id} value={v.id} disabled={disabled}>
-                  {v.registration ?? v.label ?? v.id.slice(0, 8)} · {v.vehicleClass ?? t('dash')}
+                  {carrierVehicleSelectLabel(v, t('dash'))}
                   {!classOk ? ` · ${t('market.notEligible')}` : ''}
                   {busy ? ` · ${busyHint}` : ''}
                 </option>
@@ -294,8 +298,7 @@ export function MarketBoardPage() {
                 : '';
               return (
                 <option key={d.id} value={d.id} disabled={busy}>
-                  {d.user.name ?? d.user.email}
-                  {d.licenceClass ? ` · ${d.licenceClass}` : ''}
+                  {carrierDriverSelectLabel(d)}
                   {busy ? ` · ${busyHint}` : ''}
                 </option>
               );

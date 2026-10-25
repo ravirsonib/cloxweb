@@ -24,6 +24,10 @@ import {
   type CarrierAssignment,
 } from '@/lib/api';
 import type { SurchargeRow } from '@/lib/api/surcharges';
+import {
+  carrierDriverSelectLabel,
+  carrierVehicleSelectLabel,
+} from '@/lib/fleet-select-labels';
 import { isVehicleClassAdequate } from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
@@ -115,11 +119,65 @@ export function CarrierAssignmentsPage() {
   const items = list.data ?? [];
   const activeVehicles = (vehiclesQuery.data?.items ?? []).filter((v) => v.status === 'ACTIVE');
   const activeDrivers = (driversQuery.data?.items ?? []).filter((d) => d.status === 'ACTIVE');
+  /** Keep current assignment assets visible (and labeled) even before list load / if not ACTIVE. */
+  const vehicleOptions: Array<{
+    id: string;
+    registration: string | null;
+    label: string | null;
+    vehicleClass: string | null;
+  }> = (() => {
+    const byId = new Map(
+      activeVehicles.map((v) => [
+        v.id,
+        {
+          id: v.id,
+          registration: v.registration,
+          label: v.label,
+          vehicleClass: v.vehicleClass,
+        },
+      ]),
+    );
+    const current = reassignTarget?.vehicle;
+    if (current && !byId.has(current.id)) {
+      byId.set(current.id, {
+        id: current.id,
+        registration: current.registration,
+        label: null,
+        vehicleClass: current.vehicleClass,
+      });
+    }
+    return [...byId.values()];
+  })();
+  const driverOptions: Array<{
+    id: string;
+    licenceClass: string | null;
+    user: { name: string | null; email: string };
+  }> = (() => {
+    const byId = new Map(
+      activeDrivers.map((d) => [
+        d.id,
+        {
+          id: d.id,
+          licenceClass: d.licenceClass,
+          user: { name: d.user.name, email: d.user.email },
+        },
+      ]),
+    );
+    const current = reassignTarget?.driver;
+    if (current && !byId.has(current.id)) {
+      byId.set(current.id, {
+        id: current.id,
+        licenceClass: null,
+        user: { name: current.user.name, email: current.user.email },
+      });
+    }
+    return [...byId.values()];
+  })();
   const selectedVehicleOk =
     !reassignTarget ||
     !vehicleId ||
     isVehicleClassAdequate(
-      activeVehicles.find((v) => v.id === vehicleId)?.vehicleClass,
+      vehicleOptions.find((v) => v.id === vehicleId)?.vehicleClass,
       reassignTarget.job.minVehicleClass,
     );
 
@@ -261,14 +319,14 @@ export function CarrierAssignmentsPage() {
               onChange={(event) => setVehicleId(event.target.value)}
             >
               <option value="">{t('market.selectVehicle')}</option>
-              {activeVehicles.map((v) => {
+              {vehicleOptions.map((v) => {
                 const ok = isVehicleClassAdequate(
                   v.vehicleClass,
                   reassignTarget.job.minVehicleClass,
                 );
                 return (
                   <option key={v.id} value={v.id} disabled={!ok}>
-                    {v.registration ?? v.label ?? v.id.slice(0, 8)} · {v.vehicleClass ?? t('dash')}
+                    {carrierVehicleSelectLabel(v, t('dash'))}
                     {ok ? '' : ` · ${t('market.notEligible')}`}
                   </option>
                 );
@@ -283,10 +341,9 @@ export function CarrierAssignmentsPage() {
               onChange={(event) => setDriverId(event.target.value)}
             >
               <option value="">{t('market.selectDriver')}</option>
-              {activeDrivers.map((d) => (
+              {driverOptions.map((d) => (
                 <option key={d.id} value={d.id}>
-                  {d.user.name ?? d.user.email}
-                  {d.licenceClass ? ` · ${d.licenceClass}` : ''}
+                  {carrierDriverSelectLabel(d)}
                 </option>
               ))}
             </Select>

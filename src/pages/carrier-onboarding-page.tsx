@@ -22,7 +22,16 @@ import {
   uploadDocumentContent,
   type CarrierOnboarding,
 } from '@/lib/api';
-import { Button, Field, Notice, Select, StepChips, useConfirm } from '@/components/ui';
+import {
+  Button,
+  ChoiceCheck,
+  Field,
+  FileInput,
+  Notice,
+  Select,
+  StepChips,
+  useConfirm,
+} from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
 import { resolveUploadMime } from '@/lib/upload-mime';
 import {
@@ -471,40 +480,30 @@ function DocumentsStep({
           ) : null}
         </ul>
       ) : null}
-      <div className="clox-file-field mb-0 space-y-2">
-        <p className="text-[12.5px] font-semibold text-clox-ink">
-          {t('carrierOnboarding.publicLiability')}
-        </p>
-        <input
-          type="file"
-          accept=".pdf,image/jpeg,image/png,image/webp"
-          className="clox-file-input"
-          onChange={(e) => {
-            uploadPl.reset();
-            uploadCargo.reset();
-            setMessage(null);
-            const f = e.target.files?.[0];
-            if (f) uploadPl.mutate(f);
-          }}
-        />
-      </div>
-      <div className="clox-file-field mb-0 space-y-2">
-        <p className="text-[12.5px] font-semibold text-clox-ink">
-          {t('carrierOnboarding.cargoInsurance')}
-        </p>
-        <input
-          type="file"
-          accept=".pdf,image/jpeg,image/png,image/webp"
-          className="clox-file-input"
-          onChange={(e) => {
-            uploadPl.reset();
-            uploadCargo.reset();
-            setMessage(null);
-            const f = e.target.files?.[0];
-            if (f) uploadCargo.mutate(f);
-          }}
-        />
-      </div>
+      <FileInput
+        className="mb-0"
+        label={t('carrierOnboarding.publicLiability')}
+        accept=".pdf,image/jpeg,image/png,image/webp"
+        onChange={(e) => {
+          uploadPl.reset();
+          uploadCargo.reset();
+          setMessage(null);
+          const f = e.target.files?.[0];
+          if (f) uploadPl.mutate(f);
+        }}
+      />
+      <FileInput
+        className="mb-0"
+        label={t('carrierOnboarding.cargoInsurance')}
+        accept=".pdf,image/jpeg,image/png,image/webp"
+        onChange={(e) => {
+          uploadPl.reset();
+          uploadCargo.reset();
+          setMessage(null);
+          const f = e.target.files?.[0];
+          if (f) uploadCargo.mutate(f);
+        }}
+      />
       {message ? <Notice tone="success">{message}</Notice> : null}
       {(uploadPl.isError || uploadCargo.isError) && (
         <Notice tone="error">
@@ -761,25 +760,22 @@ function VehiclesStep({
                 </Button>
               ) : null}
               {!v.hasRwc ? (
-                <label className="mt-2 block text-xs text-clox-faint">
-                  {t('carrierOnboarding.rwc')} ({t('carrierOnboarding.rwcPerVehicle')})
-                  <input
-                    type="file"
-                    accept=".pdf,image/jpeg,image/png,image/webp"
-                    className="clox-file-input mt-2"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (!f) return;
-                      setRwcFormError(null);
-                      void uploadRwcForVehicle(v.id, f)
-                        .then(async () => {
-                          setRwcMsg(t('carrierOnboarding.rwcUploaded'));
-                          await onSaved();
-                        })
-                        .catch((err) => setRwcFormError(getErrorDetail(err)));
-                    }}
-                  />
-                </label>
+                <FileInput
+                  className="mt-2 mb-0"
+                  label={`${t('carrierOnboarding.rwc')} (${t('carrierOnboarding.rwcPerVehicle')})`}
+                  accept=".pdf,image/jpeg,image/png,image/webp"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    setRwcFormError(null);
+                    void uploadRwcForVehicle(v.id, f)
+                      .then(async () => {
+                        setRwcMsg(t('carrierOnboarding.rwcUploaded'));
+                        await onSaved();
+                      })
+                      .catch((err) => setRwcFormError(getErrorDetail(err)));
+                  }}
+                />
               ) : null}
             </li>
           ))}
@@ -844,23 +840,21 @@ function VehiclesStep({
           error={form.formState.errors.tareKg?.message}
           {...form.register('tareKg', { valueAsNumber: true })}
         />
-        <div className="clox-file-field">
-          <p className="mb-1.5 text-[12.5px] font-semibold text-clox-ink">
-            {t('fleet.rwcLabel')}{' '}
-            <span className="text-[var(--status-danger)]">*</span>
-          </p>
-          <p className="mb-2 text-xs text-clox-faint">{t('fleet.rwcHint')}</p>
-          <input
-            type="file"
-            accept=".pdf,image/jpeg,image/png,image/webp"
-            className="clox-file-input"
-            onChange={(e) => {
-              setRwcFile(e.target.files?.[0] ?? null);
-              setRwcFormError(null);
-            }}
-          />
-          {rwcFile ? <p className="mt-2 text-xs text-clox-mute">{rwcFile.name}</p> : null}
-        </div>
+        <FileInput
+          label={
+            <>
+              {t('fleet.rwcLabel')}{' '}
+              <span className="text-[var(--status-danger)]">*</span>
+            </>
+          }
+          hint={t('fleet.rwcHint')}
+          accept=".pdf,image/jpeg,image/png,image/webp"
+          fileName={rwcFile?.name ?? null}
+          onChange={(e) => {
+            setRwcFile(e.target.files?.[0] ?? null);
+            setRwcFormError(null);
+          }}
+        />
         {rwcFormError || mutation.isError ? (
           <Notice tone="error" className="mb-0">
             {rwcFormError ?? getErrorDetail(mutation.error)}
@@ -1128,69 +1122,65 @@ function CapabilitiesStep({
       }}
     >
       <h2 className="text-lg font-semibold">{t('carrierOnboarding.capabilitiesTitle')}</h2>
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={tailLift} onChange={(e) => setTailLift(e.target.checked)} />
-        {t('carrierOnboarding.capTailLift')}
-      </label>
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={reefer} onChange={(e) => setReefer(e.target.checked)} />
-        {t('carrierOnboarding.capReefer')}
-      </label>
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
+      <div className="space-y-3">
+        <ChoiceCheck checked={tailLift} onChange={(e) => setTailLift(e.target.checked)}>
+          {t('carrierOnboarding.capTailLift')}
+        </ChoiceCheck>
+        <ChoiceCheck checked={reefer} onChange={(e) => setReefer(e.target.checked)}>
+          {t('carrierOnboarding.capReefer')}
+        </ChoiceCheck>
+        <ChoiceCheck
           checked={dg}
           onChange={(e) => {
             setDg(e.target.checked);
             setFormError(null);
           }}
-        />
-        {t('carrierOnboarding.capDangerousGoods')}
-      </label>
-      {dg ? (
-        <div className="rounded-xl border border-clox-border p-3">
-          <p className="text-xs font-semibold text-clox-ink">
-            {t('carrierOnboarding.dgLicenceLabel')}{' '}
-            <span className="text-[var(--status-danger)]">*</span>
-          </p>
-          <p className="mt-1 text-xs text-clox-faint">{t('carrierOnboarding.dgLicenceHint')}</p>
-          <input
-            type="file"
-            accept=".pdf,image/jpeg,image/png,image/webp"
-            className="clox-file-input mt-3"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (!f) return;
-              setFormError(null);
-              void uploadDgLicence(f)
-                .then((id) => {
-                  setDgDocId(id);
-                  setDgMsg(t('carrierOnboarding.dgLicenceUploaded'));
-                })
-                .catch((err) => setFormError(getErrorDetail(err)));
-            }}
-          />
-          {dgDocId ? (
-            <div className="clox-form-actions mt-3">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  void openDocumentContent(dgDocId).catch((err) =>
-                    setFormError(getErrorDetail(err)),
-                  );
-                }}
-              >
-                {t('compliance.viewDocument')}
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={oversize} onChange={(e) => setOversize(e.target.checked)} />
-        {t('carrierOnboarding.capOversize')}
-      </label>
+        >
+          {t('carrierOnboarding.capDangerousGoods')}
+        </ChoiceCheck>
+        {dg ? (
+          <div className="rounded-xl border border-clox-border bg-clox-surface-alt p-3">
+            <p className="text-xs font-semibold text-clox-ink">
+              {t('carrierOnboarding.dgLicenceLabel')}{' '}
+              <span className="text-[var(--status-danger)]">*</span>
+            </p>
+            <p className="mt-1 text-xs text-clox-faint">{t('carrierOnboarding.dgLicenceHint')}</p>
+            <FileInput
+              className="mt-3 mb-0"
+              accept=".pdf,image/jpeg,image/png,image/webp"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                setFormError(null);
+                void uploadDgLicence(f)
+                  .then((id) => {
+                    setDgDocId(id);
+                    setDgMsg(t('carrierOnboarding.dgLicenceUploaded'));
+                  })
+                  .catch((err) => setFormError(getErrorDetail(err)));
+              }}
+            />
+            {dgDocId ? (
+              <div className="clox-form-actions mt-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    void openDocumentContent(dgDocId).catch((err) =>
+                      setFormError(getErrorDetail(err)),
+                    );
+                  }}
+                >
+                  {t('compliance.viewDocument')}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        <ChoiceCheck checked={oversize} onChange={(e) => setOversize(e.target.checked)}>
+          {t('carrierOnboarding.capOversize')}
+        </ChoiceCheck>
+      </div>
       <p className="text-xs text-clox-faint">{t('carrierOnboarding.serviceRegionVic')}</p>
       {dgMsg ? <Notice tone="success">{dgMsg}</Notice> : null}
       {formError || mutation.isError ? (
@@ -1280,46 +1270,36 @@ function SubmitStep({
           : t('carrierOnboarding.submitHint')}
       </p>
       <p className="text-xs text-clox-faint">{t('carrierOnboarding.submitRwcFleetNote')}</p>
-      <div className="clox-file-field mb-0 space-y-2">
-        <p className="text-[12.5px] font-semibold text-clox-ink">
-          {t('carrierOnboarding.publicLiability')}
-        </p>
-        <input
-          type="file"
-          accept=".pdf,image/*"
-          className="clox-file-input"
-          onChange={async (e) => {
-            const f = e.target.files?.[0];
-            if (!f) return;
-            try {
-              setPlId(await upload('PUBLIC_LIABILITY', f));
-              setMsg(t('carrierOnboarding.plUploaded'));
-            } catch (err) {
-              setMsg(getErrorDetail(err));
-            }
-          }}
-        />
-      </div>
-      <div className="clox-file-field mb-0 space-y-2">
-        <p className="text-[12.5px] font-semibold text-clox-ink">
-          {t('carrierOnboarding.cargoInsurance')}
-        </p>
-        <input
-          type="file"
-          accept=".pdf,image/*"
-          className="clox-file-input"
-          onChange={async (e) => {
-            const f = e.target.files?.[0];
-            if (!f) return;
-            try {
-              setCargoId(await upload('CARGO_INSURANCE', f));
-              setMsg(t('carrierOnboarding.cargoUploaded'));
-            } catch (err) {
-              setMsg(getErrorDetail(err));
-            }
-          }}
-        />
-      </div>
+      <FileInput
+        className="mb-0"
+        label={t('carrierOnboarding.publicLiability')}
+        accept=".pdf,image/*"
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (!f) return;
+          try {
+            setPlId(await upload('PUBLIC_LIABILITY', f));
+            setMsg(t('carrierOnboarding.plUploaded'));
+          } catch (err) {
+            setMsg(getErrorDetail(err));
+          }
+        }}
+      />
+      <FileInput
+        className="mb-0"
+        label={t('carrierOnboarding.cargoInsurance')}
+        accept=".pdf,image/*"
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (!f) return;
+          try {
+            setCargoId(await upload('CARGO_INSURANCE', f));
+            setMsg(t('carrierOnboarding.cargoUploaded'));
+          } catch (err) {
+            setMsg(getErrorDetail(err));
+          }
+        }}
+      />
       {msg ? <Notice tone="success">{msg}</Notice> : null}
       {submit.isError ? (
         <Notice tone="error">{getErrorDetail(submit.error)}</Notice>

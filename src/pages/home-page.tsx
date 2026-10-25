@@ -7,8 +7,10 @@ import { LoadingBlock } from '@/components/status-blocks';
 import { Notice, RoleBadge, dataCardClassName } from '@/components/ui';
 import { getErrorDetail, getIdentityMe } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { DRIVER_DOCS_ICON, navIconForPath } from '@/lib/nav-icons';
 import { AdminRole, AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
+import type { LucideIcon } from 'lucide-react';
 
 export function HomePage() {
   const role = useAuthStore((s) => s.role);
@@ -24,15 +26,25 @@ function HomeLink({
   to,
   title,
   hint,
+  icon,
 }: {
   to: string;
   title: string;
   hint: string;
+  icon?: LucideIcon;
 }) {
+  const Glyph = icon ?? navIconForPath(to);
   return (
     <Link to={to} className={cn('block h-full', dataCardClassName)}>
-      <p className="font-display text-lg font-semibold text-clox-ink">{title}</p>
-      <p className="mt-1 text-sm text-clox-mute">{hint}</p>
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-clox-surface-alt text-clox-orange">
+          <Glyph className="h-[18px] w-[18px]" aria-hidden strokeWidth={1.85} />
+        </span>
+        <div className="min-w-0">
+          <p className="font-display text-lg font-semibold text-clox-ink">{title}</p>
+          <p className="mt-1 text-sm text-clox-mute">{hint}</p>
+        </div>
+      </div>
     </Link>
   );
 }
@@ -117,6 +129,7 @@ function RoleHomePage() {
         {isMarketplace ? (
           <HomeLink
             to="/documents/upload"
+            icon={role === AppRole.DRIVER ? DRIVER_DOCS_ICON : undefined}
             title={
               role === AppRole.DRIVER
                 ? t('documentsUpload.driverTitle')

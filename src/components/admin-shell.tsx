@@ -2,11 +2,14 @@ import { useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import type { LucideIcon } from 'lucide-react';
+import { LogOut, Menu } from 'lucide-react';
 import { BrandLogo } from '@/components/brand-logo';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { Button, RoleBadge, useConfirm } from '@/components/ui';
 import { getIdentityMe, logout } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { DRIVER_DOCS_ICON, navIconForPath } from '@/lib/nav-icons';
 import { isCabTheme, prefersCabShell, roleThemeFromRole } from '@/lib/role-theme';
 import { AdminRole, AppRole, isAdminRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
@@ -18,6 +21,27 @@ const navItemClass = ({ isActive }: { isActive: boolean }) =>
       ? 'border-clox-accent font-medium text-white [background:color-mix(in_srgb,var(--clox-accent)_28%,transparent)]'
       : 'text-[#b9c4da] hover:bg-white/5 hover:text-white',
   );
+
+function SidebarLink({
+  to,
+  end,
+  icon: Icon,
+  children,
+  onNavigate,
+}: {
+  to: string;
+  end?: boolean;
+  icon: LucideIcon;
+  children: ReactNode;
+  onNavigate?: () => void;
+}) {
+  return (
+    <NavLink to={to} end={end} className={navItemClass} onClick={onNavigate}>
+      <Icon className="h-4 w-4 shrink-0 opacity-90" aria-hidden strokeWidth={1.85} />
+      <span className="min-w-0 truncate">{children}</span>
+    </NavLink>
+  );
+}
 
 function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const { t } = useTranslation('common');
@@ -48,123 +72,190 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <nav className="flex flex-col" aria-label={t('nav.main')}>
-      <NavLink to="/" end className={navItemClass} onClick={onNavigate}>
+      <SidebarLink to="/" end icon={navIconForPath('/')} onNavigate={onNavigate}>
         {t('nav.home')}
-      </NavLink>
+      </SidebarLink>
+
+      {/* Sender */}
       {role === AppRole.SENDER ? (
-        <NavLink to="/sender/onboarding" className={navItemClass} onClick={onNavigate}>
+        <SidebarLink
+          to="/sender/onboarding"
+          icon={navIconForPath('/sender/onboarding')}
+          onNavigate={onNavigate}
+        >
           {t('nav.senderOnboarding')}
-        </NavLink>
+        </SidebarLink>
       ) : null}
       {role === AppRole.SENDER ? (
-        <NavLink to="/jobs" className={navItemClass} onClick={onNavigate}>
+        <SidebarLink to="/jobs" icon={navIconForPath('/jobs')} onNavigate={onNavigate}>
           {t('nav.jobs')}
-        </NavLink>
+        </SidebarLink>
       ) : null}
       {role === AppRole.SENDER || isSuper ? (
-        <NavLink to="/surcharges" className={navItemClass} onClick={onNavigate}>
+        <SidebarLink to="/surcharges" icon={navIconForPath('/surcharges')} onNavigate={onNavigate}>
           {t('nav.surcharges')}
-        </NavLink>
+        </SidebarLink>
       ) : null}
+
+      {/* Carrier */}
       {role === AppRole.TRANSPORT_COMPANY ? (
-        <NavLink to="/carrier/onboarding" className={navItemClass} onClick={onNavigate}>
+        <SidebarLink
+          to="/carrier/onboarding"
+          icon={navIconForPath('/carrier/onboarding')}
+          onNavigate={onNavigate}
+        >
           {t('nav.carrierOnboarding')}
-        </NavLink>
+        </SidebarLink>
       ) : null}
       {role === AppRole.TRANSPORT_COMPANY ? (
-        <NavLink to="/carrier/fleet" className={navItemClass} onClick={onNavigate}>
+        <SidebarLink
+          to="/carrier/fleet"
+          icon={navIconForPath('/carrier/fleet')}
+          onNavigate={onNavigate}
+        >
           {t('nav.fleet')}
-        </NavLink>
+        </SidebarLink>
       ) : null}
       {role === AppRole.TRANSPORT_COMPANY ? (
-        <NavLink to="/carrier/drivers" className={navItemClass} onClick={onNavigate}>
+        <SidebarLink
+          to="/carrier/drivers"
+          icon={navIconForPath('/carrier/drivers')}
+          onNavigate={onNavigate}
+        >
           {t('nav.drivers')}
-        </NavLink>
+        </SidebarLink>
       ) : null}
       {role === AppRole.TRANSPORT_COMPANY ? (
-        <NavLink to="/market" className={navItemClass} onClick={onNavigate}>
+        <SidebarLink to="/market" icon={navIconForPath('/market')} onNavigate={onNavigate}>
           {t('nav.jobBoard')}
-        </NavLink>
+        </SidebarLink>
       ) : null}
       {role === AppRole.TRANSPORT_COMPANY ? (
-        <NavLink to="/assignments" className={navItemClass} onClick={onNavigate}>
+        <SidebarLink
+          to="/assignments"
+          icon={navIconForPath('/assignments')}
+          onNavigate={onNavigate}
+        >
           {t('nav.assignments')}
-        </NavLink>
+        </SidebarLink>
       ) : null}
       {role === AppRole.TRANSPORT_COMPANY ? (
-        <NavLink to="/carrier/exceptions" className={navItemClass} onClick={onNavigate}>
+        <SidebarLink
+          to="/carrier/exceptions"
+          icon={navIconForPath('/carrier/exceptions')}
+          onNavigate={onNavigate}
+        >
           {t('nav.exceptions')}
-        </NavLink>
+        </SidebarLink>
       ) : null}
+
+      {/* Driver (ops shell — cab uses bottom navbar) */}
       {role === AppRole.DRIVER ? (
-        <NavLink to="/driver/onboarding" className={navItemClass} onClick={onNavigate}>
+        <SidebarLink
+          to="/driver/onboarding"
+          icon={navIconForPath('/driver/onboarding')}
+          onNavigate={onNavigate}
+        >
           {t('nav.driverOnboarding')}
-        </NavLink>
+        </SidebarLink>
       ) : null}
       {role === AppRole.DRIVER ? (
-        <NavLink to="/trips" className={navItemClass} onClick={onNavigate}>
+        <SidebarLink to="/trips" icon={navIconForPath('/trips')} onNavigate={onNavigate}>
           {t('nav.myTrips')}
-        </NavLink>
+        </SidebarLink>
       ) : null}
+
+      {/* Super admin */}
       {isSuper ? (
         <>
-          <NavLink to="/leads" className={navItemClass} onClick={onNavigate}>
+          <SidebarLink to="/leads" icon={navIconForPath('/leads')} onNavigate={onNavigate}>
             {t('nav.leads')}
-          </NavLink>
-          <NavLink to="/ops/partners" className={navItemClass} onClick={onNavigate}>
+          </SidebarLink>
+          <SidebarLink
+            to="/ops/partners"
+            icon={navIconForPath('/ops/partners')}
+            onNavigate={onNavigate}
+          >
             {t('nav.opsPartners')}
-          </NavLink>
-          <NavLink to="/companies" className={navItemClass} onClick={onNavigate}>
+          </SidebarLink>
+          <SidebarLink to="/companies" icon={navIconForPath('/companies')} onNavigate={onNavigate}>
             {t('nav.companies')}
-          </NavLink>
-          <NavLink to="/admin-jobs" className={navItemClass} onClick={onNavigate}>
+          </SidebarLink>
+          <SidebarLink to="/admin-jobs" icon={navIconForPath('/admin-jobs')} onNavigate={onNavigate}>
             {t('nav.adminJobs')}
-          </NavLink>
-          <NavLink to="/audit" className={navItemClass} onClick={onNavigate}>
+          </SidebarLink>
+          <SidebarLink to="/audit" icon={navIconForPath('/audit')} onNavigate={onNavigate}>
             {t('nav.audit')}
-          </NavLink>
+          </SidebarLink>
         </>
       ) : null}
+
+      {/* Partners / ops */}
       {showPartnerOnboarding ? (
-        <NavLink to="/partner/onboarding" className={navItemClass} onClick={onNavigate}>
+        <SidebarLink
+          to="/partner/onboarding"
+          icon={navIconForPath('/partner/onboarding')}
+          onNavigate={onNavigate}
+        >
           {t('nav.partnerOnboarding')}
-        </NavLink>
+        </SidebarLink>
       ) : null}
       {role === AdminRole.LOCAL_BDE ||
       role === AdminRole.STATE_MASTER ||
       role === AdminRole.SUPER_ADMIN ? (
-        <NavLink to="/ops/growth" className={navItemClass} onClick={onNavigate}>
+        <SidebarLink to="/ops/growth" icon={navIconForPath('/ops/growth')} onNavigate={onNavigate}>
           {t('nav.growth')}
-        </NavLink>
+        </SidebarLink>
       ) : null}
       {role === AdminRole.LOCAL_BDE ? (
         <>
-          <NavLink to="/ops/my-senders" className={navItemClass} onClick={onNavigate}>
+          <SidebarLink
+            to="/ops/my-senders"
+            icon={navIconForPath('/ops/my-senders')}
+            onNavigate={onNavigate}
+          >
             {t('nav.mySenders')}
-          </NavLink>
-          <NavLink to="/ops/my-carriers" className={navItemClass} onClick={onNavigate}>
+          </SidebarLink>
+          <SidebarLink
+            to="/ops/my-carriers"
+            icon={navIconForPath('/ops/my-carriers')}
+            onNavigate={onNavigate}
+          >
             {t('nav.myCarriers')}
-          </NavLink>
+          </SidebarLink>
         </>
       ) : null}
       {isOpsAdmin ? (
-        <NavLink to="/compliance" className={navItemClass} onClick={onNavigate}>
+        <SidebarLink
+          to="/compliance"
+          icon={navIconForPath('/compliance')}
+          onNavigate={onNavigate}
+        >
           {t('nav.compliance')}
-        </NavLink>
+        </SidebarLink>
       ) : null}
       {role === AdminRole.SUPER_ADMIN || role === AdminRole.STATE_MASTER ? (
-        <NavLink to="/ops/exceptions" className={navItemClass} onClick={onNavigate}>
+        <SidebarLink
+          to="/ops/exceptions"
+          icon={navIconForPath('/ops/exceptions')}
+          onNavigate={onNavigate}
+        >
           {t('nav.opsExceptions')}
-        </NavLink>
+        </SidebarLink>
       ) : null}
+
       {isMarketplace ? (
-        <NavLink to="/documents/upload" className={navItemClass} onClick={onNavigate}>
+        <SidebarLink
+          to="/documents/upload"
+          icon={role === AppRole.DRIVER ? DRIVER_DOCS_ICON : navIconForPath('/documents/upload')}
+          onNavigate={onNavigate}
+        >
           {role === AppRole.DRIVER ? t('nav.driverDocs') : t('nav.documentsUpload')}
-        </NavLink>
+        </SidebarLink>
       ) : null}
-      <NavLink to="/account" className={navItemClass} onClick={onNavigate}>
+      <SidebarLink to="/account" icon={navIconForPath('/account')} onNavigate={onNavigate}>
         {t('nav.account')}
-      </NavLink>
+      </SidebarLink>
     </nav>
   );
 }
@@ -173,12 +264,12 @@ function CabTab({
   to,
   end,
   label,
-  icon,
+  icon: Icon,
 }: {
   to: string;
   end?: boolean;
   label: string;
-  icon: ReactNode;
+  icon: LucideIcon;
 }) {
   return (
     <NavLink
@@ -186,9 +277,7 @@ function CabTab({
       end={end}
       className={({ isActive }) => cn('cab-tab', isActive && 'is-active')}
     >
-      <span className="text-base leading-none" aria-hidden>
-        {icon}
-      </span>
+      <Icon className="h-[18px] w-[18px]" aria-hidden strokeWidth={1.9} />
       <span>{label}</span>
     </NavLink>
   );
@@ -235,8 +324,14 @@ function DriverCabShell({ children }: { children?: ReactNode }) {
         <div className="flex shrink-0 items-center gap-1">
           <RoleBadge role={role} className="hidden sm:inline-flex" />
           <LanguageSwitcher />
-          <Button variant="ghost" size="sm" className="text-clox-ink" onClick={() => void signOut()}>
-            {t('signOut')}
+          <Button
+            variant="destructive"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => void signOut()}
+          >
+            <LogOut className="h-3.5 w-3.5" aria-hidden />
+            <span className="sr-only sm:not-sr-only sm:inline">{t('signOut')}</span>
           </Button>
         </div>
       </header>
@@ -249,10 +344,14 @@ function DriverCabShell({ children }: { children?: ReactNode }) {
         className="cab-tabbar fixed inset-x-0 bottom-0 z-40 flex"
         aria-label={t('nav.main')}
       >
-        <CabTab to="/" end label={t('nav.home')} icon="⌂" />
-        <CabTab to="/trips" label={t('nav.myTrips')} icon="▶" />
-        <CabTab to="/driver/onboarding" label={t('nav.driverOnboarding')} icon="✓" />
-        <CabTab to="/account" label={t('nav.account')} icon="◉" />
+        <CabTab to="/" end label={t('nav.home')} icon={navIconForPath('/')} />
+        <CabTab to="/trips" label={t('nav.myTrips')} icon={navIconForPath('/trips')} />
+        <CabTab
+          to="/driver/onboarding"
+          label={t('nav.driverOnboarding')}
+          icon={navIconForPath('/driver/onboarding')}
+        />
+        <CabTab to="/account" label={t('nav.account')} icon={navIconForPath('/account')} />
       </nav>
     </div>
   );
@@ -361,11 +460,7 @@ function OpsShell({ children }: { children?: ReactNode }) {
               aria-label={t('nav.openMenu')}
               onClick={() => setMobileOpen(true)}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                <line x1="3" y1="6" x2="21" y2="6" />
-                <line x1="3" y1="12" x2="21" y2="12" />
-                <line x1="3" y1="18" x2="21" y2="18" />
-              </svg>
+              <Menu className="h-[18px] w-[18px]" aria-hidden strokeWidth={2} />
             </button>
             <div className="min-w-0">
               <p className="truncate font-mono text-[12.5px] text-clox-faint">
@@ -382,8 +477,14 @@ function OpsShell({ children }: { children?: ReactNode }) {
 
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <LanguageSwitcher />
-            <Button variant="secondary" size="sm" onClick={() => void signOut()}>
-              {t('signOut')}
+            <Button
+              variant="destructive"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => void signOut()}
+            >
+              <LogOut className="h-3.5 w-3.5" aria-hidden />
+              <span className="hidden sm:inline">{t('signOut')}</span>
             </Button>
           </div>
         </header>

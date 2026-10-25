@@ -19,7 +19,9 @@ import {
 } from '@/lib/api';
 import {
   Button,
+  ChoiceCheck,
   Field,
+  FileInput,
   Notice,
   RadioCardGroup,
   StepChips,
@@ -519,10 +521,9 @@ function InvoiceStep({
           {...form.register('invoicePostcode')}
         />
       </div>
-      <label className="mb-4 flex items-center gap-2 text-sm text-clox-mute">
-        <input type="checkbox" className="accent-clox-accent" {...form.register('gstRegistered')} />
+      <ChoiceCheck className="mb-4" {...form.register('gstRegistered')}>
         {t('senderOnboarding.gstRegistered')}
-      </label>
+      </ChoiceCheck>
       {mutation.isError ? (
         <Notice tone="error" className="mb-4">
           {getErrorDetail(mutation.error)}
@@ -586,19 +587,17 @@ function DocumentsStep({
       <p className="text-sm text-clox-mute">
         {t('senderOnboarding.docsRequired', { docType })}
       </p>
-      <div className="clox-file-field mb-0">
-        <input
-          type="file"
-          accept=".pdf,image/jpeg,image/png,image/webp"
-          className="clox-file-input"
-          onChange={(e) => {
-            upload.reset();
-            submit.reset();
-            setMessage(null);
-            setFile(e.target.files?.[0] ?? null);
-          }}
-        />
-      </div>
+      <FileInput
+        className="mb-0"
+        accept=".pdf,image/jpeg,image/png,image/webp"
+        fileName={file?.name ?? null}
+        onChange={(e) => {
+          upload.reset();
+          submit.reset();
+          setMessage(null);
+          setFile(e.target.files?.[0] ?? null);
+        }}
+      />
       {(upload.isError || submit.isError) && (
         <Notice tone="error">{getErrorDetail(upload.error ?? submit.error)}</Notice>
       )}

@@ -13,7 +13,7 @@ import {
   submitCompliance,
   uploadDocumentContent,
 } from '@/lib/api';
-import { Button, Notice, Select, StatusPill, useConfirm, useToast } from '@/components/ui';
+import { Button, FileInput, Notice, Select, StatusPill, useConfirm, useToast } from '@/components/ui';
 import type { ComplianceDocumentListItem } from '@/lib/api';
 import { resolveUploadMime } from '@/lib/upload-mime';
 import { AppRole } from '@/shared/types';
@@ -321,22 +321,17 @@ export function DocumentsUploadPage() {
             </option>
           ))}
         </Select>
-        <label className="clox-file-field block">
-          <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
-            {t('documentsUpload.fileLabel')}
-          </span>
-          <input
-            type="file"
-            accept=".pdf,image/jpeg,image/png,image/webp"
-            onChange={(e) => {
-              uploadMutation.reset();
-              submitMutation.reset();
-              setMessage(null);
-              setFile(e.target.files?.[0] ?? null);
-            }}
-            className="clox-file-input"
-          />
-        </label>
+        <FileInput
+          label={t('documentsUpload.fileLabel')}
+          accept=".pdf,image/jpeg,image/png,image/webp"
+          fileName={file?.name ?? null}
+          onChange={(e) => {
+            uploadMutation.reset();
+            submitMutation.reset();
+            setMessage(null);
+            setFile(e.target.files?.[0] ?? null);
+          }}
+        />
 
         {uploadMutation.isError || submitMutation.isError ? (
           <Notice tone="error" className="mb-0">

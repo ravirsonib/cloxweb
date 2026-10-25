@@ -201,7 +201,73 @@
     }
   }
 
-  /** File picker — consistent look + room before submit/upload actions */
+  /** File picker — dropzone with upload icon in a dotted circle */
+  .clox-file-field {
+    @apply min-w-0;
+  }
+
+  .clox-file-drop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    width: 100%;
+    max-width: 100%;
+    min-height: 7.5rem;
+    padding: 1rem 0.85rem;
+    border: 1.5px dashed var(--clox-border);
+    border-radius: var(--radius-md);
+    background: var(--clox-surface-alt);
+    color: var(--clox-ink);
+    text-align: center;
+    cursor: pointer;
+    transition:
+      border-color 0.15s ease,
+      background 0.15s ease;
+  }
+
+  .clox-file-drop:hover:not(.clox-file-drop-disabled),
+  .clox-file-drop:focus-within:not(.clox-file-drop-disabled) {
+    border-color: var(--clox-accent);
+    background: color-mix(in srgb, var(--clox-surface-alt) 88%, var(--clox-accent) 12%);
+  }
+
+  .clox-file-drop-disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .clox-file-drop-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 9999px;
+    border: 1.5px dashed var(--clox-mute);
+    color: var(--clox-ink);
+    background: var(--clox-surface);
+  }
+
+  .clox-file-drop-text {
+    max-width: 100%;
+    padding-inline: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    font-family: var(--font-body);
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .clox-file-drop-hint {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--clox-faint);
+    font-family: var(--font-body);
+  }
+
+  /** Legacy native file control (kept for any remaining callers) */
   .clox-file-input {
     @apply block w-full max-w-full text-sm text-clox-mute;
     font-family: var(--font-body);
@@ -226,10 +292,6 @@
 
   .clox-file-input:disabled {
     @apply cursor-not-allowed opacity-60;
-  }
-
-  .clox-file-field {
-    @apply mb-4 min-w-0;
   }
 
   /** Action row under a file chooser — keeps submit/upload spaced and aligned */

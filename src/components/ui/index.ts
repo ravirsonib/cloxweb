@@ -20,7 +20,9 @@ export {
   DistributionBars,
   type DistributionBarItem,
 } from './distribution-bars';
+export { ChoiceCheck, ChoiceCheckbox } from './choice-check';
 export { Field, FieldShell, TextArea } from './field';
+export { FileInput } from './file-input';
 export { Select, type SelectProps } from './select';
 export {
   SearchableSelect,

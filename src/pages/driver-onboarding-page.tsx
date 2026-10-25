@@ -14,7 +14,7 @@ import {
   uploadDocumentContent,
   type DriverOnboarding,
 } from '@/lib/api';
-import { Button, Field, Notice, Select } from '@/components/ui';
+import { Button, ChoiceCheck, Field, FileInput, Notice, Select } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
 import { resolveUploadMime } from '@/lib/upload-mime';
 import { futureDateSchema, LICENCE_CLASSES } from '@/lib/validation';
@@ -281,38 +281,33 @@ function LicenceStep({
         error={form.formState.errors.licenceExpiry?.message}
         {...form.register('licenceExpiry')}
       />
-      <div className="clox-file-field">
-        <label className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
-          {t('driverOnboarding.licenceUploadLabel')}
-          <span className="text-[var(--status-danger)]"> *</span>
-        </label>
-        <input
-          type="file"
-          accept="application/pdf,image/jpeg,image/png,image/webp"
-          className="clox-file-input"
-          onChange={(e) => {
-            const next = e.target.files?.[0] ?? null;
-            setLicenceFile(next);
-            setFileError(null);
-          }}
-        />
-        {fileError ? (
-          <p className="mt-2 text-[12px] font-medium text-[var(--status-danger)]" role="alert">
-            {fileError}
-          </p>
-        ) : null}
-      </div>
-      <label className="mb-4 flex items-start gap-2 text-sm text-clox-mute">
-        <input type="checkbox" className="mt-1 accent-clox-accent" {...form.register('nhvrAcknowledged')} />
-        <span>
-          {t('driverOnboarding.nhvrCheckbox')}
-          {form.formState.errors.nhvrAcknowledged?.message ? (
-            <span className="mt-1 block text-[12px] font-medium text-[var(--status-danger)]" role="alert">
-              {form.formState.errors.nhvrAcknowledged.message}
-            </span>
-          ) : null}
-        </span>
-      </label>
+      <FileInput
+        label={
+          <>
+            {t('driverOnboarding.licenceUploadLabel')}
+            <span className="text-[var(--status-danger)]"> *</span>
+          </>
+        }
+        accept="application/pdf,image/jpeg,image/png,image/webp"
+        fileName={licenceFile?.name ?? null}
+        onChange={(e) => {
+          const next = e.target.files?.[0] ?? null;
+          setLicenceFile(next);
+          setFileError(null);
+        }}
+      />
+      {fileError ? (
+        <p className="-mt-2 mb-4 text-[12px] font-medium text-[var(--status-danger)]" role="alert">
+          {fileError}
+        </p>
+      ) : null}
+      <ChoiceCheck
+        className="mb-4"
+        error={form.formState.errors.nhvrAcknowledged?.message}
+        {...form.register('nhvrAcknowledged')}
+      >
+        {t('driverOnboarding.nhvrCheckbox')}
+      </ChoiceCheck>
       {mutation.isError ? (
         <Notice tone="error" className="mb-0">
           {getErrorDetail(mutation.error)}

@@ -27,6 +27,7 @@ import {
   Button,
   DataCardList,
   Field,
+  FileInput,
   LockedCta,
   Notice,
   Select,
@@ -1085,13 +1086,12 @@ export function DriverTripDetailPage() {
                 />
               </label>
               {reportKind === 'VEHICLE_BREAKDOWN' ? (
-                <div className="clox-file-field mb-0 space-y-2">
+                <div className="mb-0 space-y-2">
                   <Notice tone="warn">{t('trips.reportPhotoRequired')}</Notice>
                   <p className="text-xs text-clox-mute">{t('trips.reportPhotoHint')}</p>
-                  <input
-                    type="file"
+                  <FileInput
+                    className="mb-0"
                     accept="image/jpeg,image/png,image/webp"
-                    className="clox-file-input"
                     disabled={tripActionsLocked || photoUploading || report.isPending}
                     onChange={(event) => {
                       const file = event.target.files?.[0];

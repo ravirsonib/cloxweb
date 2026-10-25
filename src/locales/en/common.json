@@ -22,6 +22,11 @@
   "system": "system",
   "viewLead": "View lead",
   "saved": "Saved.",
+  "fileInput": {
+    "choose": "Choose file",
+    "replace": "Tap to replace",
+    "hint": "PDF or image"
+  },
   "toast": {
     "dismiss": "Dismiss notification"
   },

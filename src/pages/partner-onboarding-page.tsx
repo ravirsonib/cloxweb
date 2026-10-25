@@ -18,7 +18,9 @@ import {
 import { LoadingBlock } from '@/components/status-blocks';
 import {
   Button,
+  ChoiceCheck,
   Field,
+  FileInput,
   Notice,
   StepChips,
   TextArea,
@@ -275,9 +277,8 @@ export function PartnerOnboardingPage() {
                     : t('partnerOnboarding.docMissing')}
                 </p>
                 {editable ? (
-                  <input
-                    className="clox-file-input mt-3"
-                    type="file"
+                  <FileInput
+                    className="mt-3 mb-0"
                     accept="application/pdf,image/jpeg,image/png,image/webp"
                     disabled={uploading === docType}
                     onChange={(e) => {
@@ -299,37 +300,28 @@ export function PartnerOnboardingPage() {
       ) : null}
 
       {current === 'declarations' || current === 'submit' ? (
-        <div className="mt-6 space-y-4">
-          <label className="flex items-start gap-2 text-sm text-clox-ink">
-            <input
-              type="checkbox"
-              className="mt-1"
-              checked={declAccuracy}
-              disabled={!editable}
-              onChange={(e) => setDeclAccuracy(e.target.checked)}
-            />
-            <span>{t('partnerOnboarding.declAccuracy')}</span>
-          </label>
-          <label className="flex items-start gap-2 text-sm text-clox-ink">
-            <input
-              type="checkbox"
-              className="mt-1"
-              checked={declNda}
-              disabled={!editable}
-              onChange={(e) => setDeclNda(e.target.checked)}
-            />
-            <span>{t('partnerOnboarding.declNda')}</span>
-          </label>
-          <label className="flex items-start gap-2 text-sm text-clox-ink">
-            <input
-              type="checkbox"
-              className="mt-1"
-              checked={declNonCompete}
-              disabled={!editable}
-              onChange={(e) => setDeclNonCompete(e.target.checked)}
-            />
-            <span>{t('partnerOnboarding.declNonCompete')}</span>
-          </label>
+        <div className="mt-6 space-y-3">
+          <ChoiceCheck
+            checked={declAccuracy}
+            disabled={!editable}
+            onChange={(e) => setDeclAccuracy(e.target.checked)}
+          >
+            {t('partnerOnboarding.declAccuracy')}
+          </ChoiceCheck>
+          <ChoiceCheck
+            checked={declNda}
+            disabled={!editable}
+            onChange={(e) => setDeclNda(e.target.checked)}
+          >
+            {t('partnerOnboarding.declNda')}
+          </ChoiceCheck>
+          <ChoiceCheck
+            checked={declNonCompete}
+            disabled={!editable}
+            onChange={(e) => setDeclNonCompete(e.target.checked)}
+          >
+            {t('partnerOnboarding.declNonCompete')}
+          </ChoiceCheck>
           {editable ? (
             <div className="clox-form-actions">
               <Button

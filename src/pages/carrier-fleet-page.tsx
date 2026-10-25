@@ -11,6 +11,7 @@ import {
   DataCardList,
   DataTable,
   Field,
+  FileInput,
   Notice,
   ResponsiveDataView,
   Select,
@@ -635,24 +636,17 @@ export function CarrierFleetPage() {
                 error={form.formState.errors.tareKg?.message}
                 {...form.register('tareKg', { valueAsNumber: true })}
               />
-              <div className="clox-file-field mb-0 sm:col-span-2 lg:col-span-3">
-                <p className="mb-1.5 text-[12.5px] font-semibold text-clox-ink">
-                  {t('fleet.rwcLabel')}
-                </p>
-                <p className="mb-2 text-xs text-clox-faint">{t('fleet.rwcHint')}</p>
-                <input
-                  type="file"
-                  accept=".pdf,image/jpeg,image/png,image/webp"
-                  className="clox-file-input"
-                  onChange={(event) => {
-                    setRwcFile(event.target.files?.[0] ?? null);
-                    setRwcFormError(null);
-                  }}
-                />
-                {rwcFile ? (
-                  <p className="mt-2 text-xs text-clox-mute">{rwcFile.name}</p>
-                ) : null}
-              </div>
+              <FileInput
+                className="mb-0 sm:col-span-2 lg:col-span-3"
+                label={t('fleet.rwcLabel')}
+                hint={t('fleet.rwcHint')}
+                accept=".pdf,image/jpeg,image/png,image/webp"
+                fileName={rwcFile?.name ?? null}
+                onChange={(event) => {
+                  setRwcFile(event.target.files?.[0] ?? null);
+                  setRwcFormError(null);
+                }}
+              />
             </div>
             {rwcFormError || addMutation.isError ? (
               <Notice tone="error" className="mt-4">

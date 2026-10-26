@@ -10,6 +10,8 @@ export type TripSummary = {
   declaredMassKg: number | null;
   actualMassKg: number | null;
   onBreak: boolean;
+  breakStartedAt?: string | null;
+  suggestedBreakMinutes?: number;
   startedAt: string | null;
   taxInvoiceStorageKey?: string | null;
   runSheetStorageKey?: string | null;
@@ -176,14 +178,21 @@ export function tripBreak(tripId: string, onBreak: boolean) {
 }
 
 export function tripLocation(tripId: string, lat: number, lng: number) {
-  return http.post(`/trips/${tripId}/locations`, { lat, lng }).then((r) => r.data);
+  return http
+    .post(`/trips/${tripId}/locations`, { lat, lng }, { timeout: 60_000 })
+    .then((r) => r.data);
 }
 
 export function tripNotifyApproaching(tripId: string, jobStopId?: string) {
   return http
-    .post<TripSummary>(`/trips/${tripId}/notify-approaching`, {
-      ...(jobStopId ? { jobStopId } : {}),
-    })
+    .post<TripSummary>(
+      `/trips/${tripId}/notify-approaching`,
+      {
+        ...(jobStopId ? { jobStopId } : {}),
+      },
+      // Persist-first notify can still send mail; keep under a bounded wait.
+      { timeout: 60_000 },
+    )
     .then((r) => r.data);
 }
 
@@ -205,7 +214,12 @@ export function tripPodPhoto(
   tripId: string,
   payload: { jobStopId: string; photoDataUrl: string },
 ) {
-  return http.post<TripSummary>(`/trips/${tripId}/pod/photos`, payload).then((r) => r.data);
+  return http
+    .post<TripSummary>(`/trips/${tripId}/pod/photos`, payload, {
+      // Compressed JPEG data URLs can still be multi-MB on slow mobile links.
+      timeout: 120_000,
+    })
+    .then((r) => r.data);
 }
 
 export function tripPodFinalize(tripId: string, jobStopId: string) {

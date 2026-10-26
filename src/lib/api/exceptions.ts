@@ -27,9 +27,15 @@ export type TripExceptionRow = {
   escalatedAt: string | null;
   resolvedAt: string | null;
   resolutionNote: string | null;
-  job: { id: string; title: string | null } | null;
+  job: {
+    id: string;
+    title: string | null;
+    rescueDiscountPercent?: number | null;
+    marketplacePriority?: boolean;
+  } | null;
   vehicle: { id: string; registration: string | null; vehicleClass: string | null } | null;
   driver: { id: string; email: string | null; name: string | null } | null;
+  marketplaceRelistSlaMs?: number;
 };
 
 export function openTripException(payload: {
@@ -54,7 +60,9 @@ export function openTripException(payload: {
 
 export function listTripExceptions(options?: { signal?: AbortSignal }) {
   return http
-    .get<{ items: TripExceptionRow[] }>('/exceptions', { signal: options?.signal })
+    .get<{ items: TripExceptionRow[]; marketplaceRelistSlaMs?: number }>('/exceptions', {
+      signal: options?.signal,
+    })
     .then((r) => r.data);
 }
 
@@ -138,6 +146,8 @@ export function releaseTripException(id: string, payload: { note: string }) {
       marketplaceRelease: {
         status: string;
         reListJob: boolean;
+        marketplacePriority?: boolean;
+        discountPercent?: number;
         message: string;
       };
       stripeAdjustment: { status: string; amountCents: number | null };

@@ -33,6 +33,15 @@ import {
   useToast,
 } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
+import {
+  MAX_JOB_CHARGEABLE_WEIGHT_KG,
+  MAX_JOB_DEAD_WEIGHT_KG,
+  MAX_JOB_HEIGHT_CM,
+  MAX_JOB_LENGTH_CM,
+  MAX_JOB_WIDTH_CM,
+  chargeableWeightKg,
+  isChargeableOverLimit,
+} from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -443,24 +452,58 @@ function JobDraftForm({
   const toast = useToast();
   const isEdit = mode === 'edit';
 
-  const schema = z.object({
-    pricingModel: z.enum(['PER_KM', 'HOURLY']),
-    distanceKm: z.number().positive(t('validation.distancePositive')),
-    deadWeightKg: z.number().positive(t('validation.weightPositive')),
-    lengthCm: z.number().positive(t('validation.dimensionPositive')),
-    widthCm: z.number().positive(t('validation.dimensionPositive')),
-    heightCm: z.number().positive(t('validation.dimensionPositive')),
-    loadDg: z.boolean(),
-    receiverName: z.string().trim().min(1, t('validation.receiverNameRequired')),
-    receiverEmail: z
-      .string()
-      .trim()
-      .min(1, t('validation.receiverEmailRequired'))
-      .email(t('validation.receiverEmailInvalid')),
-    siteDisclaimerAccepted: z.boolean().refine((value) => value === true, {
-      message: t('validation.siteDisclaimerRequired'),
-    }),
-  });
+  const schema = z
+    .object({
+      pricingModel: z.enum(['PER_KM', 'HOURLY']),
+      distanceKm: z.number().positive(t('validation.distancePositive')),
+      deadWeightKg: z
+        .number({ message: t('validation.weightPositive') })
+        .positive(t('validation.weightPositive'))
+        .max(
+          MAX_JOB_DEAD_WEIGHT_KG,
+          t('validation.weightMax', { max: MAX_JOB_DEAD_WEIGHT_KG }),
+        ),
+      lengthCm: z
+        .number({ message: t('validation.dimensionPositive') })
+        .positive(t('validation.dimensionPositive'))
+        .max(MAX_JOB_LENGTH_CM, t('validation.lengthMax', { max: MAX_JOB_LENGTH_CM })),
+      widthCm: z
+        .number({ message: t('validation.dimensionPositive') })
+        .positive(t('validation.dimensionPositive'))
+        .max(MAX_JOB_WIDTH_CM, t('validation.widthMax', { max: MAX_JOB_WIDTH_CM })),
+      heightCm: z
+        .number({ message: t('validation.dimensionPositive') })
+        .positive(t('validation.dimensionPositive'))
+        .max(MAX_JOB_HEIGHT_CM, t('validation.heightMax', { max: MAX_JOB_HEIGHT_CM })),
+      loadDg: z.boolean(),
+      receiverName: z.string().trim().min(1, t('validation.receiverNameRequired')),
+      receiverEmail: z
+        .string()
+        .trim()
+        .min(1, t('validation.receiverEmailRequired'))
+        .email(t('validation.receiverEmailInvalid')),
+      siteDisclaimerAccepted: z.boolean().refine((value) => value === true, {
+        message: t('validation.siteDisclaimerRequired'),
+      }),
+    })
+    .superRefine((values, ctx) => {
+      const chargeable = chargeableWeightKg({
+        deadWeightKg: values.deadWeightKg,
+        lengthCm: values.lengthCm,
+        widthCm: values.widthCm,
+        heightCm: values.heightCm,
+      });
+      if (isChargeableOverLimit(chargeable)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['deadWeightKg'],
+          message: t('validation.chargeableOverLimit', {
+            kg: chargeable.toFixed(1),
+            max: MAX_JOB_CHARGEABLE_WEIGHT_KG,
+          }),
+        });
+      }
+    });
 
   const form = useForm<JobCreateForm>({
     resolver: zodResolver(schema),
@@ -559,20 +602,36 @@ function JobDraftForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- suggest from pricing + demo stops
   }, [pricingModel, isEdit, role]);
 
+  const cargoForRecommend = {
+    deadWeightKg: Number(deadWeightKg) || 0,
+    lengthCm: Number(lengthCm) || 0,
+    widthCm: Number(widthCm) || 0,
+    heightCm: Number(heightCm) || 0,
+  };
+  const localChargeable =
+    cargoForRecommend.deadWeightKg > 0 &&
+    cargoForRecommend.lengthCm > 0 &&
+    cargoForRecommend.widthCm > 0 &&
+    cargoForRecommend.heightCm > 0
+      ? chargeableWeightKg(cargoForRecommend)
+      : null;
+  const cargoOverLimit =
+    localChargeable != null && isChargeableOverLimit(localChargeable);
+
   const recommend = useQuery({
     queryKey: ['jobs', 'recommend', deadWeightKg, lengthCm, widthCm, heightCm],
-    queryFn: () =>
-      recommendVehicle({
-        deadWeightKg: Number(deadWeightKg) || 0,
-        lengthCm: Number(lengthCm) || 0,
-        widthCm: Number(widthCm) || 0,
-        heightCm: Number(heightCm) || 0,
-      }),
+    queryFn: () => recommendVehicle(cargoForRecommend),
     enabled:
-      Number(deadWeightKg) > 0 &&
-      Number(lengthCm) > 0 &&
-      Number(widthCm) > 0 &&
-      Number(heightCm) > 0,
+      cargoForRecommend.deadWeightKg > 0 &&
+      cargoForRecommend.lengthCm > 0 &&
+      cargoForRecommend.widthCm > 0 &&
+      cargoForRecommend.heightCm > 0 &&
+      cargoForRecommend.deadWeightKg <= MAX_JOB_DEAD_WEIGHT_KG &&
+      cargoForRecommend.lengthCm <= MAX_JOB_LENGTH_CM &&
+      cargoForRecommend.widthCm <= MAX_JOB_WIDTH_CM &&
+      cargoForRecommend.heightCm <= MAX_JOB_HEIGHT_CM &&
+      !cargoOverLimit,
+    retry: false,
   });
 
   const save = useMutation({
@@ -650,6 +709,7 @@ function JobDraftForm({
           type="number"
           label={t('validation.deadWeightLabel')}
           required
+          hint={t('jobs.deadWeightMaxHint', { max: MAX_JOB_DEAD_WEIGHT_KG })}
           error={form.formState.errors.deadWeightKg?.message}
           {...form.register('deadWeightKg', { valueAsNumber: true })}
         />
@@ -676,7 +736,20 @@ function JobDraftForm({
             {...form.register('heightCm', { valueAsNumber: true })}
           />
         </div>
-        {recommend.data ? (
+        {cargoOverLimit && localChargeable != null ? (
+          <Notice tone="error" className="mb-4">
+            {t('validation.chargeableOverLimit', {
+              kg: localChargeable.toFixed(1),
+              max: MAX_JOB_CHARGEABLE_WEIGHT_KG,
+            })}
+          </Notice>
+        ) : null}
+        {!cargoOverLimit && recommend.isError ? (
+          <Notice tone="error" className="mb-4">
+            {getErrorDetail(recommend.error)}
+          </Notice>
+        ) : null}
+        {!cargoOverLimit && recommend.data ? (
           <Notice tone="success" className="mb-4">
             {t('jobs.chargeableHint', {
               kg: recommend.data.chargeableWeightKg.toFixed(1),

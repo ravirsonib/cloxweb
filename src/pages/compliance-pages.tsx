@@ -82,6 +82,7 @@ export function ComplianceQueuePage() {
           <option value="SENDER_KYC">SENDER_KYC</option>
           <option value="CARRIER_KYB">CARRIER_KYB</option>
           <option value="CARRIER_FLEET_RWC">CARRIER_FLEET_RWC</option>
+          <option value="CARRIER_DRIVER_LICENCE">CARRIER_DRIVER_LICENCE</option>
           <option value="COMPANY_PROFILE_CHANGE">COMPANY_PROFILE_CHANGE</option>
           <option value="ADMIN_PARTNER_KYB">ADMIN_PARTNER_KYB</option>
         </Select>
@@ -218,9 +219,14 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
   });
 
   const isPartnerKyb = query.data?.caseType === 'ADMIN_PARTNER_KYB';
+  const isAssetReview =
+    query.data?.caseType === 'CARRIER_FLEET_RWC' ||
+    query.data?.caseType === 'CARRIER_DRIVER_LICENCE';
+  const isSuperOnlyDecide = isPartnerKyb || isAssetReview;
   const canDecide =
     role === AdminRole.SUPER_ADMIN ||
-    (role === AdminRole.STATE_MASTER && !isPartnerKyb);
+    (role === AdminRole.STATE_MASTER && !isSuperOnlyDecide);
+  // Local may escalate asset cases to Super; partner KYB stays Super-only (no Local escalate).
   const canEscalate = role === AdminRole.LOCAL_BDE && !isPartnerKyb;
 
   async function runDecision(action: 'approve' | 'reject' | 'request-info' | 'escalate') {
@@ -302,6 +308,18 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
         </Notice>
       ) : null}
 
+      {c.caseType === 'CARRIER_FLEET_RWC' ? (
+        <Notice tone="info" className="mt-4">
+          {t('compliance.fleetRwcChecklist')}
+        </Notice>
+      ) : null}
+
+      {c.caseType === 'CARRIER_DRIVER_LICENCE' ? (
+        <Notice tone="info" className="mt-4">
+          {t('compliance.driverLicenceChecklist')}
+        </Notice>
+      ) : null}
+
       {c.caseType === 'COMPANY_PROFILE_CHANGE' ? (
         <div className="clox-card mt-4 p-4 text-sm">
           <p className="font-semibold text-clox-ink">{t('compliance.proposedChangesTitle')}</p>
@@ -366,6 +384,17 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
                         rego: d.vehicleRegistration ?? t('dash'),
                         label: d.vehicleLabel ?? t('dash'),
                       })}
+                      {d.vehicleStatus ? ` · ${d.vehicleStatus}` : ''}
+                    </p>
+                  ) : null}
+                  {d.driverEmail || d.driverName ? (
+                    <p className="mt-0.5 text-xs text-clox-ink">
+                      {t('compliance.docsDriver', {
+                        name: d.driverName ?? t('dash'),
+                        email: d.driverEmail ?? t('dash'),
+                        licence: d.driverLicenceClass ?? t('dash'),
+                      })}
+                      {d.driverStatus ? ` · ${d.driverStatus}` : ''}
                     </p>
                   ) : null}
                   <p className="mt-0.5 truncate text-clox-faint">{d.originalFilename}</p>

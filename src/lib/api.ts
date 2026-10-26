@@ -24,6 +24,8 @@ export {
   listAudit,
   listCompanies,
   listLeads,
+  getPlatformSettings,
+  patchPlatformSettings,
   reactivateCompany,
   softDeleteAdminJob,
   updateLead,
@@ -33,6 +35,8 @@ export {
   type CompanyListItem,
   type DashboardStats,
   type Paginated,
+  type PlatformSettings,
+  type PlatformSettingsPatch,
 } from '@/lib/api/admin';
 export {
   listComplianceCases,

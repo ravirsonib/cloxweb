@@ -37,7 +37,11 @@ import {
 } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
 import { cn } from '@/lib/cn';
-import { fileToCompressedJpegDataUrl } from '@/lib/image-data-url';
+import {
+  fileToCompressedJpegDataUrl,
+  fileToCompressedJpegFile,
+  maxDocumentUploadBytes,
+} from '@/lib/image-data-url';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -86,7 +90,11 @@ export function DriverTripsPage() {
               </p>
               <p className="mt-1 font-mono text-xs text-clox-mute">
                 {tripItem.status}
-                {tripItem.startedAt ? ` ${t('trips.startedSuffix')}` : ''}
+                {tripItem.startedAt &&
+                tripItem.status !== 'COMPLETED' &&
+                tripItem.status !== 'CANCELLED'
+                  ? ` ${t('trips.startedSuffix')}`
+                  : ''}
                 {tripItem.gates.canStart ? ` · ${t('trips.readyToStart')}` : ''}
               </p>
             </Link>
@@ -138,7 +146,16 @@ export function DriverTripDetailPage() {
     queryKey: ['trips', tripId],
     queryFn: () => getDriverTrip(tripId),
     enabled: role === AppRole.DRIVER && Boolean(tripId),
+    refetchInterval: (q) => (q.state.data?.onBreak ? 15_000 : false),
   });
+
+  const [breakNowMs, setBreakNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!tripQuery.data?.onBreak) return;
+    setBreakNowMs(Date.now());
+    const id = window.setInterval(() => setBreakNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [tripQuery.data?.onBreak, tripQuery.data?.breakStartedAt]);
 
   const me = useQuery({
     queryKey: ['identity', 'me'],
@@ -227,12 +244,7 @@ export function DriverTripDetailPage() {
       setPhotoError(t('documentsUpload.errorNoCompany'));
       return;
     }
-    const mime = (file.type || 'image/jpeg') as
-      | 'image/jpeg'
-      | 'image/png'
-      | 'image/webp'
-      | 'application/pdf';
-    if (mime === 'application/pdf') {
+    if (file.type === 'application/pdf') {
       setPhotoError(t('trips.reportPhotoHint'));
       return;
     }
@@ -240,14 +252,18 @@ export function DriverTripDetailPage() {
     setPhotoError(null);
     setPhotoDocumentId(null);
     try {
+      // Compress first so phone camera shots do not hit the 10 MB multer ceiling as Network Error.
+      const compressed = await fileToCompressedJpegFile(file, {
+        maxBytes: maxDocumentUploadBytes(),
+      });
       const intent = await createUploadIntent({
         companyId,
         docType: 'OTHER',
-        originalFilename: file.name,
-        mimeType: mime,
-        sizeBytes: file.size,
+        originalFilename: compressed.name,
+        mimeType: 'image/jpeg',
+        sizeBytes: compressed.size,
       });
-      const uploadedRes = await uploadDocumentContent(intent.id, file);
+      const uploadedRes = await uploadDocumentContent(intent.id, compressed);
       await confirmDocument(intent.id, uploadedRes.contentHash);
       setPhotoDocumentId(intent.id);
     } catch (err) {
@@ -320,43 +336,50 @@ export function DriverTripDetailPage() {
   });
 
   const loc = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const stops = tripQuery.data?.job?.stops ?? [];
       const progress = tripQuery.data?.stopsProgress ?? [];
-      const incomplete = stops.find((s) => {
-        const p = progress.find(
-          (sp) => sp.jobStopId === s.id || sp.stop?.sequence === s.sequence,
-        );
-        return !p?.arrivalRecorded || !p?.enteredAt;
-      });
-      const target =
-        incomplete ??
+      // Match server evaluateGeofence active-stop rules (dwell until exit).
+      const active =
+        stops.find((s) => {
+          const p = progress.find(
+            (sp) => sp.jobStopId === s.id || sp.stop?.sequence === s.sequence,
+          );
+          if (!p?.arrivalRecorded) return true;
+          if (p.enteredAt && !p.exitedAt) return true;
+          return false;
+        }) ??
         stops.find((s) => s.lat != null && s.lng != null) ??
         stops[0];
-      const lat = target?.lat ?? -37.82;
-      const lng = target?.lng ?? 144.97;
-      // For DROPOFF not yet notified: stay ~500m outside geofence so
-      // "Notify approaching" stays available (product: before arrival).
-      const isDropoff = String(target?.stopType ?? '').toUpperCase() === 'DROPOFF';
-      const dropProgress = target?.id
-        ? progress.find((sp) => sp.jobStopId === target.id)
+      const lat = active?.lat ?? -37.82;
+      const lng = active?.lng ?? 144.97;
+      const progressRow = active?.id
+        ? progress.find((sp) => sp.jobStopId === active.id)
         : undefined;
+      const isDropoff = String(active?.stopType ?? '').toUpperCase() === 'DROPOFF';
+      const dwelling = Boolean(progressRow?.enteredAt && !progressRow?.exitedAt);
+      // Still at pickup/drop dwell → mock "drive away" (outside) so the next stop unlocks.
+      if (dwelling) {
+        return tripLocation(tripId, lat + 0.01, lng + 0.01); // ~1km outside
+      }
+      // Dropoff before approaching notify: stay outside so Notify approaching stays available.
       const keepOutsideForNotify =
-        isDropoff && !dropProgress?.approachingNotifiedAt && !dropProgress?.enteredAt;
-      const offset = keepOutsideForNotify ? 0.006 : 0.0001; // ~600m vs ~10m
-      return tripLocation(tripId, lat + offset, lng + offset);
+        isDropoff && !progressRow?.approachingNotifiedAt && !progressRow?.enteredAt;
+      if (keepOutsideForNotify) {
+        return tripLocation(tripId, lat + 0.006, lng + 0.006); // ~600m outside
+      }
+      // Enter geofence: antiBounceSamples default is 2 — send two inside samples in one tap.
+      const insideLat = lat + 0.00005;
+      const insideLng = lng + 0.00005;
+      await tripLocation(tripId, insideLat, insideLng);
+      return tripLocation(tripId, insideLat, insideLng);
     },
-    onSuccess: async () => {
-      const progress = tripQuery.data?.stopsProgress ?? [];
-      const dropNotified = progress.some(
-        (p) =>
-          String(p.stop?.stopType ?? '').toUpperCase() === 'DROPOFF' &&
-          Boolean(p.approachingNotifiedAt) &&
-          !p.enteredAt,
-      );
+    onSuccess: async (result) => {
+      const geofence = (result as { geofence?: { entered?: boolean; stopType?: string } })
+        ?.geofence;
       setMsg(
-        dropNotified
-          ? t('trips.msgLocationPingArriving')
+        geofence?.entered && String(geofence.stopType ?? '').toUpperCase() === 'DROPOFF'
+          ? t('trips.msgLocationAtDropoff')
           : t('trips.msgLocationPingSent'),
       );
       await refresh();
@@ -721,12 +744,60 @@ export function DriverTripDetailPage() {
             </LockedCta>
           </div>
         </div>
+      ) : tripData.status === 'COMPLETED' || tripData.status === 'CANCELLED' ? (
+        <Notice
+          tone={tripData.status === 'COMPLETED' ? 'success' : 'warn'}
+          className="mt-6"
+        >
+          {tripData.status === 'COMPLETED'
+            ? t('trips.completedNotice')
+            : t('trips.cancelledNotice')}
+        </Notice>
       ) : (
         <div className="mt-6 space-y-3">
           <Notice tone="success">
             {t('trips.inTransit')}
             {tripData.onBreak ? ` · ${t('trips.onBreakEtaPaused')}` : ''}
           </Notice>
+          {tripData.onBreak ? (
+            <div className="clox-card space-y-2 p-4">
+              <h2 className="font-display text-lg font-semibold text-clox-ink">
+                {t('trips.breakPanelTitle')}
+              </h2>
+              <p className="text-sm text-clox-mute">
+                {t('trips.breakGuidance', {
+                  minutes: tripData.suggestedBreakMinutes ?? 15,
+                })}
+              </p>
+              {(() => {
+                const suggested = tripData.suggestedBreakMinutes ?? 15;
+                const started = tripData.breakStartedAt
+                  ? new Date(tripData.breakStartedAt).getTime()
+                  : breakNowMs;
+                const elapsedSec = Math.max(0, Math.floor((breakNowMs - started) / 1000));
+                const targetSec = suggested * 60;
+                const remainingSec = Math.max(0, targetSec - elapsedSec);
+                const fmt = (sec: number) => {
+                  const m = Math.floor(sec / 60);
+                  const s = sec % 60;
+                  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                };
+                const met = remainingSec === 0;
+                return (
+                  <>
+                    <p className="font-mono text-sm text-clox-ink">
+                      {t('trips.breakElapsed', { elapsed: fmt(elapsedSec) })}
+                      {' · '}
+                      {met
+                        ? t('trips.breakMinimumMet')
+                        : t('trips.breakRemaining', { remaining: fmt(remainingSec) })}
+                    </p>
+                    <p className="text-xs text-clox-faint">{t('trips.breakEndEarlyHint')}</p>
+                  </>
+                );
+              })()}
+            </div>
+          ) : null}
           <Button
             type="button"
             variant="secondary"
@@ -942,9 +1013,7 @@ export function DriverTripDetailPage() {
                               });
                             } catch (err) {
                               setMsg(
-                                err instanceof Error
-                                  ? err.message
-                                  : t('trips.podPhotoCompressFailed'),
+                                getErrorDetail(err) || t('trips.podPhotoCompressFailed'),
                               );
                             }
                           })();

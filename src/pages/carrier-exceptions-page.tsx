@@ -120,7 +120,17 @@ export function CarrierExceptionDetailPage() {
     queryKey: ['exceptions', id],
     queryFn: () => getTripException(id),
     enabled: role === AppRole.TRANSPORT_COMPANY && Boolean(id),
+    refetchInterval: (q) =>
+      q.state.data?.status === 'AWAITING_CARRIER' ? 15_000 : false,
   });
+
+  const [slaNowMs, setSlaNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (detail.data?.status !== 'AWAITING_CARRIER') return;
+    setSlaNowMs(Date.now());
+    const timer = window.setInterval(() => setSlaNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [detail.data?.status, detail.data?.openedAt]);
 
   const openStatus =
     detail.data?.status === 'OPEN' ||
@@ -313,6 +323,22 @@ export function CarrierExceptionDetailPage() {
         </div>
         <StatusPill tone={exceptionTone(row.status)}>{row.status}</StatusPill>
       </div>
+
+      {row.status === 'AWAITING_CARRIER' && row.phase === 'PRE_TRIP' ? (
+        <Notice tone="warn" className="mt-4">
+          {(() => {
+            const slaMs = row.marketplaceRelistSlaMs ?? 300_000;
+            const deadline = new Date(row.openedAt).getTime() + slaMs;
+            const remainingSec = Math.max(0, Math.floor((deadline - slaNowMs) / 1000));
+            if (remainingSec <= 0) return t('exceptions.slaElapsed');
+            const m = Math.floor(remainingSec / 60);
+            const s = remainingSec % 60;
+            return t('exceptions.slaCountdown', {
+              remaining: `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`,
+            });
+          })()}
+        </Notice>
+      ) : null}
 
       <ul className="mt-4 space-y-1 text-sm text-clox-mute">
         <li>

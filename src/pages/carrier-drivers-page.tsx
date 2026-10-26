@@ -257,6 +257,11 @@ export function CarrierDriversPage() {
             {tripLabel}
           </p>
         ) : null}
+        {typeof row.reliabilityScore === 'number' ? (
+          <StatusPill tone="info" className="max-w-full">
+            {t('drivers.reliabilityScore', { score: row.reliabilityScore })}
+          </StatusPill>
+        ) : null}
       </div>
     );
   }
@@ -413,6 +418,12 @@ export function CarrierDriversPage() {
       {actionError ? (
         <Notice tone="error" className="mt-4">
           {actionError}
+        </Notice>
+      ) : null}
+
+      {items.some((d) => d.status === 'PENDING_REVIEW') ? (
+        <Notice tone="info" className="mt-4">
+          {t('drivers.pendingReviewHint')}
         </Notice>
       ) : null}
 

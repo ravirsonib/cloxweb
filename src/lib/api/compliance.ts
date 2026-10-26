@@ -33,6 +33,12 @@ export type ComplianceCaseDocument = {
   vehicleId?: string | null;
   vehicleRegistration?: string | null;
   vehicleLabel?: string | null;
+  vehicleStatus?: string | null;
+  driverId?: string | null;
+  driverEmail?: string | null;
+  driverName?: string | null;
+  driverLicenceClass?: string | null;
+  driverStatus?: string | null;
   isNewSinceInfoRequest: boolean;
 };
 

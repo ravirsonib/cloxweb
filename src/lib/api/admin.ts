@@ -100,12 +100,44 @@ export type CompanyListItem = {
   suspendedReason: string | null;
   suspendedNote: string | null;
   statusBeforeSuspend: string | null;
+  reliabilityScore?: number;
   createdAt: string;
   updatedAt: string;
   homeRegion: { code: string; name: string } | null;
   openCase: { id: string; status: string; caseType: string } | null;
   counts: { users: number; vehicles: number; drivers: number };
 };
+
+export type PlatformSettings = {
+  id: string;
+  rescueDiscountPercent: number;
+  marketplaceRelistSlaMs: number;
+  driverUnavailableScoreDelta: number;
+  carrierMarketplaceReleaseScoreDelta: number;
+  updatedAt: string;
+};
+
+export type PlatformSettingsPatch = {
+  rescueDiscountPercent?: number;
+  marketplaceRelistSlaMs?: number;
+  driverUnavailableScoreDelta?: number;
+  carrierMarketplaceReleaseScoreDelta?: number;
+};
+
+export function getPlatformSettings(options?: { signal?: AbortSignal }) {
+  return http
+    .get<PlatformSettings>('/admin/platform-settings', { signal: options?.signal })
+    .then((res) => res.data);
+}
+
+export function patchPlatformSettings(
+  input: PlatformSettingsPatch,
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .patch<PlatformSettings>('/admin/platform-settings', input, { signal: options?.signal })
+    .then((res) => res.data);
+}
 
 export type DisableCompanyInput = {
   reason: string;

@@ -166,6 +166,7 @@ export type CarrierDriverListItem = {
   licenceNo: string | null;
   licenceClass: string | null;
   licenceExpiry: string | null;
+  reliabilityScore?: number;
   inviteAcceptedAt: string | null;
   inviteExpiresAt: string | null;
   disabledAt: string | null;

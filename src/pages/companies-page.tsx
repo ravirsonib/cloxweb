@@ -380,9 +380,16 @@ export function CompaniesPage() {
                             {row.email ?? t('dash')}
                           </p>
                         </div>
-                        <StatusPill tone={companyStatusTone(row.status)}>
-                          {t(`companyStatuses.${row.status}`, { defaultValue: row.status })}
-                        </StatusPill>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <StatusPill tone={companyStatusTone(row.status)}>
+                            {t(`companyStatuses.${row.status}`, { defaultValue: row.status })}
+                          </StatusPill>
+                          {typeof row.reliabilityScore === 'number' ? (
+                            <StatusPill tone="info">
+                              {t('companies.reliabilityScore', { score: row.reliabilityScore })}
+                            </StatusPill>
+                          ) : null}
+                        </div>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-clox-mute">
                         <span>

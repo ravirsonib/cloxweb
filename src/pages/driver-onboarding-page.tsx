@@ -17,7 +17,12 @@ import {
 import { Button, ChoiceCheck, Field, FileInput, Notice, Select } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
 import { resolveUploadMime } from '@/lib/upload-mime';
-import { futureDateSchema, LICENCE_CLASSES } from '@/lib/validation';
+import {
+  AU_STATES,
+  futureDateSchema,
+  LICENCE_CLASSES,
+  requiredPhoneSchema,
+} from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 import { useEffect, useState } from 'react';
@@ -111,6 +116,20 @@ export function DriverOnboardingPage() {
           </h2>
           <ul className="text-sm text-clox-mute">
             <li>
+              {t('driverOnboarding.personalSummary', {
+                name: data.user.name ?? t('dash'),
+                phone: data.user.phone ?? t('dash'),
+              })}
+            </li>
+            <li>
+              {t('driverOnboarding.addressSummary', {
+                line: data.driver.addressLine1 ?? t('dash'),
+                suburb: data.driver.suburb ?? t('dash'),
+                state: data.driver.state ?? t('dash'),
+                postcode: data.driver.postcode ?? t('dash'),
+              })}
+            </li>
+            <li>
               {t('driverOnboarding.licenceLine', {
                 licenceClass: data.driver.licenceClass
                   ? t(`driverOnboarding.licenceClasses.${data.driver.licenceClass}`, {
@@ -149,6 +168,14 @@ export function DriverOnboardingPage() {
 }
 
 type LicenceForm = {
+  name: string;
+  phone: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  addressLine1: string;
+  suburb: string;
+  state: (typeof AU_STATES)[number];
+  postcode: string;
   licenceNo: string;
   licenceClass: (typeof LICENCE_CLASSES)[number];
   licenceExpiry: string;
@@ -171,6 +198,30 @@ function LicenceStep({
   const [fileError, setFileError] = useState<string | null>(null);
 
   const schema = z.object({
+    name: z
+      .string()
+      .trim()
+      .min(2, t('validation.nameRequired'))
+      .max(120)
+      .regex(/^[\p{L}][\p{L}\s.'\-]*$/u, t('validation.nameInvalid')),
+    phone: requiredPhoneSchema(t('validation.phoneRequired'), t('validation.phoneInvalid')),
+    emergencyContactName: z
+      .string()
+      .trim()
+      .min(2, t('validation.emergencyNameRequired'))
+      .max(120)
+      .regex(/^[\p{L}][\p{L}\s.'\-]*$/u, t('validation.nameInvalid')),
+    emergencyContactPhone: requiredPhoneSchema(
+      t('validation.emergencyPhoneRequired'),
+      t('validation.phoneInvalid'),
+    ),
+    addressLine1: z.string().trim().min(3, t('validation.addressRequired')).max(200),
+    suburb: z.string().trim().min(2, t('validation.suburbRequired')).max(100),
+    state: z.enum(AU_STATES, { message: t('validation.stateRequired') }),
+    postcode: z
+      .string()
+      .trim()
+      .regex(/^\d{4}$/, t('validation.postcodeInvalid')),
     licenceNo: z.string().trim().min(1, t('validation.licenceNoRequired')),
     licenceClass: z.enum(LICENCE_CLASSES, {
       message: t('validation.licenceClassRequired'),
@@ -189,6 +240,9 @@ function LicenceStep({
   )
     ? (data.driver.licenceClass as (typeof LICENCE_CLASSES)[number])
     : 'C';
+  const stateDefault = (AU_STATES as readonly string[]).includes(data.driver.state ?? '')
+    ? (data.driver.state as (typeof AU_STATES)[number])
+    : 'VIC';
   const expiryDefault = data.driver.licenceExpiry
     ? data.driver.licenceExpiry.slice(0, 10)
     : '2030-12-31';
@@ -196,6 +250,14 @@ function LicenceStep({
   const form = useForm<LicenceForm>({
     resolver: zodResolver(schema),
     defaultValues: {
+      name: data.user.name || '',
+      phone: data.user.phone || '',
+      emergencyContactName: data.driver.emergencyContactName || '',
+      emergencyContactPhone: data.driver.emergencyContactPhone || '',
+      addressLine1: data.driver.addressLine1 || '',
+      suburb: data.driver.suburb || '',
+      state: stateDefault,
+      postcode: data.driver.postcode || '',
       licenceNo: data.driver.licenceNo || '',
       licenceClass: licenceClassDefault,
       licenceExpiry: expiryDefault,
@@ -207,7 +269,18 @@ function LicenceStep({
     const nextClass = (LICENCE_CLASSES as readonly string[]).includes(data.driver.licenceClass ?? '')
       ? (data.driver.licenceClass as (typeof LICENCE_CLASSES)[number])
       : 'C';
+    const nextState = (AU_STATES as readonly string[]).includes(data.driver.state ?? '')
+      ? (data.driver.state as (typeof AU_STATES)[number])
+      : 'VIC';
     form.reset({
+      name: data.user.name || '',
+      phone: data.user.phone || '',
+      emergencyContactName: data.driver.emergencyContactName || '',
+      emergencyContactPhone: data.driver.emergencyContactPhone || '',
+      addressLine1: data.driver.addressLine1 || '',
+      suburb: data.driver.suburb || '',
+      state: nextState,
+      postcode: data.driver.postcode || '',
       licenceNo: data.driver.licenceNo || '',
       licenceClass: nextClass,
       licenceExpiry: data.driver.licenceExpiry
@@ -216,6 +289,14 @@ function LicenceStep({
       nhvrAcknowledged: Boolean(data.driver.nhvrAcknowledgedAt),
     });
   }, [
+    data.user.name,
+    data.user.phone,
+    data.driver.emergencyContactName,
+    data.driver.emergencyContactPhone,
+    data.driver.addressLine1,
+    data.driver.suburb,
+    data.driver.state,
+    data.driver.postcode,
     data.driver.licenceNo,
     data.driver.licenceClass,
     data.driver.licenceExpiry,
@@ -248,6 +329,14 @@ function LicenceStep({
       const uploadedRes = await uploadDocumentContent(intent.id, licenceFile);
       await confirmDocument(intent.id, uploadedRes.contentHash);
       return submitDriverProfile({
+        name: values.name.trim(),
+        phone: values.phone.trim(),
+        emergencyContactName: values.emergencyContactName.trim(),
+        emergencyContactPhone: values.emergencyContactPhone.trim(),
+        addressLine1: values.addressLine1.trim(),
+        suburb: values.suburb.trim(),
+        state: values.state,
+        postcode: values.postcode.trim(),
         licenceNo: values.licenceNo.trim(),
         licenceClass: values.licenceClass,
         licenceExpiry: values.licenceExpiry,
@@ -269,7 +358,79 @@ function LicenceStep({
       })}
       noValidate
     >
-      <h2 className="font-display text-lg font-semibold">{t('driverOnboarding.licenceTitle')}</h2>
+      <h2 className="font-display text-lg font-semibold">{t('driverOnboarding.personalTitle')}</h2>
+      <p className="mb-3 mt-1 text-sm text-clox-mute">{t('driverOnboarding.personalHint')}</p>
+
+      <Field
+        label={t('driverOnboarding.nameLabel')}
+        required
+        autoComplete="name"
+        error={form.formState.errors.name?.message}
+        {...form.register('name')}
+      />
+      <Field
+        label={t('driverOnboarding.phoneLabel')}
+        required
+        type="tel"
+        autoComplete="tel"
+        placeholder={t('driverOnboarding.phonePlaceholder')}
+        error={form.formState.errors.phone?.message}
+        {...form.register('phone')}
+      />
+      <Field
+        label={t('driverOnboarding.emergencyNameLabel')}
+        required
+        error={form.formState.errors.emergencyContactName?.message}
+        {...form.register('emergencyContactName')}
+      />
+      <Field
+        label={t('driverOnboarding.emergencyPhoneLabel')}
+        required
+        type="tel"
+        placeholder={t('driverOnboarding.phonePlaceholder')}
+        error={form.formState.errors.emergencyContactPhone?.message}
+        {...form.register('emergencyContactPhone')}
+      />
+      <Field
+        label={t('driverOnboarding.addressLineLabel')}
+        required
+        autoComplete="street-address"
+        error={form.formState.errors.addressLine1?.message}
+        {...form.register('addressLine1')}
+      />
+      <Field
+        label={t('driverOnboarding.suburbLabel')}
+        required
+        autoComplete="address-level2"
+        error={form.formState.errors.suburb?.message}
+        {...form.register('suburb')}
+      />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Select
+          label={t('driverOnboarding.stateLabel')}
+          required
+          error={form.formState.errors.state?.message}
+          value={form.watch('state')}
+          {...form.register('state')}
+        >
+          {AU_STATES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </Select>
+        <Field
+          label={t('driverOnboarding.postcodeLabel')}
+          required
+          autoComplete="postal-code"
+          inputMode="numeric"
+          maxLength={4}
+          error={form.formState.errors.postcode?.message}
+          {...form.register('postcode')}
+        />
+      </div>
+
+      <h2 className="mt-8 font-display text-lg font-semibold">{t('driverOnboarding.licenceTitle')}</h2>
       <p className="mb-3 mt-1 text-sm text-clox-mute">{t('driverOnboarding.licenceHint')}</p>
       <Notice tone="info" className="mb-4">
         {t('driverOnboarding.licenceUploadRequiredNotice')}

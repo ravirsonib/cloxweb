@@ -574,6 +574,12 @@ export function CarrierFleetPage() {
         </Notice>
       ) : null}
 
+      {items.some((v) => v.status === 'PENDING_REVIEW') ? (
+        <Notice tone="info" className="mt-4">
+          {t('fleet.pendingReviewHint')}
+        </Notice>
+      ) : null}
+
       {missingRwcCount > 0 ? (
         <Notice tone="warn" className="mt-4">
           {t('fleet.rwcMissingBanner')}

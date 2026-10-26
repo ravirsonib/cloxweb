@@ -135,11 +135,15 @@ export type MarketBoard = {
     minVehicleClass: string | null;
     requiresDg: boolean;
     requiresReefer: boolean;
+    chargeableWeightKg?: number | null;
     estimateIncGstCents: number | null;
     estimateNetToCarrierCents: number | null;
     routeDistanceKm: number | null;
     routeFatigueBreakMinutes: number;
     billableHours: number | null;
+    marketplacePriority?: boolean;
+    rescueDiscountPercent?: number | null;
+    minBidIncGstCents?: number | null;
     pickupAt: string | null;
     publishedAt: string | null;
     alreadyBid: boolean;

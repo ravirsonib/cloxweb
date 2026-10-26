@@ -96,6 +96,15 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           {t('nav.surcharges')}
         </SidebarLink>
       ) : null}
+      {isSuper ? (
+        <SidebarLink
+          to="/platform-settings"
+          icon={navIconForPath('/platform-settings')}
+          onNavigate={onNavigate}
+        >
+          {t('nav.platformSettings')}
+        </SidebarLink>
+      ) : null}
 
       {/* Carrier */}
       {role === AppRole.TRANSPORT_COMPANY ? (

@@ -104,7 +104,8 @@ export function CardCollection({
     <div
       className={cn(
         mode === 'grid'
-          ? 'grid gap-3 sm:grid-cols-2 xl:grid-cols-3'
+          ? // Base 2-col so List/Grid is visibly different on phone-width viewports too.
+            'grid grid-cols-2 gap-3 xl:grid-cols-3'
           : 'flex flex-col gap-3',
         className,
       )}

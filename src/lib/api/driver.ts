@@ -28,6 +28,12 @@ export type DriverOnboarding = {
     licenceExpiry: string | null;
     nhvrAcknowledgedAt: string | null;
     inviteAcceptedAt: string | null;
+    emergencyContactName: string | null;
+    emergencyContactPhone: string | null;
+    addressLine1: string | null;
+    suburb: string | null;
+    state: string | null;
+    postcode: string | null;
   };
   company: { id: string; legalName: string; status: string } | null;
   goNoGo: {
@@ -35,6 +41,7 @@ export type DriverOnboarding = {
     licenceValid: boolean;
     licenceDocumentUploaded: boolean;
     nhvrAcknowledged: boolean;
+    personalDetailsComplete: boolean;
     active: boolean;
     canBeAssigned: boolean;
     tripApisNote: string;
@@ -56,6 +63,14 @@ export function getDriverOnboarding() {
 }
 
 export function submitDriverProfile(payload: {
+  name: string;
+  phone: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  addressLine1: string;
+  suburb: string;
+  state: string;
+  postcode: string;
   licenceNo: string;
   licenceClass: string;
   licenceExpiry: string;

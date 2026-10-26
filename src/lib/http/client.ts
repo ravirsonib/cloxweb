@@ -32,6 +32,17 @@ export function getErrorDetail(error: unknown): string {
     if (typeof data?.message === 'string') return data.message;
     if (Array.isArray(data?.message)) return data.message.join('; ');
     if (typeof data?.title === 'string') return data.title;
+    if (error.code === 'ECONNABORTED' || /timeout/i.test(error.message)) {
+      return i18n.t('errors.uploadTimeout', {
+        defaultValue: 'Upload timed out. Try a smaller photo or check your connection.',
+      });
+    }
+    if (!error.response && /Network Error/i.test(error.message)) {
+      return i18n.t('errors.networkOrTooLarge', {
+        defaultValue:
+          'Upload failed (network or file too large). Use a JPEG/PNG under 10 MB.',
+      });
+    }
     return error.message;
   }
   if (error instanceof Error) return error.message;

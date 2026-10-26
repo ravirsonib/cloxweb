@@ -22,13 +22,13 @@ import {
   useDataViewMode,
   useToast,
 } from '@/components/ui';
-import { LoadingBlock } from '@/components/status-blocks';
+import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import { cn } from '@/lib/cn';
 import {
   carrierDriverSelectLabel,
   carrierVehicleSelectLabel,
 } from '@/lib/fleet-select-labels';
-import { isVehicleClassAdequate } from '@/lib/validation';
+import { isVehicleAdequateForJob } from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -105,7 +105,11 @@ export function MarketBoardPage() {
     if (!selectedJob) return;
     const eligibleVehicle =
       selectableVehicles.find((v) =>
-        isVehicleClassAdequate(v.vehicleClass, selectedJob.minVehicleClass),
+        isVehicleAdequateForJob(
+          v.vehicleClass,
+          selectedJob.minVehicleClass,
+          selectedJob.chargeableWeightKg,
+        ),
       ) ?? null;
     const nextVehicleId = eligibleVehicle?.id ?? '';
     const nextDriverId = selectableDrivers[0]?.id ?? '';
@@ -117,7 +121,11 @@ export function MarketBoardPage() {
   const vehicleEligible =
     !!selectedVehicle &&
     selectedVehicle.bidAvailable !== false &&
-    isVehicleClassAdequate(selectedVehicle.vehicleClass, selectedJob?.minVehicleClass);
+    isVehicleAdequateForJob(
+      selectedVehicle.vehicleClass,
+      selectedJob?.minVehicleClass,
+      selectedJob?.chargeableWeightKg,
+    );
   const selectedDriver = activeDrivers.find((d) => d.id === driverIdWatch);
   const driverEligible = !!selectedDriver && selectedDriver.bidAvailable !== false;
 
@@ -128,7 +136,13 @@ export function MarketBoardPage() {
       }
       const vehicle = activeVehicles.find((v) => v.id === values.vehicleId);
       const driver = activeDrivers.find((d) => d.id === values.driverId);
-      if (!isVehicleClassAdequate(vehicle?.vehicleClass, selectedJob?.minVehicleClass)) {
+      if (
+        !isVehicleAdequateForJob(
+          vehicle?.vehicleClass,
+          selectedJob?.minVehicleClass,
+          selectedJob?.chargeableWeightKg,
+        )
+      ) {
         throw new Error(t('market.errorVehicleUndersize'));
       }
       if (vehicle?.bidAvailable === false) {
@@ -199,43 +213,62 @@ export function MarketBoardPage() {
         </Notice>
       ) : null}
 
-      <DataCardList
-        className="mt-6"
-        items={marketJobs}
-        getKey={(j) => j.id}
-        mode={viewMode}
-        renderItem={(j) => (
-          <button
-            type="button"
-            className={cn(
-              'h-full w-full rounded-clox-md border p-4 text-left shadow-clox-1 transition',
-              jobId === j.id
-                ? 'border-clox-orange bg-clox-orange-tint'
-                : 'border-clox-border bg-clox-surface hover:border-clox-orange',
-            )}
-            onClick={() => setJobId(j.id)}
-          >
-            <p className="font-semibold text-clox-ink">{j.title ?? j.id.slice(0, 8)}</p>
-            <p className="mt-0.5 font-mono text-[11px] text-clox-faint">
-              {j.id.slice(0, 8)}
-              {j.publishedAt
-                ? ` · ${new Date(j.publishedAt).toLocaleString()}`
-                : ''}
-            </p>
-            <p className="mt-1 font-mono text-xs text-clox-mute">
-              {j.stopsSummary} · min {j.minVehicleClass}
-              {j.requiresDg ? ` ${t('market.dgSuffix')}` : ''}
-              {j.routeFatigueBreakMinutes > 0
-                ? ` ${t('market.fatigueSuffix', { minutes: j.routeFatigueBreakMinutes })}`
-                : ''}
-              {j.estimateNetToCarrierCents != null
-                ? ` ${t('market.netApprox', { amount: (j.estimateNetToCarrierCents / 100).toFixed(2) })}`
-                : ''}
-              {j.alreadyBid ? ` · ${t('market.alreadyBid')}` : ''}
-            </p>
-          </button>
-        )}
-      />
+      {marketJobs.length === 0 ? (
+        <div className="mt-6">
+          <EmptyBlock title={t('market.emptyTitle')} description={t('market.emptyHint')} />
+        </div>
+      ) : (
+        <DataCardList
+          className="mt-6"
+          items={marketJobs}
+          getKey={(j) => j.id}
+          mode={viewMode}
+          renderItem={(j) => (
+            <button
+              type="button"
+              className={cn(
+                'h-full w-full rounded-clox-md border p-4 text-left shadow-clox-1 transition',
+                jobId === j.id
+                  ? 'border-clox-orange bg-clox-orange-tint'
+                  : 'border-clox-border bg-clox-surface hover:border-clox-orange',
+              )}
+              onClick={() => setJobId(j.id)}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-semibold text-clox-ink">{j.title ?? j.id.slice(0, 8)}</p>
+                {j.marketplacePriority ? (
+                  <span className="rounded-clox-sm bg-clox-orange-tint px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-clox-orange">
+                    {t('market.priorityRescue')}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-0.5 font-mono text-[11px] text-clox-faint">
+                {j.id.slice(0, 8)}
+                {j.publishedAt
+                  ? ` · ${new Date(j.publishedAt).toLocaleString()}`
+                  : ''}
+              </p>
+              <p className="mt-1 font-mono text-xs text-clox-mute">
+                {j.stopsSummary} · min {j.minVehicleClass}
+                {j.requiresDg ? ` ${t('market.dgSuffix')}` : ''}
+                {j.routeFatigueBreakMinutes > 0
+                  ? ` ${t('market.fatigueSuffix', { minutes: j.routeFatigueBreakMinutes })}`
+                  : ''}
+                {j.estimateNetToCarrierCents != null
+                  ? ` ${t('market.netApprox', { amount: (j.estimateNetToCarrierCents / 100).toFixed(2) })}`
+                  : ''}
+                {j.rescueDiscountPercent != null && j.rescueDiscountPercent > 0
+                  ? ` · ${t('market.rescueDiscount', { percent: j.rescueDiscountPercent })}`
+                  : ''}
+                {j.minBidIncGstCents != null
+                  ? ` · ${t('market.minBidHint', { amount: (j.minBidIncGstCents / 100).toFixed(2) })}`
+                  : ''}
+                {j.alreadyBid ? ` · ${t('market.alreadyBid')}` : ''}
+              </p>
+            </button>
+          )}
+        />
+      )}
 
       {jobId && selectedJob ? (
         <form
@@ -258,7 +291,11 @@ export function MarketBoardPage() {
           >
             <option value="">{t('market.selectVehicle')}</option>
             {activeVehicles.map((v) => {
-              const classOk = isVehicleClassAdequate(v.vehicleClass, selectedJob.minVehicleClass);
+              const classOk = isVehicleAdequateForJob(
+                v.vehicleClass,
+                selectedJob.minVehicleClass,
+                selectedJob.chargeableWeightKg,
+              );
               const busy = v.bidAvailable === false;
               const disabled = !classOk || busy;
               const busyHint = busy

@@ -41,6 +41,7 @@ import { SenderTrackPage } from '@/pages/sender-track-page';
 import { SenderRegisterPage } from '@/pages/sender-register-page';
 import { SenderOnboardingPage } from '@/pages/sender-onboarding-page';
 import { SurchargesPage } from '@/pages/surcharges-page';
+import { PlatformSettingsPage } from '@/pages/platform-settings-page';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const accessToken = useAuthStore((state) => state.accessToken);
@@ -334,6 +335,14 @@ export function AppRouter() {
         />
         <Route path="/jobs/:jobId/track" element={<SenderTrackPage />} />
         <Route path="/surcharges" element={<SurchargesPage />} />
+        <Route
+          path="/platform-settings"
+          element={
+            <SuperOnly>
+              <PlatformSettingsPage />
+            </SuperOnly>
+          }
+        />
         <Route
           path="/documents/upload"
           element={

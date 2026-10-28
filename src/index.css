@@ -556,7 +556,7 @@
   }
 
   .clox-btn {
-    @apply inline-flex max-w-full items-center justify-center gap-2 whitespace-nowrap border text-sm font-semibold transition;
+    @apply inline-flex max-w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap border text-sm font-semibold transition;
     border-radius: 8px;
     padding: 9px 16px;
     font-family: var(--font-body);

@@ -625,6 +625,19 @@
     "alreadyBid": "Already bid",
     "emptyTitle": "No jobs available.",
     "emptyHint": "Open jobs that match your regions and capabilities will appear here.",
+    "emptyFilter": "No jobs match this filter.",
+    "filterLabel": "Filter job board by status",
+    "filter": {
+      "all": "All",
+      "available": "Open to bid",
+      "priority": "Priority rescue",
+      "bid": "Already bid"
+    },
+    "bucket": {
+      "available": "Open to bid",
+      "priority": "Priority rescue",
+      "bid": "Already bid"
+    },
     "priorityRescue": "Priority rescue",
     "rescueDiscount": "{{percent}}% carrier discount",
     "minBidHint": "Min bid ≈ ${{amount}} (inc GST)",
@@ -733,6 +746,21 @@
     "tripBlocked": "Trip blocked",
     "tripGateOpen": "Trip gate open",
     "empty": "No assignments yet.",
+    "emptyFilter": "No assignments match this filter.",
+    "filterLabel": "Filter assignments by status",
+    "filter": {
+      "all": "All",
+      "open": "Open / allocate",
+      "awaiting_payment": "Awaiting payment",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "bucket": {
+      "open": "Open — allocate",
+      "awaiting_payment": "Awaiting payment",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
     "exceptionsTitle": "Surcharge exceptions",
     "exceptionsSubtitle": "Waiting-time and mass surcharges raised against your trips.",
     "assetLine": "Vehicle {{vehicle}} · Driver {{driver}} · Trip {{trip}}",

@@ -129,12 +129,18 @@ export function isVehicleAdequateForJob(
   return isVehicleClassAdequate(offeredClass, weightMin);
 }
 
+/** Align with API carrier/sender ABN: strip spaces, then require 11 digits. */
 export function abnSchema(requiredMessage: string, invalidMessage: string) {
   return z
     .string()
     .trim()
-    .min(1, requiredMessage)
-    .regex(/^\d{11}$/, invalidMessage);
+    .transform((value) => value.replace(/\s/g, ''))
+    .pipe(
+      z
+        .string()
+        .min(1, requiredMessage)
+        .regex(/^\d{11}$/, invalidMessage),
+    );
 }
 
 /** Optional AU phone — empty OK; rejects letters/junk; +61 or 0… digits. */

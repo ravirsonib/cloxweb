@@ -46,7 +46,7 @@ export function ViewModeToggle({
       <button
         type="button"
         className={cn(
-          'rounded-[5px] px-2.5 py-1.5 font-mono text-[11px] font-medium uppercase tracking-wide transition',
+          'cursor-pointer rounded-[5px] px-2.5 py-1.5 font-mono text-[11px] font-medium uppercase tracking-wide transition',
           value === 'list'
             ? 'bg-clox-navy-ink text-white'
             : 'text-clox-mute hover:text-clox-ink',
@@ -59,7 +59,7 @@ export function ViewModeToggle({
       <button
         type="button"
         className={cn(
-          'rounded-[5px] px-2.5 py-1.5 font-mono text-[11px] font-medium uppercase tracking-wide transition',
+          'cursor-pointer rounded-[5px] px-2.5 py-1.5 font-mono text-[11px] font-medium uppercase tracking-wide transition',
           value === 'grid'
             ? 'bg-clox-navy-ink text-white'
             : 'text-clox-mute hover:text-clox-ink',
@@ -185,7 +185,10 @@ export function DataCardList<T>({
   return (
     <CardCollection mode={mode} className={className}>
       {items.map((item) => (
-        <div key={getKey(item)} className="min-w-0">
+        <div
+          key={getKey(item)}
+          className={cn('min-w-0', mode === 'grid' && 'h-full')}
+        >
           {renderItem(item)}
         </div>
       ))}

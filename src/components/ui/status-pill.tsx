@@ -9,12 +9,14 @@ const tones = {
   neutral: 'clox-status-neutral',
 } as const;
 
+export type StatusPillTone = keyof typeof tones;
+
 export function StatusPill({
   tone = 'neutral',
   children,
   className,
 }: {
-  tone?: keyof typeof tones;
+  tone?: StatusPillTone;
   children: ReactNode;
   className?: string;
 }) {

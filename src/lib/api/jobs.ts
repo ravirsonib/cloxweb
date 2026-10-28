@@ -135,30 +135,32 @@ export type CarrierAssignment = {
   trip: { id: string; status: string } | null;
 };
 
+export type MarketBoardJob = {
+  id: string;
+  title: string | null;
+  status: string;
+  pricingModel: string;
+  minVehicleClass: string | null;
+  requiresDg: boolean;
+  requiresReefer: boolean;
+  chargeableWeightKg?: number | null;
+  estimateIncGstCents: number | null;
+  estimateNetToCarrierCents: number | null;
+  routeDistanceKm: number | null;
+  routeFatigueBreakMinutes: number;
+  billableHours: number | null;
+  marketplacePriority?: boolean;
+  rescueDiscountPercent?: number | null;
+  minBidIncGstCents?: number | null;
+  pickupAt: string | null;
+  publishedAt: string | null;
+  alreadyBid: boolean;
+  stopsSummary: string;
+};
+
 export type MarketBoard = {
   netPayoutHint: string;
-  jobs: Array<{
-    id: string;
-    title: string | null;
-    status: string;
-    pricingModel: string;
-    minVehicleClass: string | null;
-    requiresDg: boolean;
-    requiresReefer: boolean;
-    chargeableWeightKg?: number | null;
-    estimateIncGstCents: number | null;
-    estimateNetToCarrierCents: number | null;
-    routeDistanceKm: number | null;
-    routeFatigueBreakMinutes: number;
-    billableHours: number | null;
-    marketplacePriority?: boolean;
-    rescueDiscountPercent?: number | null;
-    minBidIncGstCents?: number | null;
-    pickupAt: string | null;
-    publishedAt: string | null;
-    alreadyBid: boolean;
-    stopsSummary: string;
-  }>;
+  jobs: MarketBoardJob[];
 };
 
 export function listSenderJobs() {

@@ -9,6 +9,7 @@ import {
   DataCardList,
   Notice,
   Select,
+  StatusFilterChips,
   StatusPill,
   ViewModeToggle,
   useDataViewMode,
@@ -28,13 +29,67 @@ import {
 } from '@/lib/api';
 import type { SurchargeRow } from '@/lib/api/surcharges';
 import type { TripDocumentKind } from '@/lib/api/trips';
+import { cn } from '@/lib/cn';
 import {
   carrierDriverSelectLabel,
   carrierVehicleSelectLabel,
 } from '@/lib/fleet-select-labels';
+import {
+  countByBucket,
+  filterAndSortByBucket,
+  statusAccentClass,
+  type ListStatusTone,
+} from '@/lib/status-list';
 import { isVehicleClassAdequate } from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
+
+type AssignmentBucket = 'awaiting_payment' | 'open' | 'completed' | 'cancelled';
+type AssignmentFilter = 'all' | AssignmentBucket;
+
+const ASSIGNMENT_FILTERS = [
+  'all',
+  'open',
+  'awaiting_payment',
+  'completed',
+  'cancelled',
+] as const satisfies readonly AssignmentFilter[];
+
+const ASSIGNMENT_SORT: Record<AssignmentBucket, number> = {
+  awaiting_payment: 0,
+  open: 1,
+  completed: 2,
+  cancelled: 3,
+};
+
+const ASSIGNMENT_TONE: Record<AssignmentBucket, ListStatusTone> = {
+  awaiting_payment: 'warn',
+  open: 'info',
+  completed: 'ok',
+  cancelled: 'danger',
+};
+
+function assignmentBucket(a: CarrierAssignment): AssignmentBucket {
+  const tripStatus = a.trip?.status;
+  if (
+    a.status === 'CANCELLED' ||
+    tripStatus === 'CANCELLED' ||
+    a.job.status === 'CANCELLED'
+  ) {
+    return 'cancelled';
+  }
+  if (
+    a.status === 'COMPLETED' ||
+    tripStatus === 'COMPLETED' ||
+    a.job.status === 'COMPLETED'
+  ) {
+    return 'completed';
+  }
+  if (a.status === 'PENDING' || !a.paidAndConfirmed) {
+    return 'awaiting_payment';
+  }
+  return 'open';
+}
 
 function ExceptionBadge({ exc }: { exc: SurchargeRow }) {
   const { t } = useTranslation('common');
@@ -69,58 +124,65 @@ function AssignmentPodPanel({ tripId }: { tripId: string }) {
     onError: (err) => toast.error(getErrorDetail(err)),
   });
 
-  if (pod.isLoading || pod.isError || !pod.data) return null;
+  const shellClass =
+    'mt-auto min-w-0 rounded-clox-md border border-clox-border bg-clox-canvas/40 px-3 py-2';
+
+  if (pod.isLoading) {
+    return (
+      <div className={shellClass} aria-busy="true">
+        <p className="text-xs font-semibold text-clox-ink">{t('trips.podPanelTitle')}</p>
+        <p className="mt-1 text-xs text-clox-faint">{t('loading')}</p>
+      </div>
+    );
+  }
+
+  if (pod.isError || !pod.data) return null;
+
   const drop = pod.data.dropoffs[0];
-  const hasDocs =
-    Boolean(pod.data.podStorageKey) ||
-    Boolean(pod.data.taxInvoiceStorageKey) ||
-    Boolean(pod.data.runSheetStorageKey);
-  if (!drop && !hasDocs) return null;
+  const docButtons: Array<{ kind: TripDocumentKind; label: string; ready: boolean }> = [
+    {
+      kind: 'pod',
+      label: t('trips.downloadPod'),
+      ready: Boolean(pod.data.podStorageKey),
+    },
+    {
+      kind: 'tax-invoice',
+      label: t('trips.downloadTaxInvoice'),
+      ready: Boolean(pod.data.taxInvoiceStorageKey),
+    },
+    {
+      kind: 'run-sheet',
+      label: t('trips.downloadRunSheet'),
+      ready: Boolean(pod.data.runSheetStorageKey),
+    },
+  ];
+  const readyDocs = docButtons.filter((d) => d.ready);
+  if (!drop && readyDocs.length === 0) return null;
 
   return (
-    <div className="mt-3 rounded-clox-md border border-clox-border bg-clox-canvas/40 px-3 py-2">
+    <div className={shellClass}>
       <p className="text-xs font-semibold text-clox-ink">{t('trips.podPanelTitle')}</p>
       {drop ? (
-        <p className="mt-0.5 text-xs text-clox-mute">
+        <p className="mt-0.5 break-words text-xs text-clox-mute">
           {t('trips.podStatusLine', { status: drop.podStatus })}
           {drop.signerName ? ` · ${drop.signerName}` : ''}
         </p>
       ) : null}
-      {hasDocs ? (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {pod.data.podStorageKey ? (
+      {readyDocs.length > 0 ? (
+        <div className="mt-2 grid min-w-0 grid-cols-2 gap-1.5">
+          {readyDocs.map((doc) => (
             <Button
+              key={doc.kind}
               type="button"
               size="sm"
               variant="secondary"
+              className="min-w-0 justify-center whitespace-normal px-2 text-center text-[11px] leading-snug"
               disabled={downloadDoc.isPending}
-              onClick={() => downloadDoc.mutate('pod')}
+              onClick={() => downloadDoc.mutate(doc.kind)}
             >
-              {t('trips.downloadPod')}
+              {doc.label}
             </Button>
-          ) : null}
-          {pod.data.taxInvoiceStorageKey ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={downloadDoc.isPending}
-              onClick={() => downloadDoc.mutate('tax-invoice')}
-            >
-              {t('trips.downloadTaxInvoice')}
-            </Button>
-          ) : null}
-          {pod.data.runSheetStorageKey ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={downloadDoc.isPending}
-              onClick={() => downloadDoc.mutate('run-sheet')}
-            >
-              {t('trips.downloadRunSheet')}
-            </Button>
-          ) : null}
+          ))}
         </div>
       ) : null}
     </div>
@@ -133,6 +195,7 @@ export function CarrierAssignmentsPage() {
   const queryClient = useQueryClient();
   const role = useAuthStore((s) => s.role);
   const [viewMode, setViewMode] = useDataViewMode('assignments', 'list');
+  const [statusFilter, setStatusFilter] = useState<AssignmentFilter>('open');
   const [reassignTarget, setReassignTarget] = useState<CarrierAssignment | null>(null);
   const [vehicleId, setVehicleId] = useState('');
   const [driverId, setDriverId] = useState('');
@@ -202,6 +265,13 @@ export function CarrierAssignmentsPage() {
   );
 
   const items = list.data ?? [];
+  const filterCounts = countByBucket(items, assignmentBucket, ASSIGNMENT_FILTERS);
+  const filteredItems = filterAndSortByBucket(
+    items,
+    assignmentBucket,
+    statusFilter,
+    ASSIGNMENT_SORT,
+  );
   const activeVehicles = (vehiclesQuery.data?.items ?? []).filter((v) => v.status === 'ACTIVE');
   const activeDrivers = (driversQuery.data?.items ?? []).filter((d) => d.status === 'ACTIVE');
   /** Keep current assignment assets visible (and labeled) even before list load / if not ACTIVE. */
@@ -295,55 +365,92 @@ export function CarrierAssignmentsPage() {
       {items.length === 0 ? (
         <p className="mt-6 text-sm text-clox-faint">{t('assignments.empty')}</p>
       ) : (
-        <DataCardList
-          className="mt-6"
-          items={items}
-          getKey={(a) => a.id}
-          mode={viewMode}
-          renderItem={(a) => {
-            const jobExceptions = exceptionsByJob[a.job.id] ?? [];
-            return (
-              <DataCard className="h-full">
-                <p className="font-semibold text-clox-ink">{a.job.title ?? a.job.id.slice(0, 8)}</p>
-                <p className="mt-1 font-mono text-xs text-clox-mute">
-                  {a.status}
-                  {a.paidAndConfirmed
-                    ? ` · ${t('assignments.paidAndConfirmed')}`
-                    : ` · ${t('assignments.awaitingPayment')}`}
-                  {' · '}${(a.amountIncGstCents / 100).toFixed(2)}
-                  {a.tripBlockedUntilPaid
-                    ? ` · ${t('assignments.tripBlocked')}`
-                    : ` · ${t('assignments.tripGateOpen')}`}
-                </p>
-                <p className="mt-2 text-xs text-clox-mute">
-                  {t('assignments.assetLine', {
-                    vehicle:
-                      a.vehicle?.registration ??
-                      a.vehicle?.id?.slice(0, 8) ??
-                      t('dash'),
-                    driver: a.driver?.user.name ?? a.driver?.user.email ?? t('dash'),
-                    trip: a.trip?.status ?? t('dash'),
-                  })}
-                </p>
-                {jobExceptions.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {jobExceptions.map((exc) => (
-                      <ExceptionBadge key={exc.id} exc={exc} />
-                    ))}
-                  </div>
-                ) : null}
-                {a.canReassign ? (
-                  <div className="mt-3">
-                    <Button type="button" variant="secondary" size="sm" onClick={() => openReassign(a)}>
-                      {t('assignments.reassign')}
-                    </Button>
-                  </div>
-                ) : null}
-                {a.trip?.id ? <AssignmentPodPanel tripId={a.trip.id} /> : null}
-              </DataCard>
-            );
-          }}
-        />
+        <>
+          <StatusFilterChips
+            className="mt-4"
+            options={ASSIGNMENT_FILTERS}
+            value={statusFilter}
+            counts={filterCounts}
+            onChange={setStatusFilter}
+            getLabel={(key) => t(`assignments.filter.${key}`)}
+            aria-label={t('assignments.filterLabel')}
+          />
+
+          {filteredItems.length === 0 ? (
+            <p className="mt-6 text-sm text-clox-faint">{t('assignments.emptyFilter')}</p>
+          ) : (
+            <DataCardList
+              className="mt-6"
+              items={filteredItems}
+              getKey={(a) => a.id}
+              mode={viewMode}
+              renderItem={(a) => {
+                const bucket = assignmentBucket(a);
+                const tone = ASSIGNMENT_TONE[bucket];
+                const jobExceptions = exceptionsByJob[a.job.id] ?? [];
+                return (
+                  <DataCard
+                    className={cn(
+                      'flex h-full min-w-0 flex-col gap-2',
+                      statusAccentClass(tone),
+                    )}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="min-w-0 break-words font-semibold text-clox-ink">
+                          {a.job.title ?? a.job.id.slice(0, 8)}
+                        </p>
+                        <StatusPill tone={tone}>
+                          {t(`assignments.bucket.${bucket}`)}
+                        </StatusPill>
+                      </div>
+                      <p className="mt-1 break-words font-mono text-xs text-clox-mute">
+                        {a.status}
+                        {a.paidAndConfirmed
+                          ? ` · ${t('assignments.paidAndConfirmed')}`
+                          : ` · ${t('assignments.awaitingPayment')}`}
+                        {' · '}${(a.amountIncGstCents / 100).toFixed(2)}
+                        {a.tripBlockedUntilPaid
+                          ? ` · ${t('assignments.tripBlocked')}`
+                          : ` · ${t('assignments.tripGateOpen')}`}
+                      </p>
+                      <p className="mt-2 break-words text-xs text-clox-mute">
+                        {t('assignments.assetLine', {
+                          vehicle:
+                            a.vehicle?.registration ??
+                            a.vehicle?.id?.slice(0, 8) ??
+                            t('dash'),
+                          driver: a.driver?.user.name ?? a.driver?.user.email ?? t('dash'),
+                          trip: a.trip?.status ?? t('dash'),
+                        })}
+                      </p>
+                      {jobExceptions.length > 0 ? (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {jobExceptions.map((exc) => (
+                            <ExceptionBadge key={exc.id} exc={exc} />
+                          ))}
+                        </div>
+                      ) : null}
+                      {a.canReassign ? (
+                        <div className="mt-3">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => openReassign(a)}
+                          >
+                            {t('assignments.reassign')}
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                    {a.trip?.id ? <AssignmentPodPanel tripId={a.trip.id} /> : null}
+                  </DataCard>
+                );
+              }}
+            />
+          )}
+        </>
       )}
 
       {(exceptions.data ?? []).length > 0 ? (

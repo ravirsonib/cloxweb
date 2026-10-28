@@ -11,6 +11,7 @@ import {
   listCarrierDrivers,
   listCarrierVehicles,
   submitBid,
+  type MarketBoardJob,
 } from '@/lib/api';
 import {
   Button,
@@ -18,6 +19,8 @@ import {
   Field,
   Notice,
   Select,
+  StatusFilterChips,
+  StatusPill,
   ViewModeToggle,
   useDataViewMode,
   useToast,
@@ -28,6 +31,12 @@ import {
   carrierDriverSelectLabel,
   carrierVehicleSelectLabel,
 } from '@/lib/fleet-select-labels';
+import {
+  countByBucket,
+  filterAndSortByBucket,
+  statusAccentClass,
+  type ListStatusTone,
+} from '@/lib/status-list';
 import { isVehicleAdequateForJob } from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
@@ -38,6 +47,35 @@ type BidForm = {
   vehicleId: string;
   driverId: string;
 };
+
+/** Board only lists open marketplace jobs — buckets help carriers prioritise bids. */
+type MarketBucket = 'available' | 'priority' | 'bid';
+type MarketFilter = 'all' | MarketBucket;
+
+const MARKET_FILTERS = [
+  'all',
+  'available',
+  'priority',
+  'bid',
+] as const satisfies readonly MarketFilter[];
+
+const MARKET_SORT: Record<MarketBucket, number> = {
+  priority: 0,
+  available: 1,
+  bid: 2,
+};
+
+const MARKET_TONE: Record<MarketBucket, ListStatusTone> = {
+  priority: 'warn',
+  available: 'info',
+  bid: 'ok',
+};
+
+function marketBucket(job: MarketBoardJob): MarketBucket {
+  if (job.marketplacePriority) return 'priority';
+  if (job.alreadyBid) return 'bid';
+  return 'available';
+}
 
 export function MarketBoardPage() {
   const { t } = useTranslation('common');
@@ -60,13 +98,31 @@ export function MarketBoardPage() {
   });
 
   const [jobId, setJobId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<MarketFilter>('available');
   const [viewMode, setViewMode] = useDataViewMode('market', 'list');
   const toast = useToast();
 
-  const selectedJob = useMemo(
-    () => board.data?.jobs.find((j) => j.id === jobId) ?? null,
-    [board.data?.jobs, jobId],
+  const marketJobs = board.data?.jobs;
+  const filterCounts = useMemo(
+    () => countByBucket(marketJobs ?? [], marketBucket, MARKET_FILTERS),
+    [marketJobs],
   );
+  const filteredJobs = useMemo(
+    () =>
+      filterAndSortByBucket(marketJobs ?? [], marketBucket, statusFilter, MARKET_SORT),
+    [marketJobs, statusFilter],
+  );
+
+  const selectedJob = useMemo(
+    () => filteredJobs.find((j) => j.id === jobId) ?? null,
+    [filteredJobs, jobId],
+  );
+
+  useEffect(() => {
+    if (jobId && !filteredJobs.some((j) => j.id === jobId)) {
+      setJobId(null);
+    }
+  }, [filteredJobs, jobId]);
 
   const activeVehicles = useMemo(
     () => (vehiclesQuery.data?.items ?? []).filter((v) => v.status === 'ACTIVE'),
@@ -180,7 +236,6 @@ export function MarketBoardPage() {
     return <LoadingBlock label={t('market.loading')} />;
   }
 
-  const marketJobs = board.data?.jobs ?? [];
   const hasFleet = activeVehicles.length > 0 && activeDrivers.length > 0;
 
   return (
@@ -192,7 +247,9 @@ export function MarketBoardPage() {
             {board.data?.netPayoutHint ?? t('market.netPayoutHintDefault')}
           </p>
         </div>
-        <ViewModeToggle value={viewMode} onChange={setViewMode} />
+        {(marketJobs?.length ?? 0) > 0 ? (
+          <ViewModeToggle value={viewMode} onChange={setViewMode} />
+        ) : null}
       </div>
       {board.isError ? (
         <Notice tone="error" className="mt-4">
@@ -213,61 +270,80 @@ export function MarketBoardPage() {
         </Notice>
       ) : null}
 
-      {marketJobs.length === 0 ? (
+      {!marketJobs?.length ? (
         <div className="mt-6">
           <EmptyBlock title={t('market.emptyTitle')} description={t('market.emptyHint')} />
         </div>
       ) : (
-        <DataCardList
-          className="mt-6"
-          items={marketJobs}
-          getKey={(j) => j.id}
-          mode={viewMode}
-          renderItem={(j) => (
-            <button
-              type="button"
-              className={cn(
-                'h-full w-full rounded-clox-md border p-4 text-left shadow-clox-1 transition',
-                jobId === j.id
-                  ? 'border-clox-orange bg-clox-orange-tint'
-                  : 'border-clox-border bg-clox-surface hover:border-clox-orange',
-              )}
-              onClick={() => setJobId(j.id)}
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="font-semibold text-clox-ink">{j.title ?? j.id.slice(0, 8)}</p>
-                {j.marketplacePriority ? (
-                  <span className="rounded-clox-sm bg-clox-orange-tint px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-clox-orange">
-                    {t('market.priorityRescue')}
-                  </span>
-                ) : null}
-              </div>
-              <p className="mt-0.5 font-mono text-[11px] text-clox-faint">
-                {j.id.slice(0, 8)}
-                {j.publishedAt
-                  ? ` · ${new Date(j.publishedAt).toLocaleString()}`
-                  : ''}
-              </p>
-              <p className="mt-1 font-mono text-xs text-clox-mute">
-                {j.stopsSummary} · min {j.minVehicleClass}
-                {j.requiresDg ? ` ${t('market.dgSuffix')}` : ''}
-                {j.routeFatigueBreakMinutes > 0
-                  ? ` ${t('market.fatigueSuffix', { minutes: j.routeFatigueBreakMinutes })}`
-                  : ''}
-                {j.estimateNetToCarrierCents != null
-                  ? ` ${t('market.netApprox', { amount: (j.estimateNetToCarrierCents / 100).toFixed(2) })}`
-                  : ''}
-                {j.rescueDiscountPercent != null && j.rescueDiscountPercent > 0
-                  ? ` · ${t('market.rescueDiscount', { percent: j.rescueDiscountPercent })}`
-                  : ''}
-                {j.minBidIncGstCents != null
-                  ? ` · ${t('market.minBidHint', { amount: (j.minBidIncGstCents / 100).toFixed(2) })}`
-                  : ''}
-                {j.alreadyBid ? ` · ${t('market.alreadyBid')}` : ''}
-              </p>
-            </button>
+        <>
+          <StatusFilterChips
+            className="mt-4"
+            options={MARKET_FILTERS}
+            value={statusFilter}
+            counts={filterCounts}
+            onChange={setStatusFilter}
+            getLabel={(key) => t(`market.filter.${key}`)}
+            aria-label={t('market.filterLabel')}
+          />
+
+          {filteredJobs.length === 0 ? (
+            <p className="mt-6 text-sm text-clox-faint">{t('market.emptyFilter')}</p>
+          ) : (
+            <DataCardList
+              className="mt-6"
+              items={filteredJobs}
+              getKey={(j) => j.id}
+              mode={viewMode}
+              renderItem={(j) => {
+                const bucket = marketBucket(j);
+                const tone = MARKET_TONE[bucket];
+                const selected = jobId === j.id;
+                return (
+                  <button
+                    type="button"
+                    className={cn(
+                      'h-full w-full cursor-pointer rounded-clox-md border p-4 text-left shadow-clox-1 transition',
+                      statusAccentClass(tone),
+                      selected
+                        ? 'border-clox-orange ring-2 ring-clox-orange/30'
+                        : 'hover:border-clox-orange',
+                    )}
+                    onClick={() => setJobId(j.id)}
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold text-clox-ink">
+                        {j.title ?? j.id.slice(0, 8)}
+                      </p>
+                      <StatusPill tone={tone}>{t(`market.bucket.${bucket}`)}</StatusPill>
+                    </div>
+                    <p className="mt-0.5 font-mono text-[11px] text-clox-faint">
+                      {j.id.slice(0, 8)}
+                      {j.publishedAt
+                        ? ` · ${new Date(j.publishedAt).toLocaleString()}`
+                        : ''}
+                    </p>
+                    <p className="mt-1 font-mono text-xs text-clox-mute">
+                      {j.stopsSummary} · min {j.minVehicleClass}
+                      {j.requiresDg ? ` ${t('market.dgSuffix')}` : ''}
+                      {j.routeFatigueBreakMinutes > 0
+                        ? ` ${t('market.fatigueSuffix', { minutes: j.routeFatigueBreakMinutes })}`
+                        : ''}
+                      {j.estimateNetToCarrierCents != null
+                        ? ` ${t('market.netApprox', { amount: (j.estimateNetToCarrierCents / 100).toFixed(2) })}`
+                        : ''}
+                      {j.rescueDiscountPercent != null && j.rescueDiscountPercent > 0
+                        ? ` · ${t('market.rescueDiscount', { percent: j.rescueDiscountPercent })}`
+                        : ''}
+                      {j.minBidIncGstCents != null
+                        ? ` · ${t('market.minBidHint', { amount: (j.minBidIncGstCents / 100).toFixed(2) })}`
+                        : ''}
+                    </p>
+                  </button>
+                );
+              }}
+            />
           )}
-        />
+        </>
       )}
 
       {jobId && selectedJob ? (

@@ -619,6 +619,19 @@
     "alreadyBid": "पहले से bid की",
     "emptyTitle": "कोई जॉब उपलब्ध नहीं।",
     "emptyHint": "आपके क्षेत्रों और क्षमताओं से मेल खाने वाली खुली जॉब्स यहाँ दिखेंगी।",
+    "emptyFilter": "इस फ़िल्टर से कोई जॉब मेल नहीं खाती।",
+    "filterLabel": "स्थिति के अनुसार जॉब बोर्ड फ़िल्टर करें",
+    "filter": {
+      "all": "सभी",
+      "available": "बिड के लिए खुला",
+      "priority": "प्राथमिकता बचाव",
+      "bid": "पहले से बिड"
+    },
+    "bucket": {
+      "available": "बिड के लिए खुला",
+      "priority": "प्राथमिकता बचाव",
+      "bid": "पहले से बिड"
+    },
     "priorityRescue": "प्राथमिकता बचाव",
     "rescueDiscount": "{{percent}}% कैरियर छूट",
     "minBidHint": "न्यूनतम bid ≈ ${{amount}} (inc GST)",
@@ -727,6 +740,21 @@
     "tripBlocked": "यात्रा अवरुद्ध",
     "tripGateOpen": "यात्रा गेट खुला",
     "empty": "अभी कोई असाइनमेंट नहीं।",
+    "emptyFilter": "इस फ़िल्टर से कोई असाइनमेंट मेल नहीं खाता।",
+    "filterLabel": "स्थिति के अनुसार असाइनमेंट फ़िल्टर करें",
+    "filter": {
+      "all": "सभी",
+      "open": "खुला / आवंटित करें",
+      "awaiting_payment": "भुगतान की प्रतीक्षा",
+      "completed": "पूर्ण",
+      "cancelled": "रद्द"
+    },
+    "bucket": {
+      "open": "खुला — आवंटित करें",
+      "awaiting_payment": "भुगतान की प्रतीक्षा",
+      "completed": "पूर्ण",
+      "cancelled": "रद्द"
+    },
     "exceptionsTitle": "अधिभार अपवाद",
     "exceptionsSubtitle": "आपकी ट्रिप्स पर उठाए गए प्रतीक्षा-समय और भार अधिभार।",
     "assetLine": "वाहन {{vehicle}} · ड्राइवर {{driver}} · यात्रा {{trip}}",

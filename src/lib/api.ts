@@ -162,6 +162,7 @@ export {
   type JobSummary,
   type JobRouteEstimate,
   type MarketBoard,
+  type MarketBoardJob,
   type AcceptProposalResult,
   type CarrierAssignment,
 } from '@/lib/api/jobs';

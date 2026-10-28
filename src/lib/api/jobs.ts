@@ -64,6 +64,16 @@ export type JobSummary = {
     note: string | null;
     openedAt: string;
     escalatedAt: string | null;
+    proposedVehicleId?: string | null;
+    proposedDriverId?: string | null;
+    proposedAt?: string | null;
+    proposedVehicle?: {
+      id: string;
+      registration: string | null;
+      label: string | null;
+      vehicleClass: string | null;
+    } | null;
+    proposedDriver?: { id: string; email: string | null; name: string | null } | null;
   } | null;
   stops: Array<{
     id?: string;
@@ -190,6 +200,13 @@ export function publishJob(id: string) {
 export function acceptProposal(jobId: string, proposalId: string) {
   return http
     .post<AcceptProposalResult>(`/jobs/${jobId}/proposals/${proposalId}/accept`, {})
+    .then((r) => r.data);
+}
+
+/** After SCA / webhook lag — re-read PaymentIntent from Stripe and lock if succeeded. */
+export function syncJobPayment(jobId: string) {
+  return http
+    .post<AcceptProposalResult>(`/payments/jobs/${jobId}/sync`, {})
     .then((r) => r.data);
 }
 

@@ -153,6 +153,7 @@ export {
   updateJobReceiver,
   publishJob,
   acceptProposal,
+  syncJobPayment,
   recommendVehicle,
   previewJobRoute,
   getMarketBoard,
@@ -169,6 +170,8 @@ export {
   listTripExceptions,
   getTripException,
   reassignTripException,
+  approveTripExceptionReplacement,
+  rejectTripExceptionReplacement,
   continueTripException,
   escalateTripException,
   listOpsTripExceptions,
@@ -191,11 +194,18 @@ export {
   tripPodPhoto,
   tripPodFinalize,
   fetchTripPodArtifactBlob,
+  fetchTripDocumentBlob,
+  fetchTripStopDocumentBlob,
+  downloadBlob,
   getSenderTrack,
   getTripPod,
   type TripSummary,
   type SenderTrack,
   type TripPodSummary,
+} from '@/lib/api/trips';
+export type {
+  TripDocumentKind,
+  TripStopDocumentKind,
 } from '@/lib/api/trips';
 export {
   listSenderSurcharges,

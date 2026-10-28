@@ -15,8 +15,11 @@ import {
   useToast,
 } from '@/components/ui';
 import {
+  downloadBlob,
+  fetchTripDocumentBlob,
   getCarrierAssignments,
   getErrorDetail,
+  getTripPod,
   listCarrierDrivers,
   listCarrierExceptions,
   listCarrierVehicles,
@@ -24,6 +27,7 @@ import {
   type CarrierAssignment,
 } from '@/lib/api';
 import type { SurchargeRow } from '@/lib/api/surcharges';
+import type { TripDocumentKind } from '@/lib/api/trips';
 import {
   carrierDriverSelectLabel,
   carrierVehicleSelectLabel,
@@ -40,6 +44,86 @@ function ExceptionBadge({ exc }: { exc: SurchargeRow }) {
     <StatusPill tone={isPending ? 'warn' : 'neutral'}>
       {label} ${(exc.amountIncGstCents / 100).toFixed(2)}
     </StatusPill>
+  );
+}
+
+function AssignmentPodPanel({ tripId }: { tripId: string }) {
+  const { t } = useTranslation('common');
+  const toast = useToast();
+  const pod = useQuery({
+    queryKey: ['trips', 'pod', tripId],
+    queryFn: () => getTripPod(tripId),
+    staleTime: 30_000,
+  });
+
+  const downloadDoc = useMutation({
+    mutationFn: async (kind: TripDocumentKind) => {
+      const blob = await fetchTripDocumentBlob(tripId, kind);
+      const names: Record<TripDocumentKind, string> = {
+        pod: `CLOX-pod-${tripId.slice(0, 8)}.pdf`,
+        'tax-invoice': `CLOX-tax-invoice-${tripId.slice(0, 8)}.pdf`,
+        'run-sheet': `CLOX-run-sheet-${tripId.slice(0, 8)}.pdf`,
+      };
+      downloadBlob(blob, names[kind]);
+    },
+    onError: (err) => toast.error(getErrorDetail(err)),
+  });
+
+  if (pod.isLoading || pod.isError || !pod.data) return null;
+  const drop = pod.data.dropoffs[0];
+  const hasDocs =
+    Boolean(pod.data.podStorageKey) ||
+    Boolean(pod.data.taxInvoiceStorageKey) ||
+    Boolean(pod.data.runSheetStorageKey);
+  if (!drop && !hasDocs) return null;
+
+  return (
+    <div className="mt-3 rounded-clox-md border border-clox-border bg-clox-canvas/40 px-3 py-2">
+      <p className="text-xs font-semibold text-clox-ink">{t('trips.podPanelTitle')}</p>
+      {drop ? (
+        <p className="mt-0.5 text-xs text-clox-mute">
+          {t('trips.podStatusLine', { status: drop.podStatus })}
+          {drop.signerName ? ` · ${drop.signerName}` : ''}
+        </p>
+      ) : null}
+      {hasDocs ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {pod.data.podStorageKey ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={downloadDoc.isPending}
+              onClick={() => downloadDoc.mutate('pod')}
+            >
+              {t('trips.downloadPod')}
+            </Button>
+          ) : null}
+          {pod.data.taxInvoiceStorageKey ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={downloadDoc.isPending}
+              onClick={() => downloadDoc.mutate('tax-invoice')}
+            >
+              {t('trips.downloadTaxInvoice')}
+            </Button>
+          ) : null}
+          {pod.data.runSheetStorageKey ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={downloadDoc.isPending}
+              onClick={() => downloadDoc.mutate('run-sheet')}
+            >
+              {t('trips.downloadRunSheet')}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -255,6 +339,7 @@ export function CarrierAssignmentsPage() {
                     </Button>
                   </div>
                 ) : null}
+                {a.trip?.id ? <AssignmentPodPanel tripId={a.trip.id} /> : null}
               </DataCard>
             );
           }}

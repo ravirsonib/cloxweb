@@ -7,6 +7,7 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { z } from 'zod';
 import {
   acceptProposal,
+  approveTripExceptionReplacement,
   createJob,
   getErrorDetail,
   getSenderJob,
@@ -14,10 +15,14 @@ import {
   previewJobRoute,
   publishJob,
   recommendVehicle,
+  rejectTripExceptionReplacement,
+  syncJobPayment,
   updateJob,
   updateJobReceiver,
+  type AcceptProposalResult,
   type JobSummary,
 } from '@/lib/api';
+import { ScaPaymentConfirm } from '@/components/stripe/ScaPaymentConfirm';
 import {
   Button,
   DataCardList,
@@ -822,30 +827,70 @@ export function JobDetailPage() {
     enabled: role === AppRole.SENDER && Boolean(id),
   });
   const [acceptMsg, setAcceptMsg] = useState<string | null>(null);
+  const [scaChallenge, setScaChallenge] = useState<{
+    clientSecret: string;
+    publishableKey: string;
+  } | null>(null);
 
   const publish = useMutation({
     mutationFn: () => publishJob(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['jobs', id] }),
   });
 
+  const applyAcceptResult = async (res: AcceptProposalResult) => {
+    if (res.paidAndConfirmed) {
+      setScaChallenge(null);
+      setAcceptMsg(
+        `${res.mock ? t('jobs.paidAndLockedMock') : t('jobs.paidAndLocked')}${res.idempotentReplay ? ` · ${t('jobs.idempotentReplay')}` : ''}`,
+      );
+    } else if (
+      res.stripeStatus === 'requires_action' &&
+      res.clientSecret &&
+      res.publishableKey
+    ) {
+      setAcceptMsg(t('jobs.scaRequired'));
+      setScaChallenge({
+        clientSecret: res.clientSecret,
+        publishableKey: res.publishableKey,
+      });
+    } else if (res.clientSecret && !res.publishableKey) {
+      setScaChallenge(null);
+      setAcceptMsg(t('jobs.scaMissingPublishable'));
+    } else {
+      setScaChallenge(null);
+      setAcceptMsg(
+        `${res.message ?? res.paymentStatus}${res.stripeStatus ? ` · ${res.stripeStatus}` : ''}`,
+      );
+    }
+    await qc.invalidateQueries({ queryKey: ['jobs', id] });
+  };
+
+  const toast = useToast();
+
+  const approveReplacement = useMutation({
+    mutationFn: (exceptionId: string) => approveTripExceptionReplacement(exceptionId),
+    onSuccess: async () => {
+      toast.success(t('jobs.exceptionApproveSuccess'));
+      await qc.invalidateQueries({ queryKey: ['jobs', id] });
+    },
+  });
+
+  const rejectReplacement = useMutation({
+    mutationFn: (exceptionId: string) => rejectTripExceptionReplacement(exceptionId),
+    onSuccess: async () => {
+      toast.success(t('jobs.exceptionRejectSuccess'));
+      await qc.invalidateQueries({ queryKey: ['jobs', id] });
+    },
+  });
+
   const accept = useMutation({
     mutationFn: (proposalId: string) => acceptProposal(id, proposalId),
-    onError: (err) => setAcceptMsg(getErrorDetail(err)),
-    onSuccess: async (res) => {
-      if (res.paidAndConfirmed) {
-        setAcceptMsg(
-          `${res.mock ? t('jobs.paidAndLockedMock') : t('jobs.paidAndLocked')}${res.idempotentReplay ? ` · ${t('jobs.idempotentReplay')}` : ''}`,
-        );
-      } else if (res.clientSecret) {
-        setAcceptMsg(
-          `${t('jobs.scaRequired')}: ${res.clientSecret}${res.publishableKey ? ` · pk=${res.publishableKey}` : ''}`,
-        );
-      } else {
-        setAcceptMsg(
-          `${res.message ?? res.paymentStatus}${res.stripeStatus ? ` · ${res.stripeStatus}` : ''}`,
-        );
-      }
-      await qc.invalidateQueries({ queryKey: ['jobs', id] });
+    onError: (err) => {
+      setScaChallenge(null);
+      setAcceptMsg(getErrorDetail(err));
+    },
+    onSuccess: (res) => {
+      void applyAcceptResult(res);
     },
   });
 
@@ -872,14 +917,83 @@ export function JobDetailPage() {
         {j.status} · {j.pricingModel} · min {j.minVehicleClass} · rec {j.recommendedVehicleClass}
       </p>
       {j.openException ? (
-        <Notice tone="warn" className="mt-4" title={t('jobs.exceptionBannerTitle')}>
+        <Notice
+          tone={
+            j.openException.status === 'AWAITING_SENDER_APPROVAL' ? 'info' : 'warn'
+          }
+          className="mt-4"
+          title={
+            j.openException.status === 'AWAITING_SENDER_APPROVAL'
+              ? t('jobs.exceptionApproveTitle')
+              : t('jobs.exceptionBannerTitle')
+          }
+        >
           <p className="text-sm">
             {j.openException.kind} · {j.openException.phase} · {j.openException.status}
           </p>
           {j.openException.note ? (
             <p className="mt-1 text-xs text-clox-mute">{j.openException.note}</p>
           ) : null}
-          <p className="mt-1 text-xs text-clox-faint">{t('jobs.exceptionBannerHint')}</p>
+          {j.openException.status === 'AWAITING_SENDER_APPROVAL' ? (
+            <>
+              {(j.openException.proposedVehicle || j.openException.proposedDriver) && (
+                <p className="mt-2 text-sm font-medium text-clox-ink">
+                  {t('jobs.exceptionProposedCrew', {
+                    vehicle:
+                      j.openException.proposedVehicle?.registration ??
+                      j.openException.proposedVehicle?.label ??
+                      t('dash'),
+                    driver:
+                      j.openException.proposedDriver?.name ??
+                      j.openException.proposedDriver?.email ??
+                      t('dash'),
+                  })}
+                </p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="cta"
+                  disabled={approveReplacement.isPending || rejectReplacement.isPending}
+                  onClick={() => approveReplacement.mutate(j.openException!.id)}
+                >
+                  {approveReplacement.isPending
+                    ? t('loading')
+                    : t('jobs.exceptionApprove')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={approveReplacement.isPending || rejectReplacement.isPending}
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: t('jobs.exceptionReject'),
+                      description: t('jobs.exceptionRejectConfirm'),
+                      confirmLabel: t('jobs.exceptionReject'),
+                      tone: 'destructive',
+                    });
+                    if (ok) rejectReplacement.mutate(j.openException!.id);
+                  }}
+                >
+                  {rejectReplacement.isPending
+                    ? t('loading')
+                    : t('jobs.exceptionReject')}
+                </Button>
+              </div>
+              {approveReplacement.isError ? (
+                <Notice tone="error" className="mt-2">
+                  {getErrorDetail(approveReplacement.error)}
+                </Notice>
+              ) : null}
+              {rejectReplacement.isError ? (
+                <Notice tone="error" className="mt-2">
+                  {getErrorDetail(rejectReplacement.error)}
+                </Notice>
+              ) : null}
+            </>
+          ) : (
+            <p className="mt-1 text-xs text-clox-faint">{t('jobs.exceptionBannerHint')}</p>
+          )}
         </Notice>
       ) : null}
       <ul className="mt-4 space-y-1 text-sm text-clox-mute">
@@ -1018,6 +1132,19 @@ export function JobDetailPage() {
           <Link to={`/jobs/${j.id}/track`} className="text-sm text-clox-orange hover:underline">
             {t('jobs.openLiveTrack')}
           </Link>
+        </div>
+      ) : null}
+      {scaChallenge ? (
+        <div className="mt-4">
+          <ScaPaymentConfirm
+            clientSecret={scaChallenge.clientSecret}
+            publishableKey={scaChallenge.publishableKey}
+            onCancel={() => setScaChallenge(null)}
+            onSucceeded={async () => {
+              const synced = await syncJobPayment(id);
+              await applyAcceptResult(synced);
+            }}
+          />
         </div>
       ) : null}
       {acceptMsg ? (

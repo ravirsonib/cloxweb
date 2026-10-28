@@ -13,6 +13,10 @@ export type TripSummary = {
   breakStartedAt?: string | null;
   suggestedBreakMinutes?: number;
   startedAt: string | null;
+  odometerStartKm?: number | null;
+  odometerEndKm?: number | null;
+  odometerGpsDistanceKm?: number | null;
+  odometerDiscrepancyFlag?: boolean;
   taxInvoiceStorageKey?: string | null;
   runSheetStorageKey?: string | null;
   gates: {
@@ -89,6 +93,7 @@ export type SenderTrack = {
   visible: boolean;
   message?: string;
   code?: string;
+  tripId?: string;
   onBreak?: boolean;
   etaPaused?: boolean;
   tripStatus?: string;
@@ -126,6 +131,7 @@ export type SenderTrack = {
   }> | null;
   taxInvoiceStorageKey?: string | null;
   runSheetStorageKey?: string | null;
+  podStorageKey?: string | null;
 };
 
 export type TripPodSummary = {
@@ -169,8 +175,13 @@ export function tripMassCheck(tripId: string, actualMassKg: number) {
     .then((r) => r.data);
 }
 
-export function tripStart(tripId: string) {
-  return http.post<TripSummary>(`/trips/${tripId}/start`, { online: true }).then((r) => r.data);
+export function tripStart(tripId: string, odometerStartKm: number) {
+  return http
+    .post<TripSummary>(`/trips/${tripId}/start`, {
+      online: true,
+      odometerStartKm,
+    })
+    .then((r) => r.data);
 }
 
 export function tripBreak(tripId: string, onBreak: boolean) {
@@ -222,11 +233,18 @@ export function tripPodPhoto(
     .then((r) => r.data);
 }
 
-export function tripPodFinalize(tripId: string, jobStopId: string) {
+export function tripPodFinalize(
+  tripId: string,
+  jobStopId: string,
+  opts?: { odometerEndKm?: number },
+) {
   return http
     .post<TripSummary>(
       `/trips/${tripId}/pod/finalize`,
-      { jobStopId },
+      {
+        jobStopId,
+        ...(opts?.odometerEndKm != null ? { odometerEndKm: opts.odometerEndKm } : {}),
+      },
       // PDF generation + 3 SMTP sends with attachments often exceeds default 30s.
       { timeout: 120_000 },
     )
@@ -254,4 +272,39 @@ export function getSenderTrack(jobId: string) {
 
 export function getTripPod(tripId: string) {
   return http.get<TripPodSummary>(`/trips/${tripId}/pod`).then((r) => r.data);
+}
+
+export type TripDocumentKind = 'pod' | 'tax-invoice' | 'run-sheet';
+export type TripStopDocumentKind = 'pod-package' | 'signature-pdf';
+
+/** Authenticated PDF download for trip completion docs. */
+export async function fetchTripDocumentBlob(
+  tripId: string,
+  kind: TripDocumentKind,
+): Promise<Blob> {
+  const response = await http.get<Blob>(`/trips/${tripId}/documents/${kind}`, {
+    responseType: 'blob',
+  });
+  return response.data;
+}
+
+export async function fetchTripStopDocumentBlob(
+  tripId: string,
+  jobStopId: string,
+  kind: TripStopDocumentKind,
+): Promise<Blob> {
+  const response = await http.get<Blob>(
+    `/trips/${tripId}/documents/stops/${jobStopId}/${kind}`,
+    { responseType: 'blob' },
+  );
+  return response.data;
+}
+
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }

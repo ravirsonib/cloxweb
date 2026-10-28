@@ -1,14 +1,22 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useParams } from 'react-router-dom';
-import { getErrorDetail, getSenderTrack, listSenderJobs } from '@/lib/api';
+import {
+  downloadBlob,
+  fetchTripDocumentBlob,
+  getErrorDetail,
+  getSenderTrack,
+  listSenderJobs,
+} from '@/lib/api';
+import type { TripDocumentKind } from '@/lib/api/trips';
 import { LoadingBlock } from '@/components/status-blocks';
-import { Notice } from '@/components/ui';
+import { Button, Notice, useToast } from '@/components/ui';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
 export function SenderTrackPage() {
   const { t } = useTranslation('common');
+  const toast = useToast();
   const { jobId = '' } = useParams();
   const role = useAuthStore((s) => s.role);
 
@@ -19,10 +27,29 @@ export function SenderTrackPage() {
     refetchInterval: 5000,
   });
 
+  const downloadDoc = useMutation({
+    mutationFn: async (kind: TripDocumentKind) => {
+      const tripId = track.data?.tripId;
+      if (!tripId) throw new Error('No trip');
+      const blob = await fetchTripDocumentBlob(tripId, kind);
+      const names: Record<TripDocumentKind, string> = {
+        pod: `CLOX-pod-${jobId.slice(0, 8)}.pdf`,
+        'tax-invoice': `CLOX-tax-invoice-${jobId.slice(0, 8)}.pdf`,
+        'run-sheet': `CLOX-run-sheet-${jobId.slice(0, 8)}.pdf`,
+      };
+      downloadBlob(blob, names[kind]);
+    },
+    onError: (err) => toast.error(getErrorDetail(err)),
+  });
+
   if (role !== AppRole.SENDER) return <Navigate to="/" replace />;
   if (track.isLoading) return <LoadingBlock label={t('track.loading')} />;
 
   const data = track.data;
+  const hasDocs =
+    Boolean(data?.podStorageKey) ||
+    Boolean(data?.taxInvoiceStorageKey) ||
+    Boolean(data?.runSheetStorageKey);
 
   return (
     <div>
@@ -84,18 +111,45 @@ export function SenderTrackPage() {
         </div>
       ) : null}
 
-      {data?.stopsProgress?.some((r) => r.podStatus === 'FINALIZED') ? (
+      {data?.stopsProgress?.some((r) => r.podStatus === 'FINALIZED') || hasDocs ? (
         <Notice tone="success" className="mt-4" title={t('trips.podFinalized')}>
-          {(data.taxInvoiceStorageKey || data.runSheetStorageKey) && (
-            <ul className="mt-1 space-y-1 font-mono text-xs">
+          {data?.tripId && hasDocs ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {data.podStorageKey ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={downloadDoc.isPending}
+                  onClick={() => downloadDoc.mutate('pod')}
+                >
+                  {t('trips.downloadPod')}
+                </Button>
+              ) : null}
               {data.taxInvoiceStorageKey ? (
-                <li>{t('trips.taxInvoiceKey', { key: data.taxInvoiceStorageKey })}</li>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={downloadDoc.isPending}
+                  onClick={() => downloadDoc.mutate('tax-invoice')}
+                >
+                  {t('trips.downloadTaxInvoice')}
+                </Button>
               ) : null}
               {data.runSheetStorageKey ? (
-                <li>{t('trips.runSheetKey', { key: data.runSheetStorageKey })}</li>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={downloadDoc.isPending}
+                  onClick={() => downloadDoc.mutate('run-sheet')}
+                >
+                  {t('trips.downloadRunSheet')}
+                </Button>
               ) : null}
-            </ul>
-          )}
+            </div>
+          ) : null}
         </Notice>
       ) : null}
 

@@ -125,6 +125,8 @@ export function DriverTripDetailPage() {
   const confirm = useConfirm();
   const [msg, setMsg] = useState<string | null>(null);
   const [massKg, setMassKg] = useState('');
+  const [odometerStartKm, setOdometerStartKm] = useState('');
+  const [odometerEndKm, setOdometerEndKm] = useState('');
   const [showReport, setShowReport] = useState(false);
   const [reportKind, setReportKind] = useState<TripExceptionKind>('DRIVER_UNAVAILABLE');
   const [reportReason, setReportReason] = useState('');
@@ -319,7 +321,7 @@ export function DriverTripDetailPage() {
   });
 
   const start = useMutation({
-    mutationFn: () => tripStart(tripId),
+    mutationFn: () => tripStart(tripId, Number(odometerStartKm)),
     onSuccess: async () => {
       setMsg(t('trips.msgTripStarted'));
       await refresh();
@@ -423,7 +425,10 @@ export function DriverTripDetailPage() {
   });
 
   const podFinalize = useMutation({
-    mutationFn: (jobStopId: string) => tripPodFinalize(tripId, jobStopId),
+    mutationFn: (payload: { jobStopId: string; odometerEndKm?: number }) =>
+      tripPodFinalize(tripId, payload.jobStopId, {
+        odometerEndKm: payload.odometerEndKm,
+      }),
     onSuccess: async () => {
       setMsg(t('trips.podFinalized'));
       await refresh();
@@ -529,11 +534,21 @@ export function DriverTripDetailPage() {
     Boolean(tripData.gates.pendingSurcharges) ||
     (tripData.surcharges ?? []).some((s) => s.status === 'PENDING_PAYMENT');
   const podBlockedBySurcharge = hasPendingSurcharges;
+  const isLastDropoffToFinalize =
+    Boolean(activePodStopId) &&
+    dropoffStops.every((s) => {
+      if (!s.id || s.id === activePodStopId) return true;
+      return progressByStop.get(s.id)?.podStatus === 'FINALIZED';
+    });
+  const endOdoOk =
+    !isLastDropoffToFinalize ||
+    (Boolean(odometerEndKm) && Number(odometerEndKm) > 0);
   const canFinalizePod =
     Boolean(activePodStopId) &&
     !podBlockedBySurcharge &&
     (activePodStatus === 'SIGNED' || Boolean(activePodStop?.signedAt)) &&
-    activePhotoCount >= 1;
+    activePhotoCount >= 1 &&
+    endOdoOk;
   /**
    * Lock break / location / notify / report / POD capture while finalize is in
    * flight, and after POD finalize (or trip end).
@@ -713,18 +728,27 @@ export function DriverTripDetailPage() {
             </Button>
           </div>
 
-          <div>
+          <div className="space-y-3">
             <h2 className="mb-2 font-display font-semibold text-clox-ink">
               3. {t('trips.startTripHeading')}
             </h2>
+            <Field
+              type="number"
+              label={t('trips.odometerStartLabel')}
+              hint={t('trips.odometerStartHint')}
+              value={odometerStartKm}
+              onChange={(e) => setOdometerStartKm(e.target.value)}
+            />
             <LockedCta
-              locked={startLocked}
+              locked={startLocked || !odometerStartKm || Number(odometerStartKm) <= 0}
               reason={
                 startLocked
                   ? t('trips.startLockedReason', {
                       missing: startLockReason(tripData.gates, t),
                     })
-                  : undefined
+                  : !odometerStartKm || Number(odometerStartKm) <= 0
+                    ? t('trips.odometerStartRequired')
+                    : undefined
               }
               variant="cta"
               size="block"
@@ -1021,6 +1045,16 @@ export function DriverTripDetailPage() {
                       />
                     </label>
                     <p className="basis-full text-xs text-clox-mute">{t('trips.podPhotoHint')}</p>
+                    {isLastDropoffToFinalize ? (
+                      <Field
+                        className="basis-full"
+                        type="number"
+                        label={t('trips.odometerEndLabel')}
+                        hint={t('trips.odometerEndHint')}
+                        value={odometerEndKm}
+                        onChange={(e) => setOdometerEndKm(e.target.value)}
+                      />
+                    ) : null}
                     <Button
                       type="button"
                       variant="cta"
@@ -1028,7 +1062,12 @@ export function DriverTripDetailPage() {
                       disabled={podFinalize.isPending || !canFinalizePod}
                       onClick={() => {
                         if (!activePodStopId || podFinalize.isPending) return;
-                        podFinalize.mutate(activePodStopId);
+                        podFinalize.mutate({
+                          jobStopId: activePodStopId,
+                          odometerEndKm: isLastDropoffToFinalize
+                            ? Number(odometerEndKm)
+                            : undefined,
+                        });
                       }}
                     >
                       {podFinalize.isPending ? t('loading') : t('trips.podFinalize')}

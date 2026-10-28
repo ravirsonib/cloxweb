@@ -35,6 +35,16 @@ export type TripExceptionRow = {
   } | null;
   vehicle: { id: string; registration: string | null; vehicleClass: string | null } | null;
   driver: { id: string; email: string | null; name: string | null } | null;
+  proposedVehicleId?: string | null;
+  proposedDriverId?: string | null;
+  proposedAt?: string | null;
+  proposedVehicle?: {
+    id: string;
+    registration: string | null;
+    label: string | null;
+    vehicleClass: string | null;
+  } | null;
+  proposedDriver?: { id: string; email: string | null; name: string | null } | null;
   marketplaceRelistSlaMs?: number;
 };
 
@@ -75,10 +85,35 @@ export function reassignTripException(
   payload: { vehicleId: string; driverId: string; note?: string },
 ) {
   return http
+    .post<{
+      exception: TripExceptionRow;
+      proposal?: {
+        status: string;
+        vehicleId: string;
+        driverId: string;
+        message: string;
+      };
+      reassignment?: unknown;
+    }>(`/exceptions/${id}/reassign`, payload)
+    .then((r) => r.data);
+}
+
+export function approveTripExceptionReplacement(id: string, payload?: { note?: string }) {
+  return http
     .post<{ exception: TripExceptionRow; reassignment: unknown }>(
-      `/exceptions/${id}/reassign`,
-      payload,
+      `/exceptions/${id}/approve-replacement`,
+      payload ?? {},
     )
+    .then((r) => r.data);
+}
+
+export function rejectTripExceptionReplacement(id: string, payload?: { note?: string }) {
+  return http
+    .post<{
+      exception: TripExceptionRow;
+      cancelled: boolean;
+      refund: { success?: boolean; refundId?: string; message?: string } | null;
+    }>(`/exceptions/${id}/reject-replacement`, payload ?? {})
     .then((r) => r.data);
 }
 

@@ -532,59 +532,157 @@ function ConnectStep({
   onDone: () => Promise<CarrierOnboarding | void>;
 }) {
   const { t } = useTranslation();
-  const [info, setInfo] = useState<string | null>(null);
+  const [stripeUrl, setStripeUrl] = useState<string | null>(null);
+  const [setupStarted, setSetupStarted] = useState(false);
+
+  const beforeItems = [
+    t('carrierOnboarding.connectBeforeItem1'),
+    t('carrierOnboarding.connectBeforeItem2'),
+    t('carrierOnboarding.connectBeforeItem3'),
+    t('carrierOnboarding.connectBeforeItem4'),
+    t('carrierOnboarding.connectBeforeItem5'),
+  ];
+  const howSteps = mock
+    ? [
+        t('carrierOnboarding.connectMockHow1'),
+        t('carrierOnboarding.connectMockHow2'),
+        t('carrierOnboarding.connectMockHow3'),
+      ]
+    : [
+        t('carrierOnboarding.connectHow1'),
+        t('carrierOnboarding.connectHow2'),
+        t('carrierOnboarding.connectHow3'),
+        t('carrierOnboarding.connectHow4'),
+        t('carrierOnboarding.connectHow5'),
+        t('carrierOnboarding.connectHow6'),
+        t('carrierOnboarding.connectHow7'),
+      ];
+
   const setup = useMutation({
     mutationFn: () => setupCarrierConnect(),
     onSuccess: (data) => {
-      setInfo(
-        data.mock
-          ? t('carrierOnboarding.mockConnect', { accountId: data.accountId })
-          : t('carrierOnboarding.openOnboarding', { url: data.url }),
-      );
-      if (!data.mock && data.url) window.open(data.url, '_blank');
+      setSetupStarted(true);
+      if (data.mock) {
+        setStripeUrl(null);
+        return;
+      }
+      setStripeUrl(data.url);
+      const opened = window.open(data.url, '_blank', 'noopener,noreferrer');
+      if (!opened) {
+        // Pop-up blocked — keep the on-page link so the carrier can open it manually.
+        setStripeUrl(data.url);
+      }
     },
   });
   const confirm = useMutation({
     mutationFn: () => confirmCarrierConnect(),
     onSuccess: () => {
-      setInfo(null);
       void onDone();
     },
   });
+
   return (
-    <div className="mt-8 space-y-4">
-      <h2 className="text-lg font-semibold">{t('carrierOnboarding.connectTitle')}</h2>
-      <p className="text-sm text-clox-mute">
-        {mock
-          ? t('carrierOnboarding.connectMockHint')
-          : t('carrierOnboarding.connectLiveHint')}
-      </p>
+    <div className="mt-8 space-y-5">
+      <div>
+        <h2 className="font-display text-lg font-semibold">
+          {t('carrierOnboarding.connectTitle')}
+        </h2>
+        <p className="mt-2 text-sm text-clox-mute">
+          {mock
+            ? t('carrierOnboarding.connectMockIntro')
+            : t('carrierOnboarding.connectIntro')}
+        </p>
+      </div>
+
+      {!mock ? (
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold text-clox-ink">
+            {t('carrierOnboarding.connectBeforeTitle')}
+          </h3>
+          <ul className="list-disc space-y-2 pl-5 text-sm text-clox-mute">
+            {beforeItems.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold text-clox-ink">
+          {t('carrierOnboarding.connectHowTitle')}
+        </h3>
+        <ol className="list-decimal space-y-2.5 pl-5 text-sm text-clox-mute">
+          {howSteps.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ol>
+      </div>
+
+      {!mock ? (
+        <Notice tone="info" title={t('carrierOnboarding.connectTipTitle')}>
+          <p className="text-sm">{t('carrierOnboarding.connectTipBody')}</p>
+        </Notice>
+      ) : (
+        <Notice tone="info">{t('carrierOnboarding.connectMockHint')}</Notice>
+      )}
+
       {(setup.isError || confirm.isError) && (
         <Notice tone="error">{getErrorDetail(setup.error ?? confirm.error)}</Notice>
       )}
-      {info ? <Notice tone="success">{info}</Notice> : null}
+
+      {setupStarted && !mock ? (
+        <Notice tone="success" title={t('carrierOnboarding.connectOpenedTitle')}>
+          <p className="text-sm">{t('carrierOnboarding.connectOpenedBody')}</p>
+          {stripeUrl ? (
+            <p className="mt-2 text-sm">
+              <a
+                href={stripeUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-clox-orange underline"
+              >
+                {t('carrierOnboarding.connectOpenLinkAgain')}
+              </a>
+            </p>
+          ) : null}
+        </Notice>
+      ) : null}
+
+      {setupStarted && mock ? (
+        <Notice tone="success">{t('carrierOnboarding.mockConnectReady')}</Notice>
+      ) : null}
+
       <div className="flex flex-wrap gap-2">
         <Button
-          variant="secondary"
+          variant={setupStarted ? 'secondary' : 'cta'}
           disabled={setup.isPending}
           onClick={() => {
             confirm.reset();
             setup.mutate();
           }}
         >
-          {t('carrierOnboarding.createConnectAccount')}
+          {setup.isPending
+            ? t('carrierOnboarding.connectOpening')
+            : setupStarted
+              ? t('carrierOnboarding.createConnectAccountAgain')
+              : t('carrierOnboarding.createConnectAccount')}
         </Button>
         <Button
-          variant="cta"
-          disabled={confirm.isPending}
+          variant={setupStarted ? 'cta' : 'secondary'}
+          disabled={confirm.isPending || !setupStarted}
           onClick={() => {
             setup.reset();
             confirm.mutate();
           }}
         >
-          {t('carrierOnboarding.confirmPayoutsReady')}
+          {confirm.isPending
+            ? t('carrierOnboarding.connectConfirming')
+            : t('carrierOnboarding.confirmPayoutsReady')}
         </Button>
       </div>
+      {!setupStarted ? (
+        <p className="text-xs text-clox-faint">{t('carrierOnboarding.connectConfirmHint')}</p>
+      ) : null}
     </div>
   );
 }

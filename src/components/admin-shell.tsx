@@ -105,6 +105,24 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           {t('nav.platformSettings')}
         </SidebarLink>
       ) : null}
+      {isSuper ? (
+        <SidebarLink
+          to="/revenue-split"
+          icon={navIconForPath('/revenue-split')}
+          onNavigate={onNavigate}
+        >
+          {t('nav.revenueSplit')}
+        </SidebarLink>
+      ) : null}
+      {isSuper ? (
+        <SidebarLink
+          to="/partner-performance"
+          icon={navIconForPath('/partner-performance')}
+          onNavigate={onNavigate}
+        >
+          {t('nav.partnerPerformance')}
+        </SidebarLink>
+      ) : null}
 
       {/* Carrier */}
       {role === AppRole.TRANSPORT_COMPANY ? (

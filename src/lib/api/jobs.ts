@@ -20,6 +20,11 @@ export type JobSummary = {
   recommendedVehicleClass: string | null;
   chargeableWeightKg: number | null;
   requiresDg: boolean;
+  createdAt?: string;
+  publishedAt?: string | null;
+  pickupAt?: string | null;
+  /** Trip completion time when the job finished. */
+  completedAt?: string | null;
   route: {
     distanceKm: number | null;
     durationMinutes: number | null;
@@ -34,7 +39,7 @@ export type JobSummary = {
   };
   openProposalCount?: number;
   editability?: { mode: JobEditMode; reason: string };
-  trip?: { id: string; status: string } | null;
+  trip?: { id: string; status: string; completedAt?: string | null } | null;
   proposals?: Array<{
     id: string;
     status: string;
@@ -143,10 +148,12 @@ export type MarketBoardJob = {
   minVehicleClass: string | null;
   requiresDg: boolean;
   requiresReefer: boolean;
+  requiresOversize?: boolean;
   chargeableWeightKg?: number | null;
   estimateIncGstCents: number | null;
   estimateNetToCarrierCents: number | null;
   routeDistanceKm: number | null;
+  routeDurationMinutes?: number | null;
   routeFatigueBreakMinutes: number;
   billableHours: number | null;
   marketplacePriority?: boolean;

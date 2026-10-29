@@ -42,6 +42,8 @@ import { SenderRegisterPage } from '@/pages/sender-register-page';
 import { SenderOnboardingPage } from '@/pages/sender-onboarding-page';
 import { SurchargesPage } from '@/pages/surcharges-page';
 import { PlatformSettingsPage } from '@/pages/platform-settings-page';
+import { RevenueSplitSettingsPage } from '@/pages/revenue-split-settings-page';
+import { PartnerPerformancePage } from '@/pages/partner-performance-page';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const accessToken = useAuthStore((state) => state.accessToken);
@@ -340,6 +342,22 @@ export function AppRouter() {
           element={
             <SuperOnly>
               <PlatformSettingsPage />
+            </SuperOnly>
+          }
+        />
+        <Route
+          path="/revenue-split"
+          element={
+            <SuperOnly>
+              <RevenueSplitSettingsPage />
+            </SuperOnly>
+          }
+        />
+        <Route
+          path="/partner-performance"
+          element={
+            <SuperOnly>
+              <PartnerPerformancePage />
             </SuperOnly>
           }
         />

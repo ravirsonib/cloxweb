@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
@@ -25,19 +25,30 @@ import {
 import { ScaPaymentConfirm } from '@/components/stripe/ScaPaymentConfirm';
 import {
   Button,
+  ChoiceCheck,
   DataCardList,
   DataTable,
   Field,
   Notice,
   RadioCardGroup,
   ResponsiveDataView,
+  StatusFilterChips,
+  StatusPill,
+  StepChips,
   ViewModeToggle,
-  dataCardClassName,
   useConfirm,
   useDataViewMode,
   useToast,
 } from '@/components/ui';
-import { LoadingBlock } from '@/components/status-blocks';
+import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
+import { cn } from '@/lib/cn';
+import {
+  countByBucket,
+  filterAndSortByBucket,
+  statusAccentClass,
+  type ListStatusTone,
+} from '@/lib/status-list';
+import { jobStatusTone } from '@/lib/status-tone';
 import {
   MAX_JOB_CHARGEABLE_WEIGHT_KG,
   MAX_JOB_DEAD_WEIGHT_KG,
@@ -50,25 +61,170 @@ import {
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
+type SenderJobBucket =
+  | 'draft'
+  | 'bidding'
+  | 'assigned'
+  | 'in_transit'
+  | 'completed'
+  | 'closed';
+type SenderJobFilter = 'all' | SenderJobBucket;
+
+const SENDER_JOB_FILTERS = [
+  'all',
+  'draft',
+  'bidding',
+  'assigned',
+  'in_transit',
+  'completed',
+  'closed',
+] as const satisfies readonly SenderJobFilter[];
+
+const SENDER_JOB_SORT: Record<SenderJobBucket, number> = {
+  bidding: 0,
+  assigned: 1,
+  in_transit: 2,
+  draft: 3,
+  completed: 4,
+  closed: 5,
+};
+
+const SENDER_JOB_TONE: Record<SenderJobBucket, ListStatusTone> = {
+  draft: 'neutral',
+  bidding: 'warn',
+  assigned: 'info',
+  in_transit: 'info',
+  completed: 'ok',
+  closed: 'danger',
+};
+
+function senderJobBucket(job: JobSummary): SenderJobBucket {
+  switch (job.status) {
+    case 'DRAFT':
+      return 'draft';
+    case 'PUBLISHED':
+    case 'BIDDING':
+      return 'bidding';
+    case 'ASSIGNED':
+      return 'assigned';
+    case 'IN_TRANSIT':
+      return 'in_transit';
+    case 'COMPLETED':
+      return 'completed';
+    case 'CANCELLED':
+    case 'EXPIRED':
+    default:
+      return 'closed';
+  }
+}
+
+function formatWhen(value: string | null | undefined) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString();
+}
+
 export function JobsListPage() {
   const { t } = useTranslation('common');
   const role = useAuthStore((s) => s.role);
   const [viewMode, setViewMode] = useDataViewMode('jobs', 'list');
+  const [statusFilter, setStatusFilter] = useState<SenderJobFilter>('all');
   const jobs = useQuery({
     queryKey: ['jobs', 'list'],
     queryFn: () => listSenderJobs(),
     enabled: role === AppRole.SENDER,
   });
 
+  const items = jobs.data ?? [];
+  const filterCounts = useMemo(
+    () => countByBucket(items, senderJobBucket, SENDER_JOB_FILTERS),
+    [items],
+  );
+  const filteredItems = useMemo(() => {
+    const sorted = filterAndSortByBucket(
+      items,
+      senderJobBucket,
+      statusFilter,
+      SENDER_JOB_SORT,
+    );
+    // Within the same status bucket, jobs with open bids float first.
+    return [...sorted].sort((a, b) => {
+      const bucketDiff =
+        SENDER_JOB_SORT[senderJobBucket(a)] - SENDER_JOB_SORT[senderJobBucket(b)];
+      if (bucketDiff !== 0) return bucketDiff;
+      const aBids = a.openProposalCount ?? 0;
+      const bBids = b.openProposalCount ?? 0;
+      if (aBids > 0 !== bBids > 0) return aBids > 0 ? -1 : 1;
+      return bBids - aBids;
+    });
+  }, [items, statusFilter]);
+
   if (role !== AppRole.SENDER) return <Navigate to="/" replace />;
   if (jobs.isLoading) return <LoadingBlock label={t('jobs.loadingList')} />;
 
-  const items = jobs.data ?? [];
+  const jobCard = (j: JobSummary) => {
+    const bucket = senderJobBucket(j);
+    const created = formatWhen(j.createdAt);
+    const completed = formatWhen(j.completedAt);
+    const openBids = j.openProposalCount ?? 0;
+    const hasOpenBids = openBids > 0;
+    return (
+      <Link
+        to={`/jobs/${j.id}`}
+        className={cn(
+          'block h-full rounded-clox-md border p-4 shadow-clox-1 transition hover:border-clox-orange',
+          statusAccentClass(SENDER_JOB_TONE[bucket]),
+          hasOpenBids && 'ring-1 ring-[var(--status-warn)]/50',
+        )}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="truncate font-semibold text-clox-ink">
+              {j.title ?? j.id.slice(0, 8)}
+            </p>
+            <p className="mt-0.5 font-mono text-[11px] text-clox-faint">
+              {j.id.slice(0, 8)} · {j.pricingModel}
+              {j.minVehicleClass ? ` · min ${j.minVehicleClass}` : ''}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <StatusPill tone={jobStatusTone(j.status)}>
+              {t(`jobStatuses.${j.status}`, { defaultValue: j.status })}
+            </StatusPill>
+            {hasOpenBids ? (
+              <StatusPill tone="warn">
+                {t('jobs.bidsWaiting', { count: openBids })}
+              </StatusPill>
+            ) : bucket === 'bidding' ? (
+              <StatusPill tone="neutral">{t('jobs.noBidsYetShort')}</StatusPill>
+            ) : null}
+          </div>
+        </div>
+        <p className="mt-2 text-sm text-clox-mute">
+          {j.estimate.incGstCents != null
+            ? `$${(j.estimate.incGstCents / 100).toFixed(2)}`
+            : t('dash')}
+        </p>
+        <div className="mt-2 space-y-0.5 text-[11px] text-clox-faint">
+          {created ? (
+            <p>{t('jobs.createdAt', { when: created })}</p>
+          ) : null}
+          {completed ? (
+            <p>{t('jobs.completedAt', { when: completed })}</p>
+          ) : null}
+        </div>
+      </Link>
+    );
+  };
 
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-2xl font-bold text-clox-ink">{t('jobs.listTitle')}</h1>
+        <div>
+          <h1 className="font-display text-2xl font-bold text-clox-ink">{t('jobs.listTitle')}</h1>
+          <p className="mt-1 text-sm text-clox-mute">{t('jobs.listSubtitle')}</p>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <ViewModeToggle value={viewMode} onChange={setViewMode} className="hidden sm:inline-flex" />
           <Link to="/jobs/new" className="clox-btn clox-btn-cta">
@@ -86,60 +242,70 @@ export function JobsListPage() {
         <ViewModeToggle value={viewMode} onChange={setViewMode} />
       </div>
 
-      {(() => {
-        const jobCard = (j: (typeof items)[number]) => (
-          <Link to={`/jobs/${j.id}`} className={`block h-full ${dataCardClassName}`}>
-            <p className="font-semibold text-clox-ink">{j.title ?? j.id.slice(0, 8)}</p>
-            <p className="mt-1 font-mono text-xs text-clox-mute">
-              {j.status} · {j.pricingModel} · min {j.minVehicleClass} ·{' '}
-              {j.estimate.incGstCents != null
-                ? `$${(j.estimate.incGstCents / 100).toFixed(2)}`
-                : t('dash')}
-              {(j.openProposalCount ?? 0) > 0
-                ? ` · ${t('jobs.openBidsCount', { count: j.openProposalCount })}`
-                : ''}
-            </p>
-          </Link>
-        );
+      {items.length > 0 ? (
+        <StatusFilterChips
+          className="mt-4"
+          options={SENDER_JOB_FILTERS}
+          value={statusFilter}
+          counts={filterCounts}
+          onChange={setStatusFilter}
+          getLabel={(key) => t(`jobs.filter.${key}`)}
+          aria-label={t('jobs.filterLabel')}
+        />
+      ) : null}
 
-        if (viewMode === 'grid') {
-          return (
+      {items.length === 0 ? (
+        <div className="mt-6">
+          <EmptyBlock title={t('jobs.emptyTitle')} description={t('jobs.emptyHint')} />
+        </div>
+      ) : filteredItems.length === 0 ? (
+        <p className="mt-6 text-sm text-clox-faint">{t('jobs.emptyFilter')}</p>
+      ) : viewMode === 'grid' ? (
+        <DataCardList
+          className="mt-6"
+          items={filteredItems}
+          getKey={(j) => j.id}
+          mode="grid"
+          renderItem={jobCard}
+        />
+      ) : (
+        <ResponsiveDataView
+          className="mt-6"
+          cards={
             <DataCardList
-              className="mt-6"
-              items={items}
+              items={filteredItems}
               getKey={(j) => j.id}
-              mode="grid"
+              mode="list"
               renderItem={jobCard}
             />
-          );
-        }
-
-        return (
-          <ResponsiveDataView
-            className="mt-6"
-            cards={
-              <DataCardList
-                items={items}
-                getKey={(j) => j.id}
-                mode="list"
-                renderItem={jobCard}
-              />
-            }
-            table={
-              <DataTable
-                headers={[
-                  t('jobs.colTitle'),
-                  t('admin.colStatus'),
-                  t('jobs.colPricing'),
-                  t('jobs.colClass'),
-                  t('jobs.colEstimate'),
-                  t('jobs.colBids'),
-                ]}
-              >
-                {items.map((j) => (
+          }
+          table={
+            <DataTable
+              minWidthClassName="min-w-[56rem]"
+              headers={[
+                t('jobs.colTitle'),
+                t('jobs.colStatus'),
+                t('jobs.colPricing'),
+                t('jobs.colClass'),
+                t('jobs.colEstimate'),
+                t('jobs.colBids'),
+                t('jobs.colCreated'),
+                t('jobs.colCompleted'),
+              ]}
+            >
+              {filteredItems.map((j) => {
+                const openBids = j.openProposalCount ?? 0;
+                const hasOpenBids = openBids > 0;
+                const bucket = senderJobBucket(j);
+                return (
                   <tr
                     key={j.id}
-                    className="border-t border-clox-border-soft hover:bg-clox-surface-alt/60"
+                    className={cn(
+                      'border-t border-clox-border-soft hover:bg-clox-surface-alt/60',
+                      statusAccentClass(SENDER_JOB_TONE[bucket]),
+                      hasOpenBids &&
+                        'bg-[color-mix(in_srgb,var(--status-warn-bg)_35%,transparent)]',
+                    )}
                   >
                     <td className="px-4 py-3">
                       <Link
@@ -148,27 +314,50 @@ export function JobsListPage() {
                       >
                         {j.title ?? j.id.slice(0, 8)}
                       </Link>
+                      <p className="font-mono text-[11px] text-clox-faint">
+                        {j.id.slice(0, 8)}
+                      </p>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-clox-mute">{j.status}</td>
+                    <td className="px-4 py-3">
+                      <StatusPill tone={jobStatusTone(j.status)}>
+                        {t(`jobStatuses.${j.status}`, { defaultValue: j.status })}
+                      </StatusPill>
+                    </td>
                     <td className="px-4 py-3 text-clox-mute">{j.pricingModel}</td>
-                    <td className="px-4 py-3 font-mono text-xs">{j.minVehicleClass}</td>
+                    <td className="px-4 py-3 font-mono text-xs">
+                      {j.minVehicleClass ?? t('dash')}
+                    </td>
                     <td className="px-4 py-3 text-clox-mute">
                       {j.estimate.incGstCents != null
                         ? `$${(j.estimate.incGstCents / 100).toFixed(2)}`
                         : t('dash')}
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-clox-mute">
-                      {(j.openProposalCount ?? 0) > 0
-                        ? t('jobs.openBidsCount', { count: j.openProposalCount })
-                        : t('dash')}
+                    <td className="px-4 py-3">
+                      {hasOpenBids ? (
+                        <StatusPill tone="warn">
+                          {t('jobs.bidsWaiting', { count: openBids })}
+                        </StatusPill>
+                      ) : bucket === 'bidding' ? (
+                        <span className="text-xs text-clox-faint">
+                          {t('jobs.noBidsYetShort')}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-clox-faint">{t('dash')}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-clox-mute">
+                      {formatWhen(j.createdAt) ?? t('dash')}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-clox-mute">
+                      {formatWhen(j.completedAt) ?? t('dash')}
                     </td>
                   </tr>
-                ))}
-              </DataTable>
-            }
-          />
-        );
-      })()}
+                );
+              })}
+            </DataTable>
+          }
+        />
+      )}
     </div>
   );
 }
@@ -229,8 +418,8 @@ function buildJobTitle(
       : dropoffs.length === 1
         ? dropoffs[0]!
         : dropoffs.join(' / ');
-  // Route-first label; pricing model last for board scanning.
-  return `${pickup} → ${destination} · ${values.pricingModel}`;
+  // Route-first label; include weight so demo jobs are distinguishable on the market board.
+  return `${pickup} → ${destination} · ${values.pricingModel} · ${values.deadWeightKg}kg`;
 }
 
 function buildJobPayload(values: JobCreateForm) {
@@ -298,6 +487,8 @@ export function JobEditPage() {
   return <LoadingBlock label={t('jobs.loadingDetail')} />;
 }
 
+type ReceiverWizardStep = 'primary' | 'dropoffs';
+
 function JobReceiverForm({ jobId, job }: { jobId: string; job: JobSummary }) {
   const { t } = useTranslation('common');
   const navigate = useNavigate();
@@ -305,6 +496,8 @@ function JobReceiverForm({ jobId, job }: { jobId: string; job: JobSummary }) {
   const qc = useQueryClient();
 
   const dropoffs = (job.stops ?? []).filter((s) => s.stopType === 'DROPOFF' && s.id);
+  const hasMultiDropoffs = dropoffs.length > 1;
+  const [step, setStep] = useState<ReceiverWizardStep>('primary');
 
   const schema = z.object({
     receiverName: z.string().trim().min(1, t('validation.receiverNameRequired')),
@@ -362,87 +555,165 @@ function JobReceiverForm({ jobId, job }: { jobId: string; job: JobSummary }) {
     },
   });
 
-  return (
-    <div>
-      <Link to={`/jobs/${jobId}`} className="text-sm text-clox-orange hover:underline">
-        ← {t('jobs.backToJob')}
-      </Link>
-      <h1 className="mt-2 font-display text-2xl font-bold text-clox-ink">
-        {t('jobs.editReceiverTitle')}
-      </h1>
-      <p className="mt-1 text-sm text-clox-mute">{t('jobs.editReceiverHint')}</p>
-      <form
-        className="mt-8 max-w-lg space-y-4"
-        onSubmit={form.handleSubmit((values) => mutation.mutate(values))}
-        noValidate
+  const goNextFromPrimary = async () => {
+    const ok = await form.trigger(['receiverName', 'receiverEmail', 'receiverPhone']);
+    if (!ok) return;
+    if (hasMultiDropoffs) {
+      setStep('dropoffs');
+      return;
+    }
+    await form.handleSubmit((values) => mutation.mutate(values))();
+  };
+
+  const selectReceiverStep = async (next: ReceiverWizardStep) => {
+    if (next === step) return;
+    if (next === 'dropoffs' && step === 'primary') {
+      const ok = await form.trigger(['receiverName', 'receiverEmail', 'receiverPhone']);
+      if (!ok) return;
+    }
+    setStep(next);
+  };
+
+  const primaryFields = (
+    <>
+      <Field
+        label={t('jobs.receiverName')}
+        required
+        error={form.formState.errors.receiverName?.message}
+        {...form.register('receiverName')}
+      />
+      <Field
+        label={t('jobs.receiverEmail')}
+        required
+        type="email"
+        error={form.formState.errors.receiverEmail?.message}
+        {...form.register('receiverEmail')}
+      />
+      <Field label={t('jobs.receiverPhone')} {...form.register('receiverPhone')} />
+    </>
+  );
+
+  const dropoffFields = dropoffs.map((s) =>
+    s.id ? (
+      <div
+        key={s.id}
+        className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-4"
       >
+        <p className="mb-3 text-sm font-semibold text-clox-ink">
+          {t('jobs.dropoffReceiver', {
+            suburb: s.suburb ?? s.sequence,
+          })}
+        </p>
         <Field
           label={t('jobs.receiverName')}
-          required
-          error={form.formState.errors.receiverName?.message}
-          {...form.register('receiverName')}
+          value={stopReceivers[s.id]?.receiverName ?? ''}
+          onChange={(e) =>
+            setStopReceivers((prev) => ({
+              ...prev,
+              [s.id!]: {
+                receiverName: e.target.value,
+                receiverEmail: prev[s.id!]?.receiverEmail ?? '',
+              },
+            }))
+          }
         />
         <Field
           label={t('jobs.receiverEmail')}
-          required
           type="email"
-          error={form.formState.errors.receiverEmail?.message}
-          {...form.register('receiverEmail')}
+          value={stopReceivers[s.id]?.receiverEmail ?? ''}
+          onChange={(e) =>
+            setStopReceivers((prev) => ({
+              ...prev,
+              [s.id!]: {
+                receiverName: prev[s.id!]?.receiverName ?? '',
+                receiverEmail: e.target.value,
+              },
+            }))
+          }
         />
-        <Field
-          label={t('jobs.receiverPhone')}
-          {...form.register('receiverPhone')}
+      </div>
+    ) : null,
+  );
+
+  return (
+    <div className="max-w-2xl">
+      <Link to={`/jobs/${jobId}`} className="text-sm text-clox-orange hover:underline">
+        ← {t('jobs.backToJob')}
+      </Link>
+      <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="font-display text-2xl font-bold text-clox-ink">
+            {t('jobs.editReceiverTitle')}
+          </h1>
+          <p className="mt-1 text-sm text-clox-mute">{t('jobs.editReceiverHint')}</p>
+        </div>
+        <StatusPill tone={jobStatusTone(job.status)}>
+          {t(`jobStatuses.${job.status}`, { defaultValue: job.status })}
+        </StatusPill>
+      </div>
+
+      {hasMultiDropoffs ? (
+        <StepChips
+          className="mt-4"
+          current={step}
+          steps={[
+            { id: 'primary', label: t('jobs.wizard.stepPrimary') },
+            { id: 'dropoffs', label: t('jobs.wizard.stepDropoffs') },
+          ]}
+          onStepSelect={(id) => void selectReceiverStep(id as ReceiverWizardStep)}
+          canSelectStep={() => true}
         />
-        {dropoffs.length > 1
-          ? dropoffs.map((s) =>
-              s.id ? (
-                <div key={s.id} className="rounded border border-clox-line p-3">
-                  <p className="mb-2 text-sm font-medium text-clox-ink">
-                    {t('jobs.dropoffReceiver', {
-                      suburb: s.suburb ?? s.sequence,
-                    })}
-                  </p>
-                  <Field
-                    label={t('jobs.receiverName')}
-                    value={stopReceivers[s.id]?.receiverName ?? ''}
-                    onChange={(e) =>
-                      setStopReceivers((prev) => ({
-                        ...prev,
-                        [s.id!]: {
-                          receiverName: e.target.value,
-                          receiverEmail: prev[s.id!]?.receiverEmail ?? '',
-                        },
-                      }))
-                    }
-                  />
-                  <Field
-                    label={t('jobs.receiverEmail')}
-                    type="email"
-                    value={stopReceivers[s.id]?.receiverEmail ?? ''}
-                    onChange={(e) =>
-                      setStopReceivers((prev) => ({
-                        ...prev,
-                        [s.id!]: {
-                          receiverName: prev[s.id!]?.receiverName ?? '',
-                          receiverEmail: e.target.value,
-                        },
-                      }))
-                    }
-                  />
-                </div>
-              ) : null,
-            )
-          : null}
-        {mutation.isError ? (
-          <Notice tone="error">{getErrorDetail(mutation.error)}</Notice>
+      ) : null}
+
+      <form
+        className="mt-6"
+        onSubmit={form.handleSubmit((values) => mutation.mutate(values))}
+        noValidate
+      >
+        {(!hasMultiDropoffs || step === 'primary') && primaryFields}
+        {hasMultiDropoffs && step === 'dropoffs' ? (
+          <div className="space-y-4">{dropoffFields}</div>
         ) : null}
-        <Button type="submit" variant="cta" disabled={mutation.isPending}>
-          {mutation.isPending ? t('submitting') : t('jobs.saveReceiver')}
-        </Button>
+
+        {mutation.isError ? (
+          <Notice tone="error" className="mt-4">
+            {getErrorDetail(mutation.error)}
+          </Notice>
+        ) : null}
+
+        <div className="mt-6 flex flex-wrap items-center gap-2">
+          {hasMultiDropoffs && step === 'dropoffs' ? (
+            <Button type="button" variant="secondary" onClick={() => setStep('primary')}>
+              {t('jobs.wizard.back')}
+            </Button>
+          ) : null}
+          <Link to={`/jobs/${jobId}`} className="clox-btn clox-btn-ghost">
+            {t('jobs.wizard.cancel')}
+          </Link>
+          {hasMultiDropoffs && step === 'primary' ? (
+            <Button type="button" variant="cta" onClick={() => void goNextFromPrimary()}>
+              {t('jobs.wizard.next')}
+            </Button>
+          ) : (
+            <Button type="submit" variant="cta" disabled={mutation.isPending}>
+              {mutation.isPending ? t('submitting') : t('jobs.saveReceiver')}
+            </Button>
+          )}
+        </div>
       </form>
     </div>
   );
 }
+
+const DRAFT_WIZARD_STEPS = ['pricing', 'cargo', 'receiver', 'confirm'] as const;
+type DraftWizardStep = (typeof DRAFT_WIZARD_STEPS)[number];
+
+const DRAFT_STEP_FIELDS: Record<DraftWizardStep, (keyof JobCreateForm)[]> = {
+  pricing: ['pricingModel', 'distanceKm'],
+  cargo: ['deadWeightKg', 'lengthCm', 'widthCm', 'heightCm', 'loadDg'],
+  receiver: ['receiverName', 'receiverEmail'],
+  confirm: ['siteDisclaimerAccepted'],
+};
 
 function JobDraftForm({
   mode,
@@ -456,6 +727,8 @@ function JobDraftForm({
   const navigate = useNavigate();
   const toast = useToast();
   const isEdit = mode === 'edit';
+  const [step, setStep] = useState<DraftWizardStep>('pricing');
+  const cancelTo = isEdit && jobId ? `/jobs/${jobId}` : '/jobs';
 
   const schema = z
     .object({
@@ -576,6 +849,8 @@ function JobDraftForm({
   const lengthCm = form.watch('lengthCm');
   const widthCm = form.watch('widthCm');
   const heightCm = form.watch('heightCm');
+  const distanceKm = form.watch('distanceKm');
+  const loadDg = form.watch('loadDg');
 
   useEffect(() => {
     if (role !== AppRole.SENDER) return;
@@ -650,6 +925,43 @@ function JobDraftForm({
     },
   });
 
+  const stepIndex = DRAFT_WIZARD_STEPS.indexOf(step);
+
+  const goToStep = async (next: DraftWizardStep) => {
+    const targetIdx = DRAFT_WIZARD_STEPS.indexOf(next);
+    if (targetIdx < 0 || targetIdx === stepIndex) return;
+    if (targetIdx > stepIndex) {
+      for (let i = stepIndex; i < targetIdx; i++) {
+        const stepId = DRAFT_WIZARD_STEPS[i]!;
+        const ok = await form.trigger(DRAFT_STEP_FIELDS[stepId]);
+        if (!ok) {
+          setStep(stepId);
+          return;
+        }
+      }
+    }
+    setStep(next);
+  };
+
+  const goBack = () => {
+    if (stepIndex <= 0) return;
+    void goToStep(DRAFT_WIZARD_STEPS[stepIndex - 1]!);
+  };
+
+  const goNext = async () => {
+    if (step === 'confirm') return;
+    await goToStep(DRAFT_WIZARD_STEPS[stepIndex + 1]!);
+  };
+
+  const stepHint =
+    step === 'pricing'
+      ? t('jobs.wizard.pricingHint')
+      : step === 'cargo'
+        ? t('jobs.wizard.cargoHint')
+        : step === 'receiver'
+          ? t('jobs.wizard.receiverHint')
+          : t('jobs.wizard.confirmHint');
+
   if (role !== AppRole.SENDER) return <Navigate to="/" replace />;
   if (isEdit && existing.isLoading) return <LoadingBlock label={t('jobs.loadingDetail')} />;
   if (isEdit && (existing.isError || !existing.data)) {
@@ -657,159 +969,266 @@ function JobDraftForm({
   }
 
   return (
-    <div className="max-w-xl">
-      {isEdit ? (
-        <Link to={`/jobs/${jobId}`} className="text-sm text-clox-orange hover:underline">
-          ← {t('jobs.backToJob')}
-        </Link>
-      ) : null}
-      <h1 className={`font-display text-2xl font-bold text-clox-ink ${isEdit ? 'mt-2' : ''}`}>
-        {isEdit ? t('jobs.editTitle') : t('jobs.createTitle')}
-      </h1>
-      <p className="mt-2 text-sm text-clox-mute">
-        {isEdit ? t('jobs.editHint') : t('jobs.createHint')}
-      </p>
+    <div className="max-w-2xl">
+      <Link to={cancelTo} className="text-sm text-clox-orange hover:underline">
+        ← {isEdit ? t('jobs.backToJob') : t('jobs.backToJobs')}
+      </Link>
+      <div className={`mt-2 flex flex-wrap items-start justify-between gap-3`}>
+        <div className="min-w-0">
+          <h1 className="font-display text-2xl font-bold text-clox-ink">
+            {isEdit ? t('jobs.editTitle') : t('jobs.createTitle')}
+          </h1>
+          <p className="mt-1 text-sm text-clox-mute">
+            {isEdit ? t('jobs.editHint') : t('jobs.createHint')}
+          </p>
+        </div>
+        {isEdit && existing.data ? (
+          <StatusPill tone={jobStatusTone(existing.data.status)}>
+            {t(`jobStatuses.${existing.data.status}`, {
+              defaultValue: existing.data.status,
+            })}
+          </StatusPill>
+        ) : null}
+      </div>
+
+      <StepChips
+        className="mt-4"
+        current={step}
+        steps={[
+          { id: 'pricing', label: t('jobs.wizard.stepPricing') },
+          { id: 'cargo', label: t('jobs.wizard.stepCargo') },
+          { id: 'receiver', label: t('jobs.wizard.stepReceiver') },
+          { id: 'confirm', label: t('jobs.wizard.stepConfirm') },
+        ]}
+        onStepSelect={(id) => void goToStep(id as DraftWizardStep)}
+        canSelectStep={() => true}
+      />
+      <p className="mt-2 text-xs text-clox-mute">{stepHint}</p>
+
       <form
         className="mt-6"
-        onSubmit={form.handleSubmit((values) => save.mutate(values))}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (step !== 'confirm') {
+            void goNext();
+            return;
+          }
+          void form.handleSubmit((values) => save.mutate(values))();
+        }}
         noValidate
       >
-        <RadioCardGroup
-          name="pricingModel"
-          label={t('validation.pricingModelLabel')}
-          required
-          error={form.formState.errors.pricingModel?.message}
-          value={pricingModel}
-          onChange={(next) =>
-            form.setValue('pricingModel', next, { shouldValidate: true, shouldDirty: true })
-          }
-          options={[
-            {
-              value: 'PER_KM',
-              title: t('jobs.pricingPerKm'),
-              description: t('jobs.pricingPerKmHint'),
-            },
-            {
-              value: 'HOURLY',
-              title: t('jobs.pricingHourly'),
-              description: t('jobs.pricingHourlyHint'),
-            },
-          ]}
-        />
-        <Field
-          type="number"
-          step="0.1"
-          min={0.1}
-          label={t('jobs.distanceKmLabel')}
-          required
-          hint={
-            suggestedKm != null
-              ? t('jobs.distanceKmSuggested', { km: suggestedKm })
-              : t('jobs.distanceKmHint')
-          }
-          error={form.formState.errors.distanceKm?.message}
-          {...form.register('distanceKm', { valueAsNumber: true })}
-        />
-        <Field
-          type="number"
-          label={t('validation.deadWeightLabel')}
-          required
-          hint={t('jobs.deadWeightMaxHint', { max: MAX_JOB_DEAD_WEIGHT_KG })}
-          error={form.formState.errors.deadWeightKg?.message}
-          {...form.register('deadWeightKg', { valueAsNumber: true })}
-        />
-        <div className="grid grid-cols-1 gap-0 sm:grid-cols-3 sm:gap-2">
-          <Field
-            type="number"
-            label={t('validation.lengthLabel')}
-            required
-            error={form.formState.errors.lengthCm?.message}
-            {...form.register('lengthCm', { valueAsNumber: true })}
-          />
-          <Field
-            type="number"
-            label={t('validation.widthLabel')}
-            required
-            error={form.formState.errors.widthCm?.message}
-            {...form.register('widthCm', { valueAsNumber: true })}
-          />
-          <Field
-            type="number"
-            label={t('validation.heightLabel')}
-            required
-            error={form.formState.errors.heightCm?.message}
-            {...form.register('heightCm', { valueAsNumber: true })}
-          />
-        </div>
-        {cargoOverLimit && localChargeable != null ? (
-          <Notice tone="error" className="mb-4">
-            {t('validation.chargeableOverLimit', {
-              kg: localChargeable.toFixed(1),
-              max: MAX_JOB_CHARGEABLE_WEIGHT_KG,
-            })}
-          </Notice>
+        {step === 'pricing' ? (
+          <>
+            <RadioCardGroup
+              name="pricingModel"
+              label={t('validation.pricingModelLabel')}
+              required
+              error={form.formState.errors.pricingModel?.message}
+              value={pricingModel}
+              onChange={(next) =>
+                form.setValue('pricingModel', next, { shouldValidate: true, shouldDirty: true })
+              }
+              options={[
+                {
+                  value: 'PER_KM',
+                  title: t('jobs.pricingPerKm'),
+                  description: t('jobs.pricingPerKmHint'),
+                },
+                {
+                  value: 'HOURLY',
+                  title: t('jobs.pricingHourly'),
+                  description: t('jobs.pricingHourlyHint'),
+                },
+              ]}
+            />
+            <Field
+              type="number"
+              step="0.1"
+              min={0.1}
+              label={t('jobs.distanceKmLabel')}
+              required
+              hint={
+                suggestedKm != null
+                  ? t('jobs.distanceKmSuggested', { km: suggestedKm })
+                  : t('jobs.distanceKmHint')
+              }
+              error={form.formState.errors.distanceKm?.message}
+              {...form.register('distanceKm', { valueAsNumber: true })}
+            />
+          </>
         ) : null}
-        {!cargoOverLimit && recommend.isError ? (
-          <Notice tone="error" className="mb-4">
-            {getErrorDetail(recommend.error)}
-          </Notice>
-        ) : null}
-        {!cargoOverLimit && recommend.data ? (
-          <Notice tone="success" className="mb-4">
-            {t('jobs.chargeableHint', {
-              kg: recommend.data.chargeableWeightKg.toFixed(1),
-              vehicleClass: recommend.data.recommendedVehicleClass,
-            })}
-          </Notice>
-        ) : null}
-        <label className="mb-4 flex items-center gap-2 text-sm text-clox-mute">
-          <input type="checkbox" className="accent-clox-accent" {...form.register('loadDg')} />
-          {t('jobs.dgLoad')}
-        </label>
-        <Field
-          label={t('jobs.receiverNameLabel')}
-          placeholder={t('jobs.placeholderReceiverName')}
-          required
-          autoComplete="name"
-          error={form.formState.errors.receiverName?.message}
-          {...form.register('receiverName')}
-        />
-        <Field
-          type="email"
-          label={t('jobs.receiverEmailLabel')}
-          placeholder={t('jobs.placeholderReceiverEmail')}
-          required
-          autoComplete="email"
-          error={form.formState.errors.receiverEmail?.message}
-          {...form.register('receiverEmail')}
-        />
-        <label className="mb-4 flex items-start gap-2 text-sm text-clox-mute">
-          <input
-            type="checkbox"
-            className="mt-1 accent-clox-accent"
-            {...form.register('siteDisclaimerAccepted')}
-          />
-          <span>
-            {t('jobs.siteDisclaimer')}
-            {form.formState.errors.siteDisclaimerAccepted?.message ? (
-              <span className="mt-1 block text-[12px] font-medium text-[var(--status-danger)]" role="alert">
-                {form.formState.errors.siteDisclaimerAccepted.message}
-              </span>
+
+        {step === 'cargo' ? (
+          <>
+            <Field
+              type="number"
+              label={t('validation.deadWeightLabel')}
+              required
+              hint={t('jobs.deadWeightMaxHint', { max: MAX_JOB_DEAD_WEIGHT_KG })}
+              error={form.formState.errors.deadWeightKg?.message}
+              {...form.register('deadWeightKg', { valueAsNumber: true })}
+            />
+            <div className="grid grid-cols-1 gap-0 sm:grid-cols-3 sm:gap-2">
+              <Field
+                type="number"
+                label={t('validation.lengthLabel')}
+                required
+                error={form.formState.errors.lengthCm?.message}
+                {...form.register('lengthCm', { valueAsNumber: true })}
+              />
+              <Field
+                type="number"
+                label={t('validation.widthLabel')}
+                required
+                error={form.formState.errors.widthCm?.message}
+                {...form.register('widthCm', { valueAsNumber: true })}
+              />
+              <Field
+                type="number"
+                label={t('validation.heightLabel')}
+                required
+                error={form.formState.errors.heightCm?.message}
+                {...form.register('heightCm', { valueAsNumber: true })}
+              />
+            </div>
+            {cargoOverLimit && localChargeable != null ? (
+              <Notice tone="error" className="mb-4">
+                {t('validation.chargeableOverLimit', {
+                  kg: localChargeable.toFixed(1),
+                  max: MAX_JOB_CHARGEABLE_WEIGHT_KG,
+                })}
+              </Notice>
             ) : null}
-          </span>
-        </label>
+            {!cargoOverLimit && recommend.isError ? (
+              <Notice tone="error" className="mb-4">
+                {getErrorDetail(recommend.error)}
+              </Notice>
+            ) : null}
+            {!cargoOverLimit && recommend.data ? (
+              <Notice tone="success" className="mb-4">
+                {t('jobs.chargeableHint', {
+                  kg: recommend.data.chargeableWeightKg.toFixed(1),
+                  vehicleClass: recommend.data.recommendedVehicleClass,
+                })}
+              </Notice>
+            ) : null}
+            <ChoiceCheck className="mb-4" {...form.register('loadDg')}>
+              {t('jobs.dgLoad')}
+            </ChoiceCheck>
+          </>
+        ) : null}
+
+        {step === 'receiver' ? (
+          <>
+            <Field
+              label={t('jobs.receiverNameLabel')}
+              placeholder={t('jobs.placeholderReceiverName')}
+              required
+              autoComplete="name"
+              error={form.formState.errors.receiverName?.message}
+              {...form.register('receiverName')}
+            />
+            <Field
+              type="email"
+              label={t('jobs.receiverEmailLabel')}
+              placeholder={t('jobs.placeholderReceiverEmail')}
+              required
+              autoComplete="email"
+              error={form.formState.errors.receiverEmail?.message}
+              {...form.register('receiverEmail')}
+            />
+          </>
+        ) : null}
+
+        {step === 'confirm' ? (
+          <>
+            <div className="mb-4 rounded-clox-md border border-clox-border bg-clox-surface-alt p-4">
+              <p className="font-display text-sm font-semibold text-clox-ink">
+                {t('jobs.wizard.summaryTitle')}
+              </p>
+              <dl className="mt-3 space-y-2 text-sm">
+                <div className="flex flex-wrap justify-between gap-2">
+                  <dt className="text-clox-mute">{t('jobs.wizard.summaryPricing')}</dt>
+                  <dd className="font-medium text-clox-ink">
+                    {pricingModel === 'HOURLY'
+                      ? t('jobs.pricingHourly')
+                      : t('jobs.pricingPerKm')}
+                    {' · '}
+                    {t('jobs.wizard.summaryDistance', {
+                      km: Number.isFinite(distanceKm) ? distanceKm : '—',
+                    })}
+                  </dd>
+                </div>
+                <div className="flex flex-wrap justify-between gap-2">
+                  <dt className="text-clox-mute">{t('jobs.wizard.summaryCargo')}</dt>
+                  <dd className="text-right font-medium text-clox-ink">
+                    {deadWeightKg} kg ·{' '}
+                    {t('jobs.wizard.summaryDims', {
+                      l: lengthCm,
+                      w: widthCm,
+                      h: heightCm,
+                    })}
+                    <span className="mt-0.5 block text-xs font-normal text-clox-faint">
+                      {loadDg ? t('jobs.wizard.summaryDgYes') : t('jobs.wizard.summaryDgNo')}
+                      {recommend.data
+                        ? ` · ${t('jobs.chargeableHint', {
+                            kg: recommend.data.chargeableWeightKg.toFixed(1),
+                            vehicleClass: recommend.data.recommendedVehicleClass,
+                          })}`
+                        : ''}
+                    </span>
+                  </dd>
+                </div>
+                <div className="flex flex-wrap justify-between gap-2">
+                  <dt className="text-clox-mute">{t('jobs.wizard.summaryReceiver')}</dt>
+                  <dd className="text-right font-medium text-clox-ink">
+                    {receiverName || '—'}
+                    <span className="mt-0.5 block text-xs font-normal text-clox-faint">
+                      {receiverEmail || '—'}
+                    </span>
+                  </dd>
+                </div>
+              </dl>
+            </div>
+            <ChoiceCheck
+              className="mb-4"
+              error={form.formState.errors.siteDisclaimerAccepted?.message}
+              {...form.register('siteDisclaimerAccepted')}
+            >
+              {t('jobs.siteDisclaimer')}
+            </ChoiceCheck>
+          </>
+        ) : null}
+
         {save.isError ? (
           <Notice tone="error" className="mb-4">
             {getErrorDetail(save.error)}
           </Notice>
         ) : null}
-        <Button type="submit" variant="cta" disabled={save.isPending}>
-          {save.isPending
-            ? t('saving')
-            : isEdit
-              ? t('jobs.saveDraft')
-              : t('jobs.createDraft')}
-        </Button>
+
+        <div className="mt-6 flex flex-wrap items-center gap-2">
+          {stepIndex > 0 ? (
+            <Button type="button" variant="secondary" onClick={goBack}>
+              {t('jobs.wizard.back')}
+            </Button>
+          ) : null}
+          <Link to={cancelTo} className="clox-btn clox-btn-ghost">
+            {t('jobs.wizard.cancel')}
+          </Link>
+          {step !== 'confirm' ? (
+            <Button type="button" variant="cta" onClick={() => void goNext()}>
+              {t('jobs.wizard.next')}
+            </Button>
+          ) : (
+            <Button type="submit" variant="cta" disabled={save.isPending}>
+              {save.isPending
+                ? t('saving')
+                : isEdit
+                  ? t('jobs.saveDraft')
+                  : t('jobs.createDraft')}
+            </Button>
+          )}
+        </div>
       </form>
     </div>
   );
@@ -904,18 +1323,73 @@ export function JobDetailPage() {
 
   const j = job.data;
   const openProposals = (j.proposals ?? []).filter((p) => p.status === 'SUBMITTED');
+  const pricingLabel =
+    j.pricingModel === 'HOURLY' ? t('jobs.pricingHourly') : t('jobs.pricingPerKm');
+  const canEdit = Boolean(j.editability?.mode && j.editability.mode !== 'NONE');
+  const showPublish = j.status === 'DRAFT';
+
+  const publishJobAction = () => {
+    void (async () => {
+      const ok = await confirm({
+        title: t('confirm.publishJobTitle'),
+        description: t('confirm.publishJobBody'),
+        confirmLabel: t('jobs.publish'),
+      });
+      if (ok) publish.mutate();
+    })();
+  };
+
+  const detailRow = (label: string, value: ReactNode) => (
+    <div className="flex flex-wrap justify-between gap-2 text-sm">
+      <dt className="text-clox-mute">{label}</dt>
+      <dd className="text-right font-medium text-clox-ink">{value}</dd>
+    </div>
+  );
 
   return (
     <div>
       <Link to="/jobs" className="text-sm text-clox-orange hover:underline">
         ← {t('jobs.backToJobs')}
       </Link>
-      <h1 className="mt-2 font-display text-2xl font-bold text-clox-ink">
-        {j.title ?? t('jobs.fallbackTitle')}
-      </h1>
-      <p className="mt-1 font-mono text-sm text-clox-mute">
-        {j.status} · {j.pricingModel} · min {j.minVehicleClass} · rec {j.recommendedVehicleClass}
-      </p>
+      <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="font-display text-2xl font-bold text-clox-ink">
+            {j.title ?? t('jobs.fallbackTitle')}
+          </h1>
+          <p className="mt-1 text-sm text-clox-mute">
+            {pricingLabel}
+            {j.minVehicleClass
+              ? ` · ${t('jobs.view.minClass')} ${j.minVehicleClass}`
+              : ''}
+            {j.recommendedVehicleClass
+              ? ` · ${t('jobs.view.recClass')} ${j.recommendedVehicleClass}`
+              : ''}
+          </p>
+          <p className="mt-1 font-mono text-[11px] text-clox-faint">
+            {t('jobs.view.jobId')} · {j.id.slice(0, 8)}
+          </p>
+          <div className="mt-2 space-y-0.5 text-xs text-clox-faint">
+            {formatWhen(j.createdAt) ? (
+              <p>{t('jobs.createdAt', { when: formatWhen(j.createdAt) })}</p>
+            ) : null}
+            {formatWhen(j.publishedAt) ? (
+              <p>{t('jobs.publishedAt', { when: formatWhen(j.publishedAt) })}</p>
+            ) : null}
+            {formatWhen(j.completedAt) ? (
+              <p>{t('jobs.completedAt', { when: formatWhen(j.completedAt) })}</p>
+            ) : null}
+            {formatWhen(j.pickupAt) ? (
+              <p>
+                {t('jobs.view.pickup')}: {formatWhen(j.pickupAt)}
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <StatusPill tone={jobStatusTone(j.status)}>
+          {t(`jobStatuses.${j.status}`, { defaultValue: j.status })}
+        </StatusPill>
+      </div>
+
       {j.openException ? (
         <Notice
           tone={
@@ -996,162 +1470,285 @@ export function JobDetailPage() {
           )}
         </Notice>
       ) : null}
-      <ul className="mt-4 space-y-1 text-sm text-clox-mute">
-        <li>
-          {t('jobs.routeLine', {
-            distanceKm: j.route.distanceKm ?? t('dash'),
-            durationMin: j.route.durationMinutes ?? t('dash'),
-          })}
-          {j.route.fatigueBreakMinutes > 0
-            ? ` ${t('jobs.fatigueBreak', { minutes: j.route.fatigueBreakMinutes })}`
-            : ''}
-          {j.route.billableHours != null
-            ? ` ${t('jobs.billableHours', { hours: j.route.billableHours })}`
-            : ''}
-        </li>
-        <li>
-          {t('jobs.chargeableLine', {
-            kg: j.chargeableWeightKg,
-            requiresDg: String(j.requiresDg),
-          })}
-        </li>
-        <li>
-          {t('jobs.estimateLabel')}{' '}
-          {j.estimate.incGstCents != null
-            ? t('jobs.estimateIncGst', { amount: (j.estimate.incGstCents / 100).toFixed(2) })
-            : t('dash')}
-        </li>
-        {j.assignment ? (
-          <li className="text-[var(--status-ok)]">
-            Assignment {j.assignment.status}
-            {j.assignment.paidAndConfirmed
-              ? ` ${t('jobs.assignmentPaid')}`
-              : ` ${t('jobs.assignmentPendingPayment')}`}
-          </li>
-        ) : null}
-        {j.payment ? (
-          <li className="font-mono text-xs text-clox-mute">
-            {t('jobs.paymentLine', {
-              status: j.payment.status,
-              pi: j.payment.stripePaymentIntentId ?? t('dash'),
-            })}
-          </li>
-        ) : null}
-      </ul>
 
-      {j.editability?.mode && j.editability.mode !== 'NONE' ? (
-        <div className="mt-6 flex flex-wrap gap-2">
-          <Link to={`/jobs/${j.id}/edit`} className="clox-btn clox-btn-secondary inline-flex">
-            {j.editability.mode === 'RECEIVER' ? t('jobs.editReceiver') : t('jobs.editJob')}
-          </Link>
-          {j.status === 'DRAFT' ? (
-            <Button
-              variant="cta"
-              disabled={publish.isPending}
-              onClick={() => {
-                void (async () => {
-                  const ok = await confirm({
-                    title: t('confirm.publishJobTitle'),
-                    description: t('confirm.publishJobBody'),
-                    confirmLabel: t('jobs.publish'),
-                  });
-                  if (ok) publish.mutate();
-                })();
-              }}
-            >
-              {t('jobs.publish')}
-            </Button>
+      <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+        <div className="min-w-0 space-y-4">
+          <section className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-4">
+            <h2 className="font-display text-sm font-semibold text-clox-ink">
+              {t('jobs.view.sectionPricing')}
+            </h2>
+            <dl className="mt-3 space-y-2">
+              {detailRow(t('validation.pricingModelLabel'), pricingLabel)}
+              {detailRow(
+                t('jobs.view.distance'),
+                j.route.distanceKm != null ? `${j.route.distanceKm} km` : t('dash'),
+              )}
+              {detailRow(
+                t('jobs.view.duration'),
+                <>
+                  {j.route.durationMinutes != null
+                    ? `${j.route.durationMinutes} min`
+                    : t('dash')}
+                  {j.route.fatigueBreakMinutes > 0
+                    ? ` ${t('jobs.fatigueBreak', { minutes: j.route.fatigueBreakMinutes })}`
+                    : ''}
+                  {j.route.billableHours != null
+                    ? ` ${t('jobs.billableHours', { hours: j.route.billableHours })}`
+                    : ''}
+                </>,
+              )}
+              {detailRow(
+                t('jobs.view.estimate'),
+                j.estimate.incGstCents != null
+                  ? t('jobs.estimateIncGst', {
+                      amount: (j.estimate.incGstCents / 100).toFixed(2),
+                    })
+                  : t('dash'),
+              )}
+            </dl>
+          </section>
+
+          {(j.stops?.length ?? 0) > 0 ? (
+            <section className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-4">
+              <h2 className="font-display text-sm font-semibold text-clox-ink">
+                {t('jobs.view.sectionStops')}
+              </h2>
+              <ol className="mt-3 space-y-2">
+                {j.stops.map((s) => (
+                  <li
+                    key={s.id ?? `${s.sequence}-${s.stopType}`}
+                    className="flex flex-wrap items-baseline justify-between gap-2 text-sm"
+                  >
+                    <span className="font-medium text-clox-ink">
+                      {s.stopType} · {s.suburb ?? t('dash')}
+                      {s.state ? `, ${s.state}` : ''}
+                    </span>
+                    {s.receiverName || s.receiverEmail ? (
+                      <span className="text-xs text-clox-faint">
+                        {[s.receiverName, s.receiverEmail].filter(Boolean).join(' · ')}
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            </section>
           ) : null}
-        </div>
-      ) : j.status === 'DRAFT' ? (
-        <div className="mt-6 flex flex-wrap gap-2">
-          <Button
-            variant="cta"
-            disabled={publish.isPending}
-            onClick={() => {
-              void (async () => {
-                const ok = await confirm({
-                  title: t('confirm.publishJobTitle'),
-                  description: t('confirm.publishJobBody'),
-                  confirmLabel: t('jobs.publish'),
-                });
-                if (ok) publish.mutate();
-              })();
-            }}
-          >
-            {t('jobs.publish')}
-          </Button>
-        </div>
-      ) : null}
-      {j.editability?.mode === 'RECEIVER' ? (
-        <p className="mt-2 text-xs text-clox-mute">{t('jobs.editReceiverHint')}</p>
-      ) : null}
 
-      <h2 className="mt-8 font-display text-lg font-semibold text-clox-ink">
-        {t('jobs.proposalsTitle')}
-      </h2>
-      {(j.proposals ?? []).length === 0 ? (
-        <p className="mt-2 text-sm text-clox-faint">{t('jobs.noBidsYet')}</p>
-      ) : (
-        <ul className="mt-3 space-y-3">
-          {(j.proposals ?? []).map((p) => (
-            <li key={p.id} className="clox-card p-4">
-              <p className="font-medium text-clox-ink">
-                {p.carrierLabel}{' '}
-                <span className="font-mono text-xs text-clox-faint">{p.status}</span>
-              </p>
-              <p className="font-mono text-xs text-clox-mute">
-                ${(p.amountIncGstCents / 100).toFixed(2)} · ETA {p.etaMinutes}m · {p.vehicleClass}
-              </p>
-              {p.status === 'SUBMITTED' && !j.assignment ? (
-                <Button
-                  variant="secondary"
-                  className="mt-3"
-                  disabled={accept.isPending}
-                  onClick={() => {
-                    void (async () => {
-                      const ok = await confirm({
-                        title: t('confirm.acceptProposalTitle'),
-                        description: t('confirm.acceptProposalBody'),
-                        confirmLabel: t('jobs.acceptAndCharge'),
-                      });
-                      if (ok) accept.mutate(p.id);
-                    })();
-                  }}
+          {(j.assignment || j.payment) && (
+            <section className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-4">
+              <h2 className="font-display text-sm font-semibold text-clox-ink">
+                {t('jobs.view.sectionAssignment')}
+              </h2>
+              <dl className="mt-3 space-y-2">
+                {j.assignment
+                  ? detailRow(
+                      t('jobs.view.assignmentStatus'),
+                      <span
+                        className={
+                          j.assignment.paidAndConfirmed
+                            ? 'text-[var(--status-ok)]'
+                            : undefined
+                        }
+                      >
+                        {j.assignment.status}
+                        {j.assignment.paidAndConfirmed
+                          ? ` ${t('jobs.assignmentPaid')}`
+                          : ` ${t('jobs.assignmentPendingPayment')}`}
+                      </span>,
+                    )
+                  : null}
+                {j.payment
+                  ? detailRow(
+                      t('jobs.view.paymentStatus'),
+                      <span className="font-mono text-xs">
+                        {t('jobs.paymentLine', {
+                          status: j.payment.status,
+                          pi: j.payment.stripePaymentIntentId ?? t('dash'),
+                        })}
+                      </span>,
+                    )
+                  : null}
+              </dl>
+            </section>
+          )}
+
+          {(canEdit || showPublish) && (
+            <div className="flex flex-wrap items-center gap-2">
+              {canEdit ? (
+                <Link
+                  to={`/jobs/${j.id}/edit`}
+                  className="clox-btn clox-btn-secondary inline-flex"
                 >
-                  {t('jobs.acceptAndCharge')}
+                  {j.editability?.mode === 'RECEIVER'
+                    ? t('jobs.editReceiver')
+                    : t('jobs.editJob')}
+                </Link>
+              ) : null}
+              {showPublish ? (
+                <Button
+                  variant="cta"
+                  disabled={publish.isPending}
+                  onClick={publishJobAction}
+                >
+                  {publish.isPending ? t('loading') : t('jobs.publish')}
                 </Button>
               ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
-      {openProposals.length === 0 && j.assignment?.paidAndConfirmed ? (
-        <div className="mt-4 space-y-2">
-          <Notice tone="success">{t('jobs.jobPaidLocked')}</Notice>
-          <Link to={`/jobs/${j.id}/track`} className="text-sm text-clox-orange hover:underline">
-            {t('jobs.openLiveTrack')}
-          </Link>
+            </div>
+          )}
+          {j.editability?.mode === 'RECEIVER' ? (
+            <p className="text-xs text-clox-mute">{t('jobs.editReceiverHint')}</p>
+          ) : null}
+          {publish.isError ? (
+            <Notice tone="error">{getErrorDetail(publish.error)}</Notice>
+          ) : null}
+
+          <section>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-display text-lg font-semibold text-clox-ink">
+                {t('jobs.proposalsTitle')}
+              </h2>
+              {(j.openProposalCount ?? openProposals.length) > 0 ? (
+                <span className="text-xs text-clox-faint">
+                  {t('jobs.openBidsCount', {
+                    count: j.openProposalCount ?? openProposals.length,
+                  })}
+                </span>
+              ) : null}
+            </div>
+            {(j.proposals ?? []).length === 0 ? (
+              <p className="mt-2 text-sm text-clox-faint">{t('jobs.noBidsYet')}</p>
+            ) : (
+              <ul className="mt-3 space-y-3">
+                {(j.proposals ?? []).map((p) => (
+                  <li
+                    key={p.id}
+                    className="rounded-clox-md border border-clox-border bg-clox-surface p-4 shadow-clox-1"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-clox-ink">{p.carrierLabel}</p>
+                        <p className="mt-1 text-sm text-clox-mute">
+                          {t('jobs.view.bidAmount', {
+                            amount: (p.amountIncGstCents / 100).toFixed(2),
+                          })}
+                          {p.etaMinutes != null
+                            ? ` · ${t('jobs.view.etaMinutes', { minutes: p.etaMinutes })}`
+                            : ''}
+                          {p.vehicleClass ? ` · ${p.vehicleClass}` : ''}
+                        </p>
+                      </div>
+                      <StatusPill
+                        tone={
+                          p.status === 'ACCEPTED'
+                            ? 'ok'
+                            : p.status === 'SUBMITTED'
+                              ? 'warn'
+                              : 'neutral'
+                        }
+                      >
+                        {p.status}
+                      </StatusPill>
+                    </div>
+                    {p.status === 'SUBMITTED' && !j.assignment ? (
+                      <Button
+                        variant="cta"
+                        className="mt-3"
+                        disabled={accept.isPending}
+                        onClick={() => {
+                          void (async () => {
+                            const ok = await confirm({
+                              title: t('confirm.acceptProposalTitle'),
+                              description: t('confirm.acceptProposalBody'),
+                              confirmLabel: t('jobs.acceptAndCharge'),
+                            });
+                            if (ok) accept.mutate(p.id);
+                          })();
+                        }}
+                      >
+                        {t('jobs.acceptAndCharge')}
+                      </Button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {openProposals.length === 0 && j.assignment?.paidAndConfirmed ? (
+            <div className="space-y-2">
+              <Notice tone="success">{t('jobs.jobPaidLocked')}</Notice>
+              <Link
+                to={`/jobs/${j.id}/track`}
+                className="text-sm text-clox-orange hover:underline"
+              >
+                {t('jobs.openLiveTrack')}
+              </Link>
+            </div>
+          ) : null}
+          {scaChallenge ? (
+            <ScaPaymentConfirm
+              clientSecret={scaChallenge.clientSecret}
+              publishableKey={scaChallenge.publishableKey}
+              onCancel={() => setScaChallenge(null)}
+              onSucceeded={async () => {
+                const synced = await syncJobPayment(id);
+                await applyAcceptResult(synced);
+              }}
+            />
+          ) : null}
+          {acceptMsg ? <Notice tone="warn">{acceptMsg}</Notice> : null}
         </div>
-      ) : null}
-      {scaChallenge ? (
-        <div className="mt-4">
-          <ScaPaymentConfirm
-            clientSecret={scaChallenge.clientSecret}
-            publishableKey={scaChallenge.publishableKey}
-            onCancel={() => setScaChallenge(null)}
-            onSucceeded={async () => {
-              const synced = await syncJobPayment(id);
-              await applyAcceptResult(synced);
-            }}
-          />
-        </div>
-      ) : null}
-      {acceptMsg ? (
-        <Notice tone="warn" className="mt-4">
-          {acceptMsg}
-        </Notice>
-      ) : null}
+
+        <aside className="space-y-4 lg:sticky lg:top-4">
+          <section className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-4">
+            <h2 className="font-display text-sm font-semibold text-clox-ink">
+              {t('jobs.view.sectionCargo')}
+            </h2>
+            <dl className="mt-3 space-y-2">
+              {detailRow(
+                t('jobs.view.weight'),
+                j.deadWeightKg != null ? `${j.deadWeightKg} kg` : t('dash'),
+              )}
+              {detailRow(
+                t('jobs.view.dims'),
+                j.lengthCm != null && j.widthCm != null && j.heightCm != null
+                  ? t('jobs.wizard.summaryDims', {
+                      l: j.lengthCm,
+                      w: j.widthCm,
+                      h: j.heightCm,
+                    })
+                  : t('dash'),
+              )}
+              {detailRow(
+                t('jobs.view.chargeable'),
+                j.chargeableWeightKg != null
+                  ? `${j.chargeableWeightKg} kg`
+                  : t('dash'),
+              )}
+              {detailRow(
+                t('jobs.view.dg'),
+                j.requiresDg ? t('jobs.view.dgYes') : t('jobs.view.dgNo'),
+              )}
+              {j.minVehicleClass
+                ? detailRow(t('jobs.view.minClass'), j.minVehicleClass)
+                : null}
+            </dl>
+          </section>
+
+          <section className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-4">
+            <h2 className="font-display text-sm font-semibold text-clox-ink">
+              {t('jobs.view.sectionReceiver')}
+            </h2>
+            <dl className="mt-3 space-y-2">
+              {detailRow(t('jobs.receiverName'), j.receiverName || t('dash'))}
+              {detailRow(t('jobs.receiverEmail'), j.receiverEmail || t('dash'))}
+              {j.receiverPhone
+                ? detailRow(t('jobs.receiverPhone'), j.receiverPhone)
+                : null}
+            </dl>
+          </section>
+        </aside>
+      </div>
     </div>
   );
 }

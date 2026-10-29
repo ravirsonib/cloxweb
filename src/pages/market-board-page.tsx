@@ -102,27 +102,35 @@ export function MarketBoardPage() {
   const [viewMode, setViewMode] = useDataViewMode('market', 'list');
   const toast = useToast();
 
-  const marketJobs = board.data?.jobs;
+  const marketJobs = useMemo(() => {
+    const seen = new Set<string>();
+    const out: MarketBoardJob[] = [];
+    for (const job of board.data?.jobs ?? []) {
+      if (seen.has(job.id)) continue;
+      seen.add(job.id);
+      out.push(job);
+    }
+    return out;
+  }, [board.data?.jobs]);
   const filterCounts = useMemo(
-    () => countByBucket(marketJobs ?? [], marketBucket, MARKET_FILTERS),
+    () => countByBucket(marketJobs, marketBucket, MARKET_FILTERS),
     [marketJobs],
   );
   const filteredJobs = useMemo(
-    () =>
-      filterAndSortByBucket(marketJobs ?? [], marketBucket, statusFilter, MARKET_SORT),
+    () => filterAndSortByBucket(marketJobs, marketBucket, statusFilter, MARKET_SORT),
     [marketJobs, statusFilter],
   );
 
   const selectedJob = useMemo(
-    () => filteredJobs.find((j) => j.id === jobId) ?? null,
-    [filteredJobs, jobId],
+    () => marketJobs.find((j) => j.id === jobId) ?? null,
+    [marketJobs, jobId],
   );
 
   useEffect(() => {
-    if (jobId && !filteredJobs.some((j) => j.id === jobId)) {
+    if (jobId && !marketJobs.some((j) => j.id === jobId)) {
       setJobId(null);
     }
-  }, [filteredJobs, jobId]);
+  }, [marketJobs, jobId]);
 
   const activeVehicles = useMemo(
     () => (vehiclesQuery.data?.items ?? []).filter((v) => v.status === 'ACTIVE'),
@@ -169,8 +177,26 @@ export function MarketBoardPage() {
       ) ?? null;
     const nextVehicleId = eligibleVehicle?.id ?? '';
     const nextDriverId = selectableDrivers[0]?.id ?? '';
+    const grossCents =
+      selectedJob.minBidIncGstCents ?? selectedJob.estimateIncGstCents ?? null;
+    const nextAmount =
+      grossCents != null && grossCents > 0 ? Math.round(grossCents) / 100 : 150;
+    const routeMins = selectedJob.routeDurationMinutes;
+    const fatigue = selectedJob.routeFatigueBreakMinutes ?? 0;
+    const nextEta =
+      routeMins != null && routeMins > 0
+        ? Math.max(1, Math.round(routeMins + fatigue))
+        : 90;
+    form.setValue('amountAud', nextAmount);
+    form.setValue('etaMinutes', nextEta);
     form.setValue('vehicleId', nextVehicleId);
     form.setValue('driverId', nextDriverId);
+    const t = window.setTimeout(() => {
+      document
+        .getElementById('market-bid-form')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 50);
+    return () => window.clearTimeout(t);
   }, [selectedJob, selectableVehicles, selectableDrivers, form]);
 
   const selectedVehicle = activeVehicles.find((v) => v.id === vehicleIdWatch);
@@ -317,13 +343,19 @@ export function MarketBoardPage() {
                       <StatusPill tone={tone}>{t(`market.bucket.${bucket}`)}</StatusPill>
                     </div>
                     <p className="mt-0.5 font-mono text-[11px] text-clox-faint">
-                      {j.id.slice(0, 8)}
+                      {t('market.jobRef', { id: j.id.slice(0, 8) })}
                       {j.publishedAt
                         ? ` · ${new Date(j.publishedAt).toLocaleString()}`
+                        : ''}
+                      {j.pickupAt
+                        ? ` · ${t('market.pickupAt', { when: new Date(j.pickupAt).toLocaleString() })}`
                         : ''}
                     </p>
                     <p className="mt-1 font-mono text-xs text-clox-mute">
                       {j.stopsSummary} · min {j.minVehicleClass}
+                      {j.chargeableWeightKg != null
+                        ? ` · ${t('market.weightKg', { kg: j.chargeableWeightKg })}`
+                        : ''}
                       {j.requiresDg ? ` ${t('market.dgSuffix')}` : ''}
                       {j.routeFatigueBreakMinutes > 0
                         ? ` ${t('market.fatigueSuffix', { minutes: j.routeFatigueBreakMinutes })}`
@@ -348,13 +380,21 @@ export function MarketBoardPage() {
 
       {jobId && selectedJob ? (
         <form
-          className="clox-card mt-8 max-w-md p-4"
+          id="market-bid-form"
+          className="clox-card mt-8 max-w-md scroll-mt-24 p-4"
           onSubmit={form.handleSubmit((values) => bid.mutate(values))}
           noValidate
         >
           <h2 className="font-display font-semibold text-clox-ink">{t('market.placeBid')}</h2>
-          <p className="mb-4 mt-1 text-xs text-clox-faint">
-            {t('market.minClassLine', { minClass: selectedJob.minVehicleClass ?? t('dash') })}
+          <p className="mb-1 mt-1 text-sm font-medium text-clox-ink">
+            {selectedJob.title ?? selectedJob.id.slice(0, 8)}
+          </p>
+          <p className="mb-4 font-mono text-[11px] text-clox-faint">
+            {t('market.jobRef', { id: selectedJob.id.slice(0, 8) })}
+            {' · '}
+            {t('market.minClassLine', {
+              minClass: selectedJob.minVehicleClass ?? t('dash'),
+            })}
           </p>
 
           <Select

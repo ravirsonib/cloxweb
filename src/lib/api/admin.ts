@@ -375,3 +375,260 @@ export function softDeleteAdminJob(id: string, options?: { signal?: AbortSignal 
     )
     .then((res) => res.data);
 }
+
+export type RevenueSplitPercents = {
+  carrierPercent: number;
+  superPercent: number;
+  statePercent: number;
+  localPercent: number;
+};
+
+export type RevenueSplitSettings = {
+  carrierPercentFixed: number;
+  platformPercentFixed: number;
+  effective: {
+    policyVersionId: string | null;
+    percents: RevenueSplitPercents;
+    payload: unknown;
+    publishedAt: string | null;
+    version: number | null;
+  };
+  draft: {
+    id: string;
+    version: number;
+    payload: unknown;
+    createdAt: string;
+  } | null;
+};
+
+export type RevenueSplitVersionItem = {
+  id: string;
+  version: number;
+  payload: unknown;
+  publishedAt: string | null;
+  publishedBy: { id: string; email: string; name: string | null } | null;
+  createdAt: string;
+};
+
+export type RevenueSplitOverrideItem = {
+  id: string;
+  scopeType: 'REGION' | 'TERRITORY';
+  scopeId: string;
+  superPercent: number;
+  statePercent: number;
+  localPercent: number;
+  effectiveFrom: string;
+  publishedAt: string | null;
+  notes: string | null;
+  publisher: { id: string; email: string; name: string | null } | null;
+};
+
+export type RevenueSplitScopes = {
+  regions: Array<{ id: string; code: string; name: string; enabled: boolean }>;
+  territories: Array<{
+    id: string;
+    code: string;
+    name: string;
+    enabled: boolean;
+    regionId: string;
+    region: { code: string; name: string };
+  }>;
+};
+
+export function getRevenueSplitSettings(options?: { signal?: AbortSignal }) {
+  return http
+    .get<RevenueSplitSettings>('/admin/settings/revenue-split', {
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export function listRevenueSplitVersions(options?: { signal?: AbortSignal }) {
+  return http
+    .get<{ items: RevenueSplitVersionItem[] }>('/admin/settings/revenue-split/versions', {
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export function listRevenueSplitOverrides(options?: { signal?: AbortSignal }) {
+  return http
+    .get<{ items: RevenueSplitOverrideItem[] }>('/admin/settings/revenue-split/overrides', {
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export function listRevenueSplitScopes(options?: { signal?: AbortSignal }) {
+  return http
+    .get<RevenueSplitScopes>('/admin/settings/revenue-split/scopes', {
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export function draftRevenueSplit(
+  input: { superPercent: number; statePercent: number; localPercent: number; notes?: string },
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .post('/admin/settings/revenue-split/draft', input, { signal: options?.signal })
+    .then((res) => res.data);
+}
+
+export function publishRevenueSplit(
+  input: {
+    draftId?: string;
+    superPercent?: number;
+    statePercent?: number;
+    localPercent?: number;
+    notes?: string;
+    effectiveFrom?: string;
+  },
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .post('/admin/settings/revenue-split/publish', input, { signal: options?.signal })
+    .then((res) => res.data);
+}
+
+export function publishRevenueSplitOverride(
+  input: {
+    scopeType: 'REGION' | 'TERRITORY';
+    scopeId: string;
+    superPercent: number;
+    statePercent: number;
+    localPercent: number;
+    notes?: string;
+    effectiveFrom?: string;
+  },
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .post('/admin/settings/revenue-split/overrides', input, { signal: options?.signal })
+    .then((res) => res.data);
+}
+
+export type AdminRevenueSplitPackageItem = {
+  id: string;
+  adminUserId: string;
+  superPercent: number;
+  statePercent: number;
+  localPercent: number;
+  effectiveFrom: string;
+  publishedAt: string | null;
+  notes: string | null;
+  adminUser?: { id: string; email: string; name: string | null; role: string };
+  publisher?: { id: string; email: string; name: string | null } | null;
+};
+
+export function listAdminRevenueSplitPackages(
+  query: { adminUserId?: string } = {},
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .get<{ items: AdminRevenueSplitPackageItem[] }>(
+      '/admin/settings/revenue-split/admin-packages',
+      { params: query, signal: options?.signal },
+    )
+    .then((res) => res.data);
+}
+
+export function publishAdminRevenueSplitPackage(
+  input: {
+    adminUserId: string;
+    superPercent: number;
+    statePercent: number;
+    localPercent: number;
+    notes?: string;
+    effectiveFrom?: string;
+  },
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .post('/admin/settings/revenue-split/admin-packages', input, {
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export type PartnerPerformanceHint =
+  | 'above_median_bob'
+  | 'below_median_bob'
+  | 'near_default';
+
+export type PartnerPerformanceItem = {
+  id: string;
+  email: string;
+  name: string | null;
+  role: 'STATE_MASTER' | 'LOCAL_BDE';
+  status: string;
+  scopes: Array<{
+    scopeType: string;
+    regionId: string | null;
+    regionCode: string | null;
+    territoryId: string | null;
+    territoryCode: string | null;
+  }>;
+  primaryScope: {
+    scopeType: 'REGION' | 'TERRITORY';
+    scopeId: string;
+    label: string;
+  } | null;
+  bob: {
+    sendersReferred: number;
+    carriersReferred: number;
+    activeCompanies: number;
+  };
+  seat: {
+    jobs90d: number;
+    grossIncGstCents90d: number;
+    accruedAdminCents90d: number;
+    peersOnSameTerritory: number;
+  };
+  split: {
+    national: RevenueSplitPercents;
+    package: {
+      id: string;
+      superPercent: number;
+      statePercent: number;
+      localPercent: number;
+      effectiveFrom: string;
+    } | null;
+    effectiveSuperPercent: number;
+    effectiveLocalPercent: number;
+    effectiveStatePercent: number;
+  };
+  hint: PartnerPerformanceHint;
+};
+
+export type PartnerPerformanceResponse = {
+  windowDays: number;
+  windowStart: string;
+  national: RevenueSplitPercents;
+  bobMedianActiveCompanies: number;
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  items: PartnerPerformanceItem[];
+};
+
+export function getPartnerPerformance(
+  query: {
+    role?: 'STATE_MASTER' | 'LOCAL_BDE';
+    status?: string;
+    regionId?: string;
+    q?: string;
+    page?: number;
+    pageSize?: number;
+  } = {},
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .get<PartnerPerformanceResponse>('/admin/settings/revenue-split/partner-performance', {
+      params: query,
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}

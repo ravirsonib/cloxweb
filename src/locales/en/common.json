@@ -30,6 +30,24 @@
   "toast": {
     "dismiss": "Dismiss notification"
   },
+  "notifications": {
+    "bellLabel": "Notifications",
+    "panelTitle": "Notifications",
+    "markAllRead": "Mark all read",
+    "loading": "Loading…",
+    "empty": "No notifications yet.",
+    "types": {
+      "JOB_PUBLISHED": "New job",
+      "TRIP_AT_PICKUP": "At pickup",
+      "TRIP_STARTED": "Trip started",
+      "TRIP_BREAK": "Break",
+      "TRIP_EXCEPTION": "Exception",
+      "TRIP_AT_DROPOFF": "At drop-off",
+      "POD_FINALIZED": "POD",
+      "TRIP_COMPLETED": "Completed",
+      "DISPUTE": "Dispute"
+    }
+  },
   "confirm": {
     "cancel": "Cancel",
     "confirm": "Confirm",

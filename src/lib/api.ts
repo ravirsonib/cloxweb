@@ -224,6 +224,14 @@ export type {
   TripStopDocumentKind,
 } from '@/lib/api/trips';
 export {
+  listNotifications,
+  getNotificationUnreadCount,
+  markNotificationRead,
+  markAllNotificationsRead,
+  type NotificationItem,
+  type NotificationType,
+} from '@/lib/api/notifications';
+export {
   listSenderSurcharges,
   paySurcharge,
   waiveSurcharge,

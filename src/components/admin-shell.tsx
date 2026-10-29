@@ -6,6 +6,7 @@ import type { LucideIcon } from 'lucide-react';
 import { LogOut, Menu } from 'lucide-react';
 import { BrandLogo } from '@/components/brand-logo';
 import { LanguageSwitcher } from '@/components/language-switcher';
+import { NotificationBell } from '@/components/notification-bell';
 import { Button, RoleBadge, useConfirm } from '@/components/ui';
 import { getIdentityMe, logout } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -352,6 +353,7 @@ function DriverCabShell({ children }: { children?: ReactNode }) {
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <RoleBadge role={role} className="hidden sm:inline-flex" />
+          <NotificationBell />
           <LanguageSwitcher />
           <Button
             variant="destructive"
@@ -506,6 +508,7 @@ function OpsShell({ children }: { children?: ReactNode }) {
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <NotificationBell />
             <LanguageSwitcher />
             <Button
               variant="destructive"

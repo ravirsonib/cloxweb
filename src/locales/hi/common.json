@@ -30,6 +30,24 @@
   "toast": {
     "dismiss": "सूचना बंद करें"
   },
+  "notifications": {
+    "bellLabel": "सूचनाएँ",
+    "panelTitle": "सूचनाएँ",
+    "markAllRead": "सभी पढ़ी चिह्नित करें",
+    "loading": "लोड हो रहा है…",
+    "empty": "अभी कोई सूचना नहीं।",
+    "types": {
+      "JOB_PUBLISHED": "नई जॉब",
+      "TRIP_AT_PICKUP": "पिकअप पर",
+      "TRIP_STARTED": "ट्रिप शुरू",
+      "TRIP_BREAK": "ब्रेक",
+      "TRIP_EXCEPTION": "अपवाद",
+      "TRIP_AT_DROPOFF": "ड्रॉप-ऑफ़ पर",
+      "POD_FINALIZED": "POD",
+      "TRIP_COMPLETED": "पूर्ण",
+      "DISPUTE": "विवाद"
+    }
+  },
   "confirm": {
     "cancel": "रद्द करें",
     "confirm": "पुष्टि करें",

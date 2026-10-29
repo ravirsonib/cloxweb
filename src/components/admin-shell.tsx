@@ -9,6 +9,7 @@ import { LanguageSwitcher } from '@/components/language-switcher';
 import { NotificationBell } from '@/components/notification-bell';
 import { Button, RoleBadge, useConfirm } from '@/components/ui';
 import { getIdentityMe, logout } from '@/lib/api';
+import { markIntentionalLogoutRedirect } from '@/lib/auth-session';
 import { cn } from '@/lib/cn';
 import { DRIVER_DOCS_ICON, navIconForPath } from '@/lib/nav-icons';
 import { isCabTheme, prefersCabShell, roleThemeFromRole } from '@/lib/role-theme';
@@ -337,6 +338,8 @@ function DriverCabShell({ children }: { children?: ReactNode }) {
     } catch {
       // still clear local session
     }
+    // Mark before clearSession so ProtectedRoute does not attach ?next= previous page.
+    markIntentionalLogoutRedirect();
     clearSession();
     navigate('/login', { replace: true });
   }
@@ -414,6 +417,8 @@ function OpsShell({ children }: { children?: ReactNode }) {
     } catch {
       // still clear local session
     }
+    // Mark before clearSession so ProtectedRoute does not attach ?next= previous page.
+    markIntentionalLogoutRedirect();
     clearSession();
     navigate('/login', { replace: true });
   }

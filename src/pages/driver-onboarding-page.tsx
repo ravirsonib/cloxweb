@@ -14,7 +14,7 @@ import {
   uploadDocumentContent,
   type DriverOnboarding,
 } from '@/lib/api';
-import { Button, ChoiceCheck, Field, FileInput, Notice, Select } from '@/components/ui';
+import { Button, ChoiceCheck, Field, FileInput, Notice, Select, StepChips } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
 import { resolveUploadMime } from '@/lib/upload-mime';
 import {
@@ -25,7 +25,7 @@ import {
 } from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 function formatLicenceSubmitError(error: unknown, fallback: (err: unknown) => string): string {
   const detail = fallback(error);
@@ -182,6 +182,31 @@ type LicenceForm = {
   nhvrAcknowledged: boolean;
 };
 
+/** UI-only chips inside the server `licence` step — one short screen each (less scroll on Cab). */
+const PROFILE_CHIPS = ['details', 'licence', 'confirm'] as const;
+type ProfileChipId = (typeof PROFILE_CHIPS)[number];
+
+const PROFILE_CHIP_FIELDS: Record<ProfileChipId, readonly (keyof LicenceForm)[]> = {
+  details: [
+    'name',
+    'phone',
+    'emergencyContactName',
+    'emergencyContactPhone',
+    'addressLine1',
+    'suburb',
+    'state',
+    'postcode',
+  ],
+  licence: ['licenceNo', 'licenceClass', 'licenceExpiry'],
+  confirm: ['nhvrAcknowledged'],
+};
+
+const PROFILE_CHIP_LABEL_KEYS = {
+  details: 'driverOnboarding.stepDetails',
+  licence: 'driverOnboarding.stepLicence',
+  confirm: 'driverOnboarding.stepConfirm',
+} as const satisfies Record<ProfileChipId, string>;
+
 function LicenceStep({
   data,
   onSaved,
@@ -194,8 +219,12 @@ function LicenceStep({
   driverId: string;
 }) {
   const { t } = useTranslation();
+  const formTopRef = useRef<HTMLFormElement>(null);
+  const [chip, setChip] = useState<ProfileChipId>('details');
+  const [farthestChipIdx, setFarthestChipIdx] = useState(0);
   const [licenceFile, setLicenceFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  const chipIdx = PROFILE_CHIPS.indexOf(chip);
 
   const schema = z.object({
     name: z
@@ -347,164 +376,259 @@ function LicenceStep({
     onSuccess: () => onSaved(),
   });
 
+  function goToChip(next: ProfileChipId) {
+    setChip(next);
+    const idx = PROFILE_CHIPS.indexOf(next);
+    setFarthestChipIdx((prev) => Math.max(prev, idx));
+    requestAnimationFrame(() => {
+      formTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  async function continueFromChip() {
+    const fields = [...PROFILE_CHIP_FIELDS[chip]];
+    const ok = await form.trigger(fields, { shouldFocus: true });
+    if (chip === 'licence') {
+      const missingFile = !licenceFile;
+      setFileError(missingFile ? t('driverOnboarding.errorLicenceFileRequired') : null);
+      if (missingFile || !ok) return;
+    } else if (!ok) {
+      return;
+    }
+    const nextIdx = chipIdx + 1;
+    if (nextIdx < PROFILE_CHIPS.length) {
+      goToChip(PROFILE_CHIPS[nextIdx]!);
+    }
+  }
+
   return (
     <form
-      className="mt-8 max-w-lg"
+      ref={formTopRef}
+      className="mt-6 max-w-lg"
       onSubmit={form.handleSubmit((values) => {
+        if (chip !== 'confirm') {
+          void continueFromChip();
+          return;
+        }
         const missingFile = !licenceFile;
         setFileError(missingFile ? t('driverOnboarding.errorLicenceFileRequired') : null);
-        if (missingFile) return;
+        if (missingFile) {
+          goToChip('licence');
+          return;
+        }
         mutation.mutate(values);
       })}
       noValidate
     >
-      <h2 className="font-display text-lg font-semibold">{t('driverOnboarding.personalTitle')}</h2>
-      <p className="mb-3 mt-1 text-sm text-clox-mute">{t('driverOnboarding.personalHint')}</p>
-
-      <Field
-        label={t('driverOnboarding.nameLabel')}
-        required
-        autoComplete="name"
-        error={form.formState.errors.name?.message}
-        {...form.register('name')}
-      />
-      <Field
-        label={t('driverOnboarding.phoneLabel')}
-        required
-        type="tel"
-        autoComplete="tel"
-        placeholder={t('driverOnboarding.phonePlaceholder')}
-        error={form.formState.errors.phone?.message}
-        {...form.register('phone')}
-      />
-      <Field
-        label={t('driverOnboarding.emergencyNameLabel')}
-        required
-        error={form.formState.errors.emergencyContactName?.message}
-        {...form.register('emergencyContactName')}
-      />
-      <Field
-        label={t('driverOnboarding.emergencyPhoneLabel')}
-        required
-        type="tel"
-        placeholder={t('driverOnboarding.phonePlaceholder')}
-        error={form.formState.errors.emergencyContactPhone?.message}
-        {...form.register('emergencyContactPhone')}
-      />
-      <Field
-        label={t('driverOnboarding.addressLineLabel')}
-        required
-        autoComplete="street-address"
-        error={form.formState.errors.addressLine1?.message}
-        {...form.register('addressLine1')}
-      />
-      <Field
-        label={t('driverOnboarding.suburbLabel')}
-        required
-        autoComplete="address-level2"
-        error={form.formState.errors.suburb?.message}
-        {...form.register('suburb')}
-      />
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Select
-          label={t('driverOnboarding.stateLabel')}
-          required
-          error={form.formState.errors.state?.message}
-          value={form.watch('state')}
-          {...form.register('state')}
-        >
-          {AU_STATES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </Select>
-        <Field
-          label={t('driverOnboarding.postcodeLabel')}
-          required
-          autoComplete="postal-code"
-          inputMode="numeric"
-          maxLength={4}
-          error={form.formState.errors.postcode?.message}
-          {...form.register('postcode')}
-        />
-      </div>
-
-      <h2 className="mt-8 font-display text-lg font-semibold">{t('driverOnboarding.licenceTitle')}</h2>
-      <p className="mb-3 mt-1 text-sm text-clox-mute">{t('driverOnboarding.licenceHint')}</p>
-      <Notice tone="info" className="mb-4">
-        {t('driverOnboarding.licenceUploadRequiredNotice')}
-      </Notice>
-
-      <FileInput
-        label={t('driverOnboarding.licenceUploadLabel')}
-        required
-        hint={t('driverOnboarding.licenceUploadHint')}
-        accept="application/pdf,image/jpeg,image/png,image/webp"
-        fileName={licenceFile?.name ?? null}
-        error={fileError}
-        onChange={(e) => {
-          const next = e.target.files?.[0] ?? null;
-          setLicenceFile(next);
-          setFileError(null);
-        }}
+      <StepChips
+        className="mb-5"
+        current={chip}
+        steps={PROFILE_CHIPS.map((id) => ({
+          id,
+          label: t(PROFILE_CHIP_LABEL_KEYS[id]),
+        }))}
+        onStepSelect={(id) => goToChip(id as ProfileChipId)}
+        canSelectStep={(_id, index) => index <= farthestChipIdx}
       />
 
-      <Field
-        label={t('driverOnboarding.placeholderLicenceNumber')}
-        required
-        placeholder={t('driverOnboarding.placeholderLicenceNumber')}
-        error={form.formState.errors.licenceNo?.message}
-        {...form.register('licenceNo')}
-      />
-      <Select
-        label={t('validation.licenceClassLabel')}
-        required
-        error={form.formState.errors.licenceClass?.message}
-        value={form.watch('licenceClass')}
-        {...form.register('licenceClass')}
-      >
-        {LICENCE_CLASSES.map((c) => (
-          <option key={c} value={c}>
-            {t(`driverOnboarding.licenceClasses.${c}`)}
-          </option>
-        ))}
-      </Select>
-      <Field
-        type="date"
-        label={t('validation.licenceExpiryLabel')}
-        required
-        error={form.formState.errors.licenceExpiry?.message}
-        {...form.register('licenceExpiry')}
-      />
+      {chip === 'details' ? (
+        <div className="space-y-1">
+          <h2 className="font-display text-lg font-semibold">
+            {t('driverOnboarding.personalTitle')}
+          </h2>
+          <p className="mb-3 mt-1 text-sm text-clox-mute">
+            {t('driverOnboarding.personalHint')}
+          </p>
 
-      <Controller
-        name="nhvrAcknowledged"
-        control={form.control}
-        render={({ field, fieldState }) => (
-          <ChoiceCheck
-            className="mb-4"
-            checked={field.value}
-            onBlur={field.onBlur}
-            name={field.name}
-            ref={field.ref}
-            error={fieldState.error?.message}
-            onChange={(e) => field.onChange(e.target.checked)}
-          >
-            {t('driverOnboarding.nhvrCheckbox')}
-          </ChoiceCheck>
-        )}
-      />
-
-      {mutation.isError ? (
-        <Notice tone="error" className="mb-0">
-          {formatLicenceSubmitError(mutation.error, getErrorDetail)}
-        </Notice>
+          <Field
+            label={t('driverOnboarding.nameLabel')}
+            required
+            autoComplete="name"
+            error={form.formState.errors.name?.message}
+            {...form.register('name')}
+          />
+          <Field
+            label={t('driverOnboarding.phoneLabel')}
+            required
+            type="tel"
+            autoComplete="tel"
+            placeholder={t('driverOnboarding.phonePlaceholder')}
+            error={form.formState.errors.phone?.message}
+            {...form.register('phone')}
+          />
+          <Field
+            label={t('driverOnboarding.emergencyNameLabel')}
+            required
+            error={form.formState.errors.emergencyContactName?.message}
+            {...form.register('emergencyContactName')}
+          />
+          <Field
+            label={t('driverOnboarding.emergencyPhoneLabel')}
+            required
+            type="tel"
+            placeholder={t('driverOnboarding.phonePlaceholder')}
+            error={form.formState.errors.emergencyContactPhone?.message}
+            {...form.register('emergencyContactPhone')}
+          />
+          <Field
+            label={t('driverOnboarding.addressLineLabel')}
+            required
+            autoComplete="street-address"
+            error={form.formState.errors.addressLine1?.message}
+            {...form.register('addressLine1')}
+          />
+          <Field
+            label={t('driverOnboarding.suburbLabel')}
+            required
+            autoComplete="address-level2"
+            error={form.formState.errors.suburb?.message}
+            {...form.register('suburb')}
+          />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Select
+              label={t('driverOnboarding.stateLabel')}
+              required
+              error={form.formState.errors.state?.message}
+              value={form.watch('state')}
+              {...form.register('state')}
+            >
+              {AU_STATES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </Select>
+            <Field
+              label={t('driverOnboarding.postcodeLabel')}
+              required
+              autoComplete="postal-code"
+              inputMode="numeric"
+              maxLength={4}
+              error={form.formState.errors.postcode?.message}
+              {...form.register('postcode')}
+            />
+          </div>
+        </div>
       ) : null}
-      <div className="clox-form-actions">
-        <Button type="submit" variant="cta" disabled={mutation.isPending || !companyId}>
-          {mutation.isPending ? t('submitting') : t('driverOnboarding.submitAndActivate')}
-        </Button>
+
+      {chip === 'licence' ? (
+        <div className="space-y-1">
+          <h2 className="font-display text-lg font-semibold">
+            {t('driverOnboarding.licenceTitle')}
+          </h2>
+          <p className="mb-3 mt-1 text-sm text-clox-mute">
+            {t('driverOnboarding.licenceHint')}
+          </p>
+          <Notice tone="info" className="mb-4">
+            {t('driverOnboarding.licenceUploadRequiredNotice')}
+          </Notice>
+
+          <FileInput
+            label={t('driverOnboarding.licenceUploadLabel')}
+            required
+            hint={t('driverOnboarding.licenceUploadHint')}
+            accept="application/pdf,image/jpeg,image/png,image/webp"
+            fileName={licenceFile?.name ?? null}
+            error={fileError}
+            onChange={(e) => {
+              const next = e.target.files?.[0] ?? null;
+              setLicenceFile(next);
+              setFileError(null);
+            }}
+          />
+
+          <Field
+            label={t('driverOnboarding.placeholderLicenceNumber')}
+            required
+            placeholder={t('driverOnboarding.placeholderLicenceNumber')}
+            error={form.formState.errors.licenceNo?.message}
+            {...form.register('licenceNo')}
+          />
+          <Select
+            label={t('validation.licenceClassLabel')}
+            required
+            error={form.formState.errors.licenceClass?.message}
+            value={form.watch('licenceClass')}
+            {...form.register('licenceClass')}
+          >
+            {LICENCE_CLASSES.map((c) => (
+              <option key={c} value={c}>
+                {t(`driverOnboarding.licenceClasses.${c}`)}
+              </option>
+            ))}
+          </Select>
+          <Field
+            type="date"
+            label={t('validation.licenceExpiryLabel')}
+            required
+            error={form.formState.errors.licenceExpiry?.message}
+            {...form.register('licenceExpiry')}
+          />
+        </div>
+      ) : null}
+
+      {chip === 'confirm' ? (
+        <div className="space-y-1">
+          <h2 className="font-display text-lg font-semibold">
+            {t('driverOnboarding.confirmTitle')}
+          </h2>
+          <p className="mb-3 mt-1 text-sm text-clox-mute">
+            {t('driverOnboarding.confirmHint')}
+          </p>
+          <Notice tone="info" className="mb-4">
+            {t('driverOnboarding.confirmSummary', {
+              name: form.watch('name') || t('dash'),
+              licenceNo: form.watch('licenceNo') || t('dash'),
+              file: licenceFile?.name ?? t('dash'),
+            })}
+          </Notice>
+
+          <Controller
+            name="nhvrAcknowledged"
+            control={form.control}
+            render={({ field, fieldState }) => (
+              <ChoiceCheck
+                className="mb-4"
+                checked={field.value}
+                onBlur={field.onBlur}
+                name={field.name}
+                ref={field.ref}
+                error={fieldState.error?.message}
+                onChange={(e) => field.onChange(e.target.checked)}
+              >
+                {t('driverOnboarding.nhvrCheckbox')}
+              </ChoiceCheck>
+            )}
+          />
+
+          {mutation.isError ? (
+            <Notice tone="error" className="mb-0">
+              {formatLicenceSubmitError(mutation.error, getErrorDetail)}
+            </Notice>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="clox-form-actions mt-6 flex flex-wrap gap-2">
+        {chipIdx > 0 ? (
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={mutation.isPending}
+            onClick={() => goToChip(PROFILE_CHIPS[chipIdx - 1]!)}
+          >
+            {t('back')}
+          </Button>
+        ) : null}
+        {chip !== 'confirm' ? (
+          <Button type="button" variant="cta" onClick={() => void continueFromChip()}>
+            {t('continue')}
+          </Button>
+        ) : (
+          <Button type="submit" variant="cta" disabled={mutation.isPending || !companyId}>
+            {mutation.isPending ? t('submitting') : t('driverOnboarding.submitAndActivate')}
+          </Button>
+        )}
       </div>
     </form>
   );

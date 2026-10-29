@@ -8,6 +8,7 @@ import { z } from 'zod';
 import {
   applyAuthTokensToStore,
   clearBrowserSession,
+  clearIntentionalLogoutRedirect,
   defaultHomeForRole,
   roleCanAccessPath,
   safePostLoginPath,
@@ -75,6 +76,11 @@ export function LoginPage() {
       emailForm.setValue('email', emailFromQuery);
     }
   }, [emailFromQuery, emailForm]);
+
+  useEffect(() => {
+    // Sign-out sets a flag so ProtectedRoute omits ?next=; clear once login is shown.
+    clearIntentionalLogoutRedirect();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

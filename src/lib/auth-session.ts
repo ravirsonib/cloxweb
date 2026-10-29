@@ -2,6 +2,41 @@ import { createHttpClient } from '@/lib/http/client';
 import { AdminRole, AppRole, type AuthTokens } from '@/shared/types';
 import { useAuthStore, type PrincipalKind } from '@/stores/auth-store';
 
+/** Marks the next unauthenticated redirect as an intentional sign-out (no `?next=`). */
+const LOGOUT_REDIRECT_KEY = 'clox.auth.logoutRedirect';
+
+/** In-memory flag survives React Strict Mode double-render (sessionStorage alone can be consumed twice). */
+let intentionalLogoutRedirect = false;
+
+export function markIntentionalLogoutRedirect() {
+  intentionalLogoutRedirect = true;
+  try {
+    sessionStorage.setItem(LOGOUT_REDIRECT_KEY, '1');
+  } catch {
+    // ignore
+  }
+}
+
+/** Read-only: ProtectedRoute uses this so sign-out lands on clean `/login`. */
+export function isIntentionalLogoutRedirect(): boolean {
+  if (intentionalLogoutRedirect) return true;
+  try {
+    return sessionStorage.getItem(LOGOUT_REDIRECT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Clear after LoginPage mounts so later 401s can still use `?next=`. */
+export function clearIntentionalLogoutRedirect() {
+  intentionalLogoutRedirect = false;
+  try {
+    sessionStorage.removeItem(LOGOUT_REDIRECT_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 const SAFE_NEXT_PATHS = new Set([
   '/documents/upload',
   '/carrier/onboarding',

@@ -653,7 +653,8 @@ function ConnectStep({
         return;
       }
       setStripeUrl(data.url);
-      // Same-tab redirect so Stripe return/refresh URL restores this page.
+      // Same-tab navigation: Stripe return_url / refresh_url land back in this Clox tab
+      // (?connect=return), so the user always returns where they left off.
       window.location.assign(data.url);
     },
   });
@@ -664,16 +665,16 @@ function ConnectStep({
     }
   }, [hasConnectAccount, isConnectReturn, payoutsEnabled, sessionPending]);
 
-  // After Stripe hosted onboarding, verify payouts and advance.
+  // Auto-confirm only when Stripe redirects back (?connect=return), not merely because
+  // setup opened in another tab (sessionPending) — that would race before KYC finishes.
   useEffect(() => {
     if (payoutsEnabled || mock) return;
-    if (!hasConnectAccount) return;
-    if (!isConnectReturn && !sessionPending) return;
+    if (!hasConnectAccount || !isConnectReturn) return;
     if (autoConfirmTriedRef.current) return;
     autoConfirmTriedRef.current = true;
     confirm.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once when returning from Stripe
-  }, [isConnectReturn, sessionPending, hasConnectAccount, payoutsEnabled, mock]);
+  }, [isConnectReturn, hasConnectAccount, payoutsEnabled, mock]);
 
   // Already confirmed in DB — Continue advances; auto-advance only on Stripe return.
   useEffect(() => {
@@ -748,10 +749,7 @@ function ConnectStep({
           <p className="text-sm">{t('carrierOnboarding.connectOpenedBody')}</p>
           {stripeUrl ? (
             <p className="mt-2 text-sm">
-              <a
-                href={stripeUrl}
-                className="font-medium text-clox-orange underline"
-              >
+              <a href={stripeUrl} className="font-medium text-clox-orange underline">
                 {t('carrierOnboarding.connectOpenLinkAgain')}
               </a>
             </p>

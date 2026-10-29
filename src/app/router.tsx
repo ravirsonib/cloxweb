@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { AdminShell } from '@/components/admin-shell';
+import { isIntentionalLogoutRedirect } from '@/lib/auth-session';
 import { useAuthStore } from '@/stores/auth-store';
 import { AdminRole, AppRole } from '@/shared/types';
 import { HomePage } from '@/pages/home-page';
@@ -49,6 +50,11 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   const accessToken = useAuthStore((state) => state.accessToken);
   const location = useLocation();
   if (!accessToken) {
+    // Intentional sign-out: land on clean /login (do not keep previous page as ?next=).
+    // Session expiry / deep-link still uses ?next= so the user can return after OTP.
+    if (isIntentionalLogoutRedirect()) {
+      return <Navigate to="/login" replace />;
+    }
     const next = encodeURIComponent(`${location.pathname}${location.search}`);
     return <Navigate to={`/login?next=${next}`} replace />;
   }

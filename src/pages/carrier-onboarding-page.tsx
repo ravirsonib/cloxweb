@@ -1,9 +1,9 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import {
   addCarrierVehicle,
@@ -143,8 +143,17 @@ export function CarrierOnboardingPage() {
         canSelectStep={(id, index) => {
           if (!canEditSteps) return false;
           if (!EDITABLE_STEPS.includes(id as CarrierStepId)) return false;
-          // Completed steps + server current (and any earlier editable revisits).
-          return index <= serverIdx || id === data.step;
+          const connectIdx = STEPS.indexOf('connect');
+          // Fleet and later stay locked until Stripe payouts are confirmed in DB.
+          // Prevents skipping Payouts via step chips while Continue is still pending.
+          if (
+            index > connectIdx &&
+            !data.company.stripeConnectPayoutsEnabled
+          ) {
+            return false;
+          }
+          // Completed steps + server current only (never ahead of server).
+          return index <= serverIdx;
         }}
       />
       {canEditSteps && step !== data.step ? (
@@ -186,7 +195,13 @@ export function CarrierOnboardingPage() {
         />
       )}
       {step === 'connect' && (
-        <ConnectStep mock={data.stripeMock} onDone={refreshAndGo} />
+        <ConnectStep
+          companyId={data.company.id}
+          mock={data.stripeMock}
+          hasConnectAccount={Boolean(data.company.stripeConnectAccountId)}
+          payoutsEnabled={data.company.stripeConnectPayoutsEnabled}
+          onDone={refreshAndGo}
+        />
       )}
       {step === 'vehicles' && (
         <VehiclesStep
@@ -524,16 +539,68 @@ function DocumentsStep({
   );
 }
 
+const CONNECT_PENDING_KEY = 'clox.carrier.connect.pending';
+
+function readConnectPending(companyId: string): boolean {
+  try {
+    return sessionStorage.getItem(CONNECT_PENDING_KEY) === companyId;
+  } catch {
+    return false;
+  }
+}
+
+function writeConnectPending(companyId: string) {
+  try {
+    sessionStorage.setItem(CONNECT_PENDING_KEY, companyId);
+  } catch {
+    // Ignore private-mode / blocked storage — query param + account id still work.
+  }
+}
+
+function clearConnectPending() {
+  try {
+    sessionStorage.removeItem(CONNECT_PENDING_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 function ConnectStep({
+  companyId,
   mock,
+  hasConnectAccount,
+  payoutsEnabled,
   onDone,
 }: {
+  companyId: string;
   mock: boolean;
+  hasConnectAccount: boolean;
+  payoutsEnabled: boolean;
   onDone: () => Promise<CarrierOnboarding | void>;
 }) {
   const { t } = useTranslation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isConnectReturn =
+    searchParams.get('connect') === 'return' || searchParams.get('connect') === 'mock';
+  const [sessionPending, setSessionPending] = useState(() => readConnectPending(companyId));
+  // Continue must survive Stripe redirect (full page reload). Rely on DB account id,
+  // return query, session flag, or already-confirmed payouts — never memory alone.
+  const [setupStarted, setSetupStarted] = useState(
+    () =>
+      hasConnectAccount ||
+      isConnectReturn ||
+      payoutsEnabled ||
+      readConnectPending(companyId),
+  );
   const [stripeUrl, setStripeUrl] = useState<string | null>(null);
-  const [setupStarted, setSetupStarted] = useState(false);
+  const autoConfirmTriedRef = useRef(false);
+
+  const canConfirm =
+    payoutsEnabled ||
+    hasConnectAccount ||
+    isConnectReturn ||
+    sessionPending ||
+    setupStarted;
 
   const beforeItems = [
     t('carrierOnboarding.connectBeforeItem1'),
@@ -558,28 +625,64 @@ function ConnectStep({
         t('carrierOnboarding.connectHow7'),
       ];
 
+  const clearConnectQuery = () => {
+    if (!searchParams.has('connect')) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('connect');
+    setSearchParams(next, { replace: true });
+  };
+
+  const confirm = useMutation({
+    mutationFn: () => confirmCarrierConnect(),
+    onSuccess: async () => {
+      clearConnectPending();
+      setSessionPending(false);
+      clearConnectQuery();
+      await onDone();
+    },
+  });
+
   const setup = useMutation({
     mutationFn: () => setupCarrierConnect(),
     onSuccess: (data) => {
       setSetupStarted(true);
+      writeConnectPending(companyId);
+      setSessionPending(true);
       if (data.mock) {
         setStripeUrl(null);
         return;
       }
       setStripeUrl(data.url);
-      const opened = window.open(data.url, '_blank', 'noopener,noreferrer');
-      if (!opened) {
-        // Pop-up blocked — keep the on-page link so the carrier can open it manually.
-        setStripeUrl(data.url);
-      }
+      // Same-tab redirect so Stripe return/refresh URL restores this page.
+      window.location.assign(data.url);
     },
   });
-  const confirm = useMutation({
-    mutationFn: () => confirmCarrierConnect(),
-    onSuccess: () => {
-      void onDone();
-    },
-  });
+
+  useEffect(() => {
+    if (hasConnectAccount || isConnectReturn || payoutsEnabled || sessionPending) {
+      setSetupStarted(true);
+    }
+  }, [hasConnectAccount, isConnectReturn, payoutsEnabled, sessionPending]);
+
+  // After Stripe hosted onboarding, verify payouts and advance.
+  useEffect(() => {
+    if (payoutsEnabled || mock) return;
+    if (!hasConnectAccount) return;
+    if (!isConnectReturn && !sessionPending) return;
+    if (autoConfirmTriedRef.current) return;
+    autoConfirmTriedRef.current = true;
+    confirm.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once when returning from Stripe
+  }, [isConnectReturn, sessionPending, hasConnectAccount, payoutsEnabled, mock]);
+
+  // Already confirmed in DB — Continue advances; auto-advance only on Stripe return.
+  useEffect(() => {
+    if (!payoutsEnabled || !isConnectReturn) return;
+    clearConnectPending();
+    clearConnectQuery();
+    void onDone();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once on return when already ready
+  }, [payoutsEnabled, isConnectReturn]);
 
   return (
     <div className="mt-8 space-y-5">
@@ -630,15 +733,23 @@ function ConnectStep({
         <Notice tone="error">{getErrorDetail(setup.error ?? confirm.error)}</Notice>
       )}
 
-      {setupStarted && !mock ? (
+      {(isConnectReturn || sessionPending) && confirm.isPending ? (
+        <Notice tone="info">{t('carrierOnboarding.connectConfirming')}</Notice>
+      ) : null}
+
+      {payoutsEnabled ? (
+        <Notice tone="success" title={t('carrierOnboarding.connectAlreadyReadyTitle')}>
+          <p className="text-sm">{t('carrierOnboarding.connectAlreadyReadyBody')}</p>
+        </Notice>
+      ) : null}
+
+      {canConfirm && !mock && !confirm.isPending && !payoutsEnabled ? (
         <Notice tone="success" title={t('carrierOnboarding.connectOpenedTitle')}>
           <p className="text-sm">{t('carrierOnboarding.connectOpenedBody')}</p>
           {stripeUrl ? (
             <p className="mt-2 text-sm">
               <a
                 href={stripeUrl}
-                target="_blank"
-                rel="noreferrer"
                 className="font-medium text-clox-orange underline"
               >
                 {t('carrierOnboarding.connectOpenLinkAgain')}
@@ -648,39 +759,49 @@ function ConnectStep({
         </Notice>
       ) : null}
 
-      {setupStarted && mock ? (
+      {canConfirm && mock && !payoutsEnabled ? (
         <Notice tone="success">{t('carrierOnboarding.mockConnectReady')}</Notice>
       ) : null}
 
       <div className="flex flex-wrap gap-2">
+        {!payoutsEnabled ? (
+          <Button
+            variant={canConfirm ? 'secondary' : 'cta'}
+            disabled={setup.isPending || confirm.isPending}
+            onClick={() => {
+              confirm.reset();
+              autoConfirmTriedRef.current = false;
+              setup.mutate();
+            }}
+          >
+            {setup.isPending
+              ? t('carrierOnboarding.connectOpening')
+              : canConfirm
+                ? t('carrierOnboarding.createConnectAccountAgain')
+                : t('carrierOnboarding.createConnectAccount')}
+          </Button>
+        ) : null}
         <Button
-          variant={setupStarted ? 'secondary' : 'cta'}
-          disabled={setup.isPending}
-          onClick={() => {
-            confirm.reset();
-            setup.mutate();
-          }}
-        >
-          {setup.isPending
-            ? t('carrierOnboarding.connectOpening')
-            : setupStarted
-              ? t('carrierOnboarding.createConnectAccountAgain')
-              : t('carrierOnboarding.createConnectAccount')}
-        </Button>
-        <Button
-          variant={setupStarted ? 'cta' : 'secondary'}
-          disabled={confirm.isPending || !setupStarted}
+          variant="cta"
+          disabled={confirm.isPending || (!canConfirm && !payoutsEnabled)}
           onClick={() => {
             setup.reset();
+            if (payoutsEnabled) {
+              clearConnectPending();
+              void onDone();
+              return;
+            }
             confirm.mutate();
           }}
         >
           {confirm.isPending
             ? t('carrierOnboarding.connectConfirming')
-            : t('carrierOnboarding.confirmPayoutsReady')}
+            : payoutsEnabled
+              ? t('continue')
+              : t('carrierOnboarding.confirmPayoutsReady')}
         </Button>
       </div>
-      {!setupStarted ? (
+      {!canConfirm && !payoutsEnabled ? (
         <p className="text-xs text-clox-faint">{t('carrierOnboarding.connectConfirmHint')}</p>
       ) : null}
     </div>

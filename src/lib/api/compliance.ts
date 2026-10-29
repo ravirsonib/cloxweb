@@ -1,5 +1,6 @@
 import { ApiError } from '@/lib/http/client';
 import { http } from '@/lib/http';
+import { i18n } from '@/lib/i18n';
 
 export type ComplianceCaseListItem = {
   id: string;
@@ -127,6 +128,8 @@ export function listDocuments(params: { companyId: string; driverId?: string }) 
     .then((r) => r.data);
 }
 
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
 export function createUploadIntent(payload: {
   companyId: string;
   docType: string;
@@ -137,6 +140,24 @@ export function createUploadIntent(payload: {
   vehicleId?: string;
   driverId?: string;
 }) {
+  if (payload.sizeBytes > MAX_UPLOAD_BYTES) {
+    return Promise.reject(
+      new ApiError(400, i18n.t('errors.fileTooLarge'), { code: 'FILE_TOO_LARGE' }),
+    );
+  }
+  const allowedMime = new Set([
+    'application/pdf',
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+  ]);
+  if (!allowedMime.has(payload.mimeType)) {
+    return Promise.reject(
+      new ApiError(400, i18n.t('errors.unsupportedFileType'), {
+        code: 'UNSUPPORTED_FILE_TYPE',
+      }),
+    );
+  }
   return http.post<{
     id: string;
     uploadUrl: string;

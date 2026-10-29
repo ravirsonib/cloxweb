@@ -24,14 +24,43 @@ type ProblemBody = {
   error?: string;
 };
 
+/** Rewrite Nest/Zod validation jargon into plain language for the UI. */
+function humanizeApiMessage(raw: string): string {
+  const message = raw.trim();
+  if (
+    /sizeBytes/i.test(message) ||
+    /Too big:.*10485760/i.test(message) ||
+    /File exceeds 10\s*MB/i.test(message) ||
+    /expected number to be\s*[=<]*\s*10485760/i.test(message)
+  ) {
+    return i18n.t('errors.fileTooLarge');
+  }
+  if (
+    /mimeType/i.test(message) ||
+    /Unsupported mime/i.test(message) ||
+    /Content-Type does not match/i.test(message)
+  ) {
+    return i18n.t('errors.unsupportedFileType');
+  }
+  if (/Missing file upload|multipart field/i.test(message)) {
+    return i18n.t('errors.uploadMissingFile');
+  }
+  // Strip "field: " prefixes that still leave readable custom messages.
+  return message.replace(/^[a-zA-Z0-9_.]+:\s*/, (prefix) =>
+    /sizeBytes|mimeType|originalFilename/i.test(prefix) ? '' : prefix,
+  );
+}
+
 export function getErrorDetail(error: unknown): string {
-  if (error instanceof ApiError) return error.detail;
+  if (error instanceof ApiError) return humanizeApiMessage(error.detail);
   if (isAxiosError(error)) {
     const data = error.response?.data as ProblemBody | undefined;
-    if (typeof data?.detail === 'string') return data.detail;
-    if (typeof data?.message === 'string') return data.message;
-    if (Array.isArray(data?.message)) return data.message.join('; ');
-    if (typeof data?.title === 'string') return data.title;
+    if (typeof data?.detail === 'string') return humanizeApiMessage(data.detail);
+    if (typeof data?.message === 'string') return humanizeApiMessage(data.message);
+    if (Array.isArray(data?.message)) {
+      return humanizeApiMessage(data.message.join('; '));
+    }
+    if (typeof data?.title === 'string') return humanizeApiMessage(data.title);
     if (error.code === 'ECONNABORTED' || /timeout/i.test(error.message)) {
       return i18n.t('errors.uploadTimeout', {
         defaultValue: 'Upload timed out. Try a smaller photo or check your connection.',
@@ -43,9 +72,9 @@ export function getErrorDetail(error: unknown): string {
           'Upload failed (network or file too large). Use a JPEG/PNG under 10 MB.',
       });
     }
-    return error.message;
+    return humanizeApiMessage(error.message);
   }
-  if (error instanceof Error) return error.message;
+  if (error instanceof Error) return humanizeApiMessage(error.message);
   return i18n.t('unexpectedError');
 }
 

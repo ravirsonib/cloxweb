@@ -298,7 +298,14 @@ export type AdminJobListItem = {
     lockedAt: string | null;
     carrierCompany: { id: string; legalName: string } | null;
   } | null;
-  trip: { id: string; status: string; startedAt: string | null; completedAt: string | null } | null;
+  trip: {
+    id: string;
+    status: string;
+    startedAt: string | null;
+    completedAt: string | null;
+    /** Every dropoff POD FINALIZED; trip not COMPLETED yet (awaiting driver exit). */
+    podAwaitingExit?: boolean;
+  } | null;
   proposalCount: number;
   canHardDelete: boolean;
   canSoftDelete: boolean;

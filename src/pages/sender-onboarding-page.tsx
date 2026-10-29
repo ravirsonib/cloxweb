@@ -205,6 +205,7 @@ export function SenderOnboardingPage() {
       {step === 'payment' && (
         <PaymentStep
           mock={data.stripeMock}
+          repairRequired={Boolean(data.paymentRepairRequired)}
           onDone={async () => {
             await qc.invalidateQueries({ queryKey: ['sender', 'onboarding'] });
           }}
@@ -548,6 +549,7 @@ function DocumentsStep({
 }) {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const toast = useToast();
   const docType = accountType === 'INDIVIDUAL' ? 'GOVERNMENT_ID' : 'ABN_EXTRACT';
   const [file, setFile] = useState<File | null>(null);
   const [docId, setDocId] = useState<string | null>(null);
@@ -571,6 +573,10 @@ function DocumentsStep({
     onSuccess: (id) => {
       setDocId(id);
       setMessage(t('senderOnboarding.documentUploaded'));
+      toast.success(t('senderOnboarding.documentUploaded'));
+    },
+    onError: (err) => {
+      toast.error(getErrorDetail(err));
     },
   });
 
@@ -579,7 +585,13 @@ function DocumentsStep({
       if (!docId) throw new Error(t('senderOnboarding.errorUploadFirst'));
       return submitSenderVerification([docId]);
     },
-    onSuccess: () => onSubmitted(),
+    onSuccess: async () => {
+      toast.success(t('senderOnboarding.submitSuccess'));
+      await onSubmitted();
+    },
+    onError: (err) => {
+      toast.error(getErrorDetail(err));
+    },
   });
 
   return (
@@ -632,7 +644,15 @@ function DocumentsStep({
   );
 }
 
-function PaymentStep({ mock, onDone }: { mock: boolean; onDone: () => Promise<void> }) {
+function PaymentStep({
+  mock,
+  repairRequired,
+  onDone,
+}: {
+  mock: boolean;
+  repairRequired?: boolean;
+  onDone: () => Promise<void>;
+}) {
   const { t } = useTranslation();
   const [setupInfo, setSetupInfo] = useState<string | null>(null);
   const [liveSetup, setLiveSetup] = useState<{
@@ -675,6 +695,9 @@ function PaymentStep({ mock, onDone }: { mock: boolean; onDone: () => Promise<vo
       <h2 className="font-display text-lg font-semibold">
         {t('senderOnboarding.paymentTitle')}
       </h2>
+      {repairRequired ? (
+        <Notice tone="warn">{t('senderOnboarding.paymentRepairNotice')}</Notice>
+      ) : null}
       <p className="text-sm text-clox-mute">
         {mock
           ? t('senderOnboarding.paymentMockHint')

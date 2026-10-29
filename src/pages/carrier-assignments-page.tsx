@@ -34,6 +34,7 @@ import {
   carrierDriverSelectLabel,
   carrierVehicleSelectLabel,
 } from '@/lib/fleet-select-labels';
+import { isPodAwaitingDriverExit } from '@/lib/pod-phase';
 import {
   countByBucket,
   filterAndSortByBucket,
@@ -139,6 +140,10 @@ function AssignmentPodPanel({ tripId }: { tripId: string }) {
   if (pod.isError || !pod.data) return null;
 
   const drop = pod.data.dropoffs[0];
+  const awaitingExit = isPodAwaitingDriverExit({
+    tripStatus: pod.data.tripStatus,
+    dropoffs: pod.data.dropoffs,
+  });
   const docButtons: Array<{ kind: TripDocumentKind; label: string; ready: boolean }> = [
     {
       kind: 'pod',
@@ -157,11 +162,19 @@ function AssignmentPodPanel({ tripId }: { tripId: string }) {
     },
   ];
   const readyDocs = docButtons.filter((d) => d.ready);
-  if (!drop && readyDocs.length === 0) return null;
+  if (!drop && readyDocs.length === 0 && !awaitingExit) return null;
 
   return (
     <div className={shellClass}>
       <p className="text-xs font-semibold text-clox-ink">{t('trips.podPanelTitle')}</p>
+      {awaitingExit ? (
+        <div className="mt-1.5 space-y-1">
+          <StatusPill tone="info">{t('assignments.podAwaitingExitPill')}</StatusPill>
+          <p className="break-words text-xs text-clox-mute">
+            {t('assignments.podAwaitingExitHint')}
+          </p>
+        </div>
+      ) : null}
       {drop ? (
         <p className="mt-0.5 break-words text-xs text-clox-mute">
           {t('trips.podStatusLine', { status: drop.podStatus })}
@@ -424,6 +437,11 @@ export function CarrierAssignmentsPage() {
                           trip: a.trip?.status ?? t('dash'),
                         })}
                       </p>
+                      {a.trip?.status === 'AT_DROPOFF' ? (
+                        <p className="mt-1 text-xs text-clox-faint">
+                          {t('assignments.tripAtDropoffHint')}
+                        </p>
+                      ) : null}
                       {jobExceptions.length > 0 ? (
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {jobExceptions.map((exc) => (

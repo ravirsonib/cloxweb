@@ -225,10 +225,22 @@ export function AdminJobsPage() {
                       ) : null}
                       {job.trip?.status ? (
                         <StatusPill tone={tripStatusTone(job.trip.status)}>
-                          {job.trip.status}
+                          {t(`tripStatuses.${job.trip.status}`, {
+                            defaultValue: job.trip.status,
+                          })}
+                        </StatusPill>
+                      ) : null}
+                      {job.trip?.podAwaitingExit ? (
+                        <StatusPill tone="info">
+                          {t('adminJobs.podAwaitingExitPill')}
                         </StatusPill>
                       ) : null}
                     </div>
+                    {job.trip?.podAwaitingExit ? (
+                      <p className="mt-1 text-xs text-clox-mute">
+                        {t('adminJobs.podAwaitingExitHint')}
+                      </p>
+                    ) : null}
                     <p className="mt-2 text-xs text-clox-faint">
                       {estimateLabel(job.estimateIncGstCents, t('dash'))} ·{' '}
                       {formatDateTime(job.createdAt)}
@@ -322,9 +334,18 @@ export function AdminJobsPage() {
                     </td>
                     <td className="px-4 py-3">
                       {job.trip?.status ? (
-                        <StatusPill tone={tripStatusTone(job.trip.status)}>
-                          {job.trip.status}
-                        </StatusPill>
+                        <div className="space-y-1">
+                          <StatusPill tone={tripStatusTone(job.trip.status)}>
+                            {t(`tripStatuses.${job.trip.status}`, {
+                              defaultValue: job.trip.status,
+                            })}
+                          </StatusPill>
+                          {job.trip.podAwaitingExit ? (
+                            <StatusPill tone="info">
+                              {t('adminJobs.podAwaitingExitPill')}
+                            </StatusPill>
+                          ) : null}
+                        </div>
                       ) : (
                         <span className="text-sm text-clox-faint">{t('dash')}</span>
                       )}
@@ -502,11 +523,21 @@ export function AdminJobDetailPage() {
         <li className="flex flex-wrap items-center gap-2">
           <span>{t('adminJobs.colTrip')}:</span>
           {job.trip?.status ? (
-            <StatusPill tone={tripStatusTone(job.trip.status)}>{job.trip.status}</StatusPill>
+            <>
+              <StatusPill tone={tripStatusTone(job.trip.status)}>
+                {t(`tripStatuses.${job.trip.status}`, { defaultValue: job.trip.status })}
+              </StatusPill>
+              {job.trip.podAwaitingExit ? (
+                <StatusPill tone="info">{t('adminJobs.podAwaitingExitPill')}</StatusPill>
+              ) : null}
+            </>
           ) : (
             <span>{t('dash')}</span>
           )}
         </li>
+        {job.trip?.podAwaitingExit ? (
+          <li className="text-xs text-clox-mute">{t('adminJobs.podAwaitingExitHint')}</li>
+        ) : null}
         <li>
           {t('adminJobs.colCreated')}: {formatDateTime(job.createdAt)}
         </li>

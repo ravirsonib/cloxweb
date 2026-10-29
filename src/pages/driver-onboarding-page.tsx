@@ -14,7 +14,16 @@ import {
   uploadDocumentContent,
   type DriverOnboarding,
 } from '@/lib/api';
-import { Button, ChoiceCheck, Field, FileInput, Notice, Select, StepChips } from '@/components/ui';
+import {
+  Button,
+  ChoiceCheck,
+  Field,
+  FileInput,
+  Notice,
+  Select,
+  StepChips,
+  useToast,
+} from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
 import { resolveUploadMime } from '@/lib/upload-mime';
 import {
@@ -74,22 +83,22 @@ export function DriverOnboardingPage() {
   }
 
   return (
-    <div>
+    <div className="max-w-2xl">
       <h1 className="font-display text-2xl font-bold text-clox-ink sm:text-3xl">
         {t('driverOnboarding.title')}
       </h1>
-      <p className="mt-2 text-sm text-clox-mute">
+      <p className="mt-2 text-sm text-clox-mute">{t('driverOnboarding.subtitle')}</p>
+
+      <div className="mt-4 rounded-xl border border-clox-border bg-clox-surface px-3 py-2.5 text-xs text-clox-mute">
         {data.company ? (
-          <>
-            {t('driverOnboarding.companyLine', {
-              legalName: data.company.legalName,
-              status: data.driver.status,
-            })}
-          </>
+          t('driverOnboarding.companyLine', {
+            legalName: data.company.legalName,
+            status: data.driver.status,
+          })
         ) : (
           <span className="text-[var(--status-warn)]">{t('driverOnboarding.noCompanyLinked')}</span>
         )}
-      </p>
+      </div>
 
       {step === 'accept' ? (
         <div className="mt-8 space-y-3">
@@ -111,50 +120,63 @@ export function DriverOnboardingPage() {
 
       {step === 'complete' ? (
         <div className="mt-8 space-y-4">
-          <h2 className="font-display text-lg font-semibold text-[var(--status-ok)]">
-            {t('driverOnboarding.activeTitle')}
-          </h2>
-          <ul className="text-sm text-clox-mute">
-            <li>
-              {t('driverOnboarding.personalSummary', {
-                name: data.user.name ?? t('dash'),
-                phone: data.user.phone ?? t('dash'),
-              })}
-            </li>
-            <li>
-              {t('driverOnboarding.addressSummary', {
-                line: data.driver.addressLine1 ?? t('dash'),
-                suburb: data.driver.suburb ?? t('dash'),
-                state: data.driver.state ?? t('dash'),
-                postcode: data.driver.postcode ?? t('dash'),
-              })}
-            </li>
-            <li>
-              {t('driverOnboarding.licenceLine', {
-                licenceClass: data.driver.licenceClass
-                  ? t(`driverOnboarding.licenceClasses.${data.driver.licenceClass}`, {
-                      defaultValue: data.driver.licenceClass,
-                    })
-                  : t('dash'),
-                licenceNo: data.driver.licenceNo,
-                expiry: data.driver.licenceExpiry?.slice(0, 10),
-              })}
-            </li>
-            <li>
-              {t('driverOnboarding.nhvrAcknowledged', {
-                value: data.driver.nhvrAcknowledgedAt ? t('yes') : t('no'),
-              })}
-            </li>
-            <li>{t('driverOnboarding.canBeAssigned', { value: String(data.goNoGo.canBeAssigned) })}</li>
-            {assignability.data ? (
+          <Notice tone="success" title={t('driverOnboarding.activeTitle')}>
+            {t('driverOnboarding.activeBody')}
+          </Notice>
+          <div className="rounded-xl border border-clox-border bg-clox-surface p-4">
+            <h2 className="font-display text-base font-semibold text-clox-ink">
+              {t('driverOnboarding.profileSummaryTitle')}
+            </h2>
+            <ul className="mt-3 space-y-2 text-sm text-clox-mute">
               <li>
-                {t('driverOnboarding.assignabilityReason', {
-                  reason: assignability.data.reason ?? t('driverOnboarding.assignabilityOk'),
+                {t('driverOnboarding.personalSummary', {
+                  name: data.user.name ?? t('dash'),
+                  phone: data.user.phone ?? t('dash'),
                 })}
               </li>
-            ) : null}
-            <li className="text-clox-faint">{data.goNoGo.tripApisNote}</li>
-          </ul>
+              <li>
+                {t('driverOnboarding.addressSummary', {
+                  line: data.driver.addressLine1 ?? t('dash'),
+                  suburb: data.driver.suburb ?? t('dash'),
+                  state: data.driver.state ?? t('dash'),
+                  postcode: data.driver.postcode ?? t('dash'),
+                })}
+              </li>
+              <li>
+                {t('driverOnboarding.licenceLine', {
+                  licenceClass: data.driver.licenceClass
+                    ? t(`driverOnboarding.licenceClasses.${data.driver.licenceClass}`, {
+                        defaultValue: data.driver.licenceClass,
+                      })
+                    : t('dash'),
+                  licenceNo: data.driver.licenceNo,
+                  expiry: data.driver.licenceExpiry?.slice(0, 10),
+                })}
+              </li>
+              <li>
+                {t('driverOnboarding.nhvrAcknowledged', {
+                  value: data.driver.nhvrAcknowledgedAt ? t('yes') : t('no'),
+                })}
+              </li>
+              <li>
+                {t('driverOnboarding.canBeAssigned', {
+                  value: data.goNoGo.canBeAssigned
+                    ? t('driverOnboarding.assignabilityYes')
+                    : t('driverOnboarding.assignabilityNo'),
+                })}
+              </li>
+              {assignability.data?.reason ? (
+                <li>
+                  {t('driverOnboarding.assignabilityReason', {
+                    reason: assignability.data.reason,
+                  })}
+                </li>
+              ) : null}
+            </ul>
+          </div>
+          <Link to="/trips" className="clox-btn clox-btn-cta inline-flex">
+            {t('driverOnboarding.goToTrips')}
+          </Link>
         </div>
       ) : null}
 
@@ -219,6 +241,7 @@ function LicenceStep({
   driverId: string;
 }) {
   const { t } = useTranslation();
+  const toast = useToast();
   const formTopRef = useRef<HTMLFormElement>(null);
   const [chip, setChip] = useState<ProfileChipId>('details');
   const [farthestChipIdx, setFarthestChipIdx] = useState(0);
@@ -274,7 +297,7 @@ function LicenceStep({
     : 'VIC';
   const expiryDefault = data.driver.licenceExpiry
     ? data.driver.licenceExpiry.slice(0, 10)
-    : '2030-12-31';
+    : '';
 
   const form = useForm<LicenceForm>({
     resolver: zodResolver(schema),
@@ -314,7 +337,7 @@ function LicenceStep({
       licenceClass: nextClass,
       licenceExpiry: data.driver.licenceExpiry
         ? data.driver.licenceExpiry.slice(0, 10)
-        : '2030-12-31',
+        : '',
       nhvrAcknowledged: Boolean(data.driver.nhvrAcknowledgedAt),
     });
   }, [
@@ -373,7 +396,13 @@ function LicenceStep({
         licenceDocumentId: intent.id,
       });
     },
-    onSuccess: () => onSaved(),
+    onSuccess: async () => {
+      toast.success(t('driverOnboarding.submitSuccess'));
+      await onSaved();
+    },
+    onError: (error) => {
+      toast.error(formatLicenceSubmitError(error, getErrorDetail));
+    },
   });
 
   function goToChip(next: ProfileChipId) {
@@ -404,7 +433,7 @@ function LicenceStep({
   return (
     <form
       ref={formTopRef}
-      className="mt-6 max-w-lg"
+      className="mt-6"
       onSubmit={form.handleSubmit((values) => {
         if (chip !== 'confirm') {
           void continueFromChip();
@@ -431,185 +460,214 @@ function LicenceStep({
         canSelectStep={(_id, index) => index <= farthestChipIdx}
       />
 
-      {chip === 'details' ? (
-        <div className="space-y-1">
-          <h2 className="font-display text-lg font-semibold">
-            {t('driverOnboarding.personalTitle')}
-          </h2>
-          <p className="mb-3 mt-1 text-sm text-clox-mute">
-            {t('driverOnboarding.personalHint')}
-          </p>
+      <div className="rounded-xl border border-clox-border bg-clox-surface p-4 sm:p-5">
+        {chip === 'details' ? (
+          <div className="space-y-4">
+            <div>
+              <h2 className="font-display text-lg font-semibold text-clox-ink">
+                {t('driverOnboarding.personalTitle')}
+              </h2>
+              <p className="mt-1 text-sm text-clox-mute">{t('driverOnboarding.personalHint')}</p>
+            </div>
 
-          <Field
-            label={t('driverOnboarding.nameLabel')}
-            required
-            autoComplete="name"
-            error={form.formState.errors.name?.message}
-            {...form.register('name')}
-          />
-          <Field
-            label={t('driverOnboarding.phoneLabel')}
-            required
-            type="tel"
-            autoComplete="tel"
-            placeholder={t('driverOnboarding.phonePlaceholder')}
-            error={form.formState.errors.phone?.message}
-            {...form.register('phone')}
-          />
-          <Field
-            label={t('driverOnboarding.emergencyNameLabel')}
-            required
-            error={form.formState.errors.emergencyContactName?.message}
-            {...form.register('emergencyContactName')}
-          />
-          <Field
-            label={t('driverOnboarding.emergencyPhoneLabel')}
-            required
-            type="tel"
-            placeholder={t('driverOnboarding.phonePlaceholder')}
-            error={form.formState.errors.emergencyContactPhone?.message}
-            {...form.register('emergencyContactPhone')}
-          />
-          <Field
-            label={t('driverOnboarding.addressLineLabel')}
-            required
-            autoComplete="street-address"
-            error={form.formState.errors.addressLine1?.message}
-            {...form.register('addressLine1')}
-          />
-          <Field
-            label={t('driverOnboarding.suburbLabel')}
-            required
-            autoComplete="address-level2"
-            error={form.formState.errors.suburb?.message}
-            {...form.register('suburb')}
-          />
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Select
-              label={t('driverOnboarding.stateLabel')}
-              required
-              error={form.formState.errors.state?.message}
-              value={form.watch('state')}
-              {...form.register('state')}
-            >
-              {AU_STATES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </Select>
             <Field
-              label={t('driverOnboarding.postcodeLabel')}
+              label={t('driverOnboarding.nameLabel')}
               required
-              autoComplete="postal-code"
-              inputMode="numeric"
-              maxLength={4}
-              error={form.formState.errors.postcode?.message}
-              {...form.register('postcode')}
+              autoComplete="name"
+              error={form.formState.errors.name?.message}
+              {...form.register('name')}
+            />
+            <Field
+              label={t('driverOnboarding.phoneLabel')}
+              required
+              type="tel"
+              autoComplete="tel"
+              placeholder={t('driverOnboarding.phonePlaceholder')}
+              error={form.formState.errors.phone?.message}
+              {...form.register('phone')}
+            />
+            <Field
+              label={t('driverOnboarding.emergencyNameLabel')}
+              required
+              error={form.formState.errors.emergencyContactName?.message}
+              {...form.register('emergencyContactName')}
+            />
+            <Field
+              label={t('driverOnboarding.emergencyPhoneLabel')}
+              required
+              type="tel"
+              placeholder={t('driverOnboarding.phonePlaceholder')}
+              error={form.formState.errors.emergencyContactPhone?.message}
+              {...form.register('emergencyContactPhone')}
+            />
+            <Field
+              label={t('driverOnboarding.addressLineLabel')}
+              required
+              autoComplete="street-address"
+              error={form.formState.errors.addressLine1?.message}
+              {...form.register('addressLine1')}
+            />
+            <Field
+              label={t('driverOnboarding.suburbLabel')}
+              required
+              autoComplete="address-level2"
+              error={form.formState.errors.suburb?.message}
+              {...form.register('suburb')}
+            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Controller
+                name="state"
+                control={form.control}
+                render={({ field, fieldState }) => (
+                  <Select
+                    label={t('driverOnboarding.stateLabel')}
+                    required
+                    name={field.name}
+                    value={field.value}
+                    onBlur={field.onBlur}
+                    ref={field.ref}
+                    error={fieldState.error?.message}
+                    onChange={(e) => field.onChange(e.target.value)}
+                  >
+                    {AU_STATES.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              />
+              <Field
+                label={t('driverOnboarding.postcodeLabel')}
+                required
+                autoComplete="postal-code"
+                inputMode="numeric"
+                maxLength={4}
+                error={form.formState.errors.postcode?.message}
+                {...form.register('postcode')}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        {chip === 'licence' ? (
+          <div className="space-y-4">
+            <div>
+              <h2 className="font-display text-lg font-semibold text-clox-ink">
+                {t('driverOnboarding.licenceTitle')}
+              </h2>
+              <p className="mt-1 text-sm text-clox-mute">{t('driverOnboarding.licenceHint')}</p>
+            </div>
+
+            <Field
+              label={t('driverOnboarding.licenceNoLabel')}
+              required
+              placeholder={t('driverOnboarding.licenceNoPlaceholder')}
+              error={form.formState.errors.licenceNo?.message}
+              {...form.register('licenceNo')}
+            />
+            <Controller
+              name="licenceClass"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Select
+                  label={t('driverOnboarding.licenceClassLabel')}
+                  required
+                  name={field.name}
+                  value={field.value}
+                  onBlur={field.onBlur}
+                  ref={field.ref}
+                  error={fieldState.error?.message}
+                  onChange={(e) => field.onChange(e.target.value)}
+                >
+                  {LICENCE_CLASSES.map((c) => (
+                    <option key={c} value={c}>
+                      {t(`driverOnboarding.licenceClasses.${c}`)}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            />
+            <Field
+              type="date"
+              label={t('driverOnboarding.licenceExpiryLabel')}
+              required
+              error={form.formState.errors.licenceExpiry?.message}
+              {...form.register('licenceExpiry')}
+            />
+
+            <Notice tone="info">{t('driverOnboarding.licenceUploadRequiredNotice')}</Notice>
+            <FileInput
+              label={t('driverOnboarding.licenceUploadLabel')}
+              required
+              hint={t('driverOnboarding.licenceUploadHint')}
+              accept="application/pdf,image/jpeg,image/png,image/webp"
+              capture="environment"
+              fileName={licenceFile?.name ?? null}
+              error={fileError}
+              onChange={(e) => {
+                const next = e.target.files?.[0] ?? null;
+                setLicenceFile(next);
+                setFileError(null);
+              }}
             />
           </div>
-        </div>
-      ) : null}
+        ) : null}
 
-      {chip === 'licence' ? (
-        <div className="space-y-1">
-          <h2 className="font-display text-lg font-semibold">
-            {t('driverOnboarding.licenceTitle')}
-          </h2>
-          <p className="mb-3 mt-1 text-sm text-clox-mute">
-            {t('driverOnboarding.licenceHint')}
-          </p>
-          <Notice tone="info" className="mb-4">
-            {t('driverOnboarding.licenceUploadRequiredNotice')}
-          </Notice>
+        {chip === 'confirm' ? (
+          <div className="space-y-4">
+            <div>
+              <h2 className="font-display text-lg font-semibold text-clox-ink">
+                {t('driverOnboarding.confirmTitle')}
+              </h2>
+              <p className="mt-1 text-sm text-clox-mute">{t('driverOnboarding.confirmHint')}</p>
+            </div>
 
-          <FileInput
-            label={t('driverOnboarding.licenceUploadLabel')}
-            required
-            hint={t('driverOnboarding.licenceUploadHint')}
-            accept="application/pdf,image/jpeg,image/png,image/webp"
-            fileName={licenceFile?.name ?? null}
-            error={fileError}
-            onChange={(e) => {
-              const next = e.target.files?.[0] ?? null;
-              setLicenceFile(next);
-              setFileError(null);
-            }}
-          />
+            <div className="rounded-lg border border-clox-border-soft bg-[var(--clox-bg)] px-3 py-3 text-sm text-clox-mute">
+              <p>
+                {t('driverOnboarding.confirmSummary', {
+                  name: form.watch('name') || t('dash'),
+                  licenceNo: form.watch('licenceNo') || t('dash'),
+                  file: licenceFile?.name ?? t('dash'),
+                })}
+              </p>
+              <p className="mt-2">
+                {t('driverOnboarding.confirmLicenceMeta', {
+                  licenceClass: t(`driverOnboarding.licenceClasses.${form.watch('licenceClass')}`, {
+                    defaultValue: form.watch('licenceClass'),
+                  }),
+                  expiry: form.watch('licenceExpiry') || t('dash'),
+                })}
+              </p>
+            </div>
 
-          <Field
-            label={t('driverOnboarding.placeholderLicenceNumber')}
-            required
-            placeholder={t('driverOnboarding.placeholderLicenceNumber')}
-            error={form.formState.errors.licenceNo?.message}
-            {...form.register('licenceNo')}
-          />
-          <Select
-            label={t('validation.licenceClassLabel')}
-            required
-            error={form.formState.errors.licenceClass?.message}
-            value={form.watch('licenceClass')}
-            {...form.register('licenceClass')}
-          >
-            {LICENCE_CLASSES.map((c) => (
-              <option key={c} value={c}>
-                {t(`driverOnboarding.licenceClasses.${c}`)}
-              </option>
-            ))}
-          </Select>
-          <Field
-            type="date"
-            label={t('validation.licenceExpiryLabel')}
-            required
-            error={form.formState.errors.licenceExpiry?.message}
-            {...form.register('licenceExpiry')}
-          />
-        </div>
-      ) : null}
+            <Controller
+              name="nhvrAcknowledged"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <ChoiceCheck
+                  checked={field.value}
+                  onBlur={field.onBlur}
+                  name={field.name}
+                  ref={field.ref}
+                  error={fieldState.error?.message}
+                  onChange={(e) => field.onChange(e.target.checked)}
+                >
+                  {t('driverOnboarding.nhvrCheckbox')}
+                </ChoiceCheck>
+              )}
+            />
 
-      {chip === 'confirm' ? (
-        <div className="space-y-1">
-          <h2 className="font-display text-lg font-semibold">
-            {t('driverOnboarding.confirmTitle')}
-          </h2>
-          <p className="mb-3 mt-1 text-sm text-clox-mute">
-            {t('driverOnboarding.confirmHint')}
-          </p>
-          <Notice tone="info" className="mb-4">
-            {t('driverOnboarding.confirmSummary', {
-              name: form.watch('name') || t('dash'),
-              licenceNo: form.watch('licenceNo') || t('dash'),
-              file: licenceFile?.name ?? t('dash'),
-            })}
-          </Notice>
+            {mutation.isError ? (
+              <Notice tone="error">
+                {formatLicenceSubmitError(mutation.error, getErrorDetail)}
+              </Notice>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
 
-          <Controller
-            name="nhvrAcknowledged"
-            control={form.control}
-            render={({ field, fieldState }) => (
-              <ChoiceCheck
-                className="mb-4"
-                checked={field.value}
-                onBlur={field.onBlur}
-                name={field.name}
-                ref={field.ref}
-                error={fieldState.error?.message}
-                onChange={(e) => field.onChange(e.target.checked)}
-              >
-                {t('driverOnboarding.nhvrCheckbox')}
-              </ChoiceCheck>
-            )}
-          />
-
-          {mutation.isError ? (
-            <Notice tone="error" className="mb-0">
-              {formatLicenceSubmitError(mutation.error, getErrorDetail)}
-            </Notice>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="clox-form-actions mt-6 flex flex-wrap gap-2">
+      <div className="clox-form-actions">
         {chipIdx > 0 ? (
           <Button
             type="button"

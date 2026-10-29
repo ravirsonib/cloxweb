@@ -31,6 +31,7 @@ import {
   Select,
   StepChips,
   useConfirm,
+  useToast,
 } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
 import { resolveUploadMime } from '@/lib/upload-mime';
@@ -95,11 +96,17 @@ export function CarrierOnboardingPage() {
   const [viewStep, setViewStep] = useState<string | null>(null);
 
   const serverStep = query.data?.step;
-  // Seed once only — do not yank the user off Fleet after RWC upload when the
-  // server step advances; steps call setViewStep explicitly on Continue.
+  // Seed once for normal flow; force Payouts when server requires Connect repair
+  // (BID_ELIGIBLE + payouts not ready after mock→live).
   useEffect(() => {
-    if (serverStep) setViewStep((prev) => prev ?? serverStep);
-  }, [serverStep]);
+    if (!serverStep) return;
+    setViewStep((prev) => {
+      if (serverStep === 'connect' && query.data?.payoutRepairRequired) {
+        return 'connect';
+      }
+      return prev ?? serverStep;
+    });
+  }, [serverStep, query.data?.payoutRepairRequired]);
 
   if (role !== AppRole.TRANSPORT_COMPANY) {
     return <Navigate to="/" replace />;
@@ -198,6 +205,7 @@ export function CarrierOnboardingPage() {
         <ConnectStep
           companyId={data.company.id}
           mock={data.stripeMock}
+          repairRequired={Boolean(data.payoutRepairRequired)}
           hasConnectAccount={Boolean(data.company.stripeConnectAccountId)}
           payoutsEnabled={data.company.stripeConnectPayoutsEnabled}
           onDone={refreshAndGo}
@@ -568,12 +576,14 @@ function clearConnectPending() {
 function ConnectStep({
   companyId,
   mock,
+  repairRequired,
   hasConnectAccount,
   payoutsEnabled,
   onDone,
 }: {
   companyId: string;
   mock: boolean;
+  repairRequired?: boolean;
   hasConnectAccount: boolean;
   payoutsEnabled: boolean;
   onDone: () => Promise<CarrierOnboarding | void>;
@@ -691,6 +701,11 @@ function ConnectStep({
         <h2 className="font-display text-lg font-semibold">
           {t('carrierOnboarding.connectTitle')}
         </h2>
+        {repairRequired ? (
+          <Notice tone="warn" className="mt-3">
+            {t('carrierOnboarding.connectRepairNotice')}
+          </Notice>
+        ) : null}
         <p className="mt-2 text-sm text-clox-mute">
           {mock
             ? t('carrierOnboarding.connectMockIntro')
@@ -1433,6 +1448,7 @@ function SubmitStep({
 }) {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const toast = useToast();
   const isInfoRequested = data.company.status === 'INFO_REQUESTED';
   const existing = data.uploadedDocs ?? [];
   const pl = pickLatestDoc(
@@ -1448,6 +1464,7 @@ function SubmitStep({
   const [msg, setMsg] = useState<string | null>(
     pl && cargo ? t('carrierOnboarding.usingPreviousUploads') : null,
   );
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   async function upload(docType: 'PUBLIC_LIABILITY' | 'CARGO_INSURANCE', file: File) {
     const mime = resolveUploadMime(file);
@@ -1471,7 +1488,13 @@ function SubmitStep({
       }
       return submitCarrierVerification([plId, cargoId]);
     },
-    onSuccess: () => onSubmitted(),
+    onSuccess: async () => {
+      toast.success(t('carrierOnboarding.submitSuccess'));
+      await onSubmitted();
+    },
+    onError: (err) => {
+      toast.error(getErrorDetail(err));
+    },
   });
 
   return (
@@ -1495,10 +1518,15 @@ function SubmitStep({
           const f = e.target.files?.[0];
           if (!f) return;
           try {
+            setUploadError(null);
             setPlId(await upload('PUBLIC_LIABILITY', f));
             setMsg(t('carrierOnboarding.plUploaded'));
+            toast.success(t('carrierOnboarding.plUploaded'));
           } catch (err) {
-            setMsg(getErrorDetail(err));
+            const detail = getErrorDetail(err);
+            setUploadError(detail);
+            setMsg(null);
+            toast.error(detail);
           }
         }}
       />
@@ -1510,14 +1538,20 @@ function SubmitStep({
           const f = e.target.files?.[0];
           if (!f) return;
           try {
+            setUploadError(null);
             setCargoId(await upload('CARGO_INSURANCE', f));
             setMsg(t('carrierOnboarding.cargoUploaded'));
+            toast.success(t('carrierOnboarding.cargoUploaded'));
           } catch (err) {
-            setMsg(getErrorDetail(err));
+            const detail = getErrorDetail(err);
+            setUploadError(detail);
+            setMsg(null);
+            toast.error(detail);
           }
         }}
       />
       {msg ? <Notice tone="success">{msg}</Notice> : null}
+      {uploadError ? <Notice tone="error">{uploadError}</Notice> : null}
       {submit.isError ? (
         <Notice tone="error">{getErrorDetail(submit.error)}</Notice>
       ) : null}

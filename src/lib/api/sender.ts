@@ -9,6 +9,8 @@ publicHttp.interceptors.response.use(
 
 export type SenderOnboarding = {
   step: string;
+  /** ACTIVE company sent back to Payment after mock→live clear. */
+  paymentRepairRequired?: boolean;
   user: { id: string; email: string; name: string | null; phone: string | null };
   company: {
     id: string;

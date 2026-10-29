@@ -45,6 +45,40 @@ import {
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
+/** Rough distance in metres (WGS84); enough for “near stop?” checks. */
+function distanceMeters(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function readDevicePosition(): Promise<{ lat: number; lng: number } | null> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) =>
+        resolve({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 8_000, maximumAge: 15_000 },
+    );
+  });
+}
+
 const EXCEPTION_KINDS: TripExceptionKind[] = [
   'DRIVER_UNAVAILABLE',
   'VEHICLE_BREAKDOWN',
@@ -240,6 +274,15 @@ export function DriverTripDetailPage() {
     await qc.invalidateQueries({ queryKey: ['trips', 'mine'] });
   }
 
+  async function refreshTripStatus(): Promise<string | undefined> {
+    await refresh();
+    const fresh = await qc.fetchQuery({
+      queryKey: ['trips', tripId],
+      queryFn: () => getDriverTrip(tripId),
+    });
+    return fresh.status;
+  }
+
   async function uploadBreakdownPhoto(file: File) {
     const companyId = me.data?.company?.id;
     if (!companyId) {
@@ -398,6 +441,55 @@ export function DriverTripDetailPage() {
     onError: (e) => setMsg(getErrorDetail(e)),
   });
 
+  /**
+   * Option A — “I’ve arrived”: send location samples and let geofence set AT_DROPOFF.
+   * Prefer device GPS when already near the stop; otherwise use stop coordinates
+   * (cab / GPS denied) so arrival stays location-backed, not a status flip.
+   */
+  const arriveAtDropoff = useMutation({
+    mutationFn: async () => {
+      const stops = tripQuery.data?.job?.stops ?? [];
+      const progress = tripQuery.data?.stopsProgress ?? [];
+      const dropoffs = stops.filter(
+        (s) => String(s.stopType).toUpperCase() === 'DROPOFF',
+      );
+      const target =
+        dropoffs.find((s) => {
+          const p = s.id
+            ? progress.find((sp) => sp.jobStopId === s.id)
+            : progress.find((sp) => sp.stop?.sequence === s.sequence);
+          return !p?.enteredAt && !p?.exitedAt;
+        }) ??
+        dropoffs.find((s) => s.lat != null && s.lng != null) ??
+        dropoffs[0];
+      if (!target || target.lat == null || target.lng == null) {
+        throw new Error(t('trips.arriveAtDropoffNoCoords'));
+      }
+      const stopPoint = { lat: Number(target.lat), lng: Number(target.lng) };
+      const device = await readDevicePosition();
+      const nearEnough =
+        device != null && distanceMeters(device, stopPoint) <= 500;
+      // Slight offset keeps sample clearly inside the stop radius.
+      const point = nearEnough && device
+        ? device
+        : { lat: stopPoint.lat + 0.00005, lng: stopPoint.lng + 0.00005 };
+      // antiBounceSamples default is 2 — dual inside ping in one tap.
+      await tripLocation(tripId, point.lat, point.lng);
+      return tripLocation(tripId, point.lat, point.lng);
+    },
+    onSuccess: async (result) => {
+      const geofence = (result as { geofence?: { entered?: boolean; stopType?: string } })
+        ?.geofence;
+      setMsg(
+        geofence?.entered && String(geofence.stopType ?? '').toUpperCase() === 'DROPOFF'
+          ? t('trips.msgLocationAtDropoff')
+          : t('trips.msgLocationPingArriving'),
+      );
+      await refresh();
+    },
+    onError: (e) => setMsg(getErrorDetail(e) || t('trips.arriveAtDropoffFailed')),
+  });
+
   const podSign = useMutation({
     mutationFn: (payload: {
       jobStopId: string;
@@ -429,11 +521,57 @@ export function DriverTripDetailPage() {
       tripPodFinalize(tripId, payload.jobStopId, {
         odometerEndKm: payload.odometerEndKm,
       }),
-    onSuccess: async () => {
-      setMsg(t('trips.podFinalized'));
-      await refresh();
+    onSuccess: async (result) => {
+      const status =
+        (result as { status?: string } | undefined)?.status ??
+        (await refreshTripStatus());
+      setMsg(
+        status === 'COMPLETED'
+          ? t('trips.podFinalizedTripComplete')
+          : t('trips.podFinalizedLeaveHint'),
+      );
     },
     onError: (e) => setMsg(getErrorDetail(e)),
+  });
+
+  /**
+   * After POD (or while dwelling): send outside samples so geofence sets exitedAt
+   * and completeTripIfReady can finish the trip when all gates clear.
+   */
+  const leaveDropoff = useMutation({
+    mutationFn: async () => {
+      const stops = tripQuery.data?.job?.stops ?? [];
+      const progress = tripQuery.data?.stopsProgress ?? [];
+      const dwelling =
+        stops.find((s) => {
+          const p = s.id
+            ? progress.find((sp) => sp.jobStopId === s.id)
+            : progress.find((sp) => sp.stop?.sequence === s.sequence);
+          return Boolean(p?.enteredAt && !p?.exitedAt);
+        }) ?? null;
+      if (!dwelling || dwelling.lat == null || dwelling.lng == null) {
+        throw new Error(t('trips.leaveDropoffNoDwell'));
+      }
+      const stopPoint = { lat: Number(dwelling.lat), lng: Number(dwelling.lng) };
+      const device = await readDevicePosition();
+      const farEnough =
+        device != null && distanceMeters(device, stopPoint) >= 200;
+      // ~1 km outside when GPS still near/unavailable (cab) — clear of typical radius.
+      const point = farEnough && device
+        ? device
+        : { lat: stopPoint.lat + 0.01, lng: stopPoint.lng + 0.01 };
+      await tripLocation(tripId, point.lat, point.lng);
+      return tripLocation(tripId, point.lat, point.lng);
+    },
+    onSuccess: async () => {
+      const status = await refreshTripStatus();
+      setMsg(
+        status === 'COMPLETED'
+          ? t('trips.msgLeftDropoffTripComplete')
+          : t('trips.msgLeftDropoff'),
+      );
+    },
+    onError: (e) => setMsg(getErrorDetail(e) || t('trips.leaveDropoffFailed')),
   });
 
   useEffect(() => {
@@ -503,6 +641,35 @@ export function DriverTripDetailPage() {
               : 'unavailable';
   const canNotifyApproaching = notifyDisabledReason === null;
 
+  /** Next dropoff that has not entered geofence yet — target for “I’ve arrived”. */
+  const eligibleArriveStop = dropoffStops.find((s) => {
+    const p = s.id
+      ? progressByStop.get(s.id)
+      : dropoffProgress.find((sp) => sp.stop?.sequence === s.sequence);
+    if (p?.enteredAt || p?.exitedAt) return false;
+    return s.lat != null && s.lng != null;
+  });
+  const arriveDisabledReason = !tripData.startedAt
+    ? 'not_started'
+    : tripData.status === 'COMPLETED' || tripData.status === 'CANCELLED'
+      ? 'finished'
+      : dropoffStops.length === 0
+        ? 'no_dropoff'
+        : tripData.status === 'AT_DROPOFF' ||
+            dropoffProgress.some((p) => Boolean(p.enteredAt) && !p.exitedAt)
+          ? 'already_at_drop'
+          : !eligibleArriveStop
+            ? dropoffStops.every((s) => {
+                  const p = s.id
+                    ? progressByStop.get(s.id)
+                    : dropoffProgress.find((sp) => sp.stop?.sequence === s.sequence);
+                  return Boolean(p?.enteredAt || p?.exitedAt);
+                })
+              ? 'already_at_drop'
+              : 'no_coords'
+            : null;
+  const canArriveAtDropoff = arriveDisabledReason === null;
+
   const showPodCapture =
     Boolean(tripData.startedAt) &&
     (tripData.status === 'AT_DROPOFF' ||
@@ -549,16 +716,76 @@ export function DriverTripDetailPage() {
     (activePodStatus === 'SIGNED' || Boolean(activePodStop?.signedAt)) &&
     activePhotoCount >= 1 &&
     endOdoOk;
+
+  const dwellingProgress =
+    (tripData.stopsProgress ?? []).find((p) => Boolean(p.enteredAt) && !p.exitedAt) ??
+    null;
+  const dwellingStopMeta = dwellingProgress
+    ? (tripData.job?.stops ?? []).find((s) => s.id === dwellingProgress.jobStopId) ??
+      dwellingProgress.stop
+    : null;
+  const dwellingIsDropoff =
+    String(
+      dwellingStopMeta && 'stopType' in dwellingStopMeta
+        ? dwellingStopMeta.stopType
+        : dwellingProgress?.stop?.stopType ?? '',
+    ).toUpperCase() === 'DROPOFF';
+  const allDropoffsPodFinalized =
+    dropoffStops.length > 0 &&
+    dropoffStops.every((s) => {
+      if (!s.id) return false;
+      return progressByStop.get(s.id)?.podStatus === 'FINALIZED';
+    });
+  const dwellingDropoffPodDone =
+    dwellingIsDropoff &&
+    (dwellingProgress?.podStatus === 'FINALIZED' || allDropoffsPodFinalized);
+  /** Show leave CTA when still on site after POD (needed for trip COMPLETED). */
+  const canLeaveDropoff =
+    Boolean(tripData.startedAt) &&
+    tripData.status !== 'COMPLETED' &&
+    tripData.status !== 'CANCELLED' &&
+    Boolean(dwellingProgress) &&
+    (dwellingDropoffPodDone || allDropoffsPodFinalized);
+
+  const phaseBanner: {
+    tone: 'success' | 'info' | 'warn';
+    title: string;
+    body?: string;
+  } =
+    tripData.status === 'COMPLETED'
+      ? { tone: 'success', title: t('trips.completedNotice') }
+      : tripData.status === 'CANCELLED'
+        ? { tone: 'warn', title: t('trips.cancelledNotice') }
+        : canLeaveDropoff
+          ? {
+              tone: 'info',
+              title: t('trips.phasePodDoneLeaveTitle'),
+              body: t('trips.phasePodDoneLeaveBody'),
+            }
+          : tripData.status === 'AT_DROPOFF' ||
+              (dwellingIsDropoff && Boolean(dwellingProgress))
+            ? {
+                tone: 'info',
+                title: t('trips.phaseAtDropoffTitle'),
+                body: t('trips.phaseAtDropoffBody'),
+              }
+            : {
+                tone: 'success',
+                title: t('trips.inTransit'),
+                body: tripData.onBreak ? t('trips.onBreakEtaPaused') : undefined,
+              };
+
   /**
-   * Lock break / location / notify / report / POD capture while finalize is in
-   * flight, and after POD finalize (or trip end).
+   * Lock break / location / notify while finalize is in flight, or trip ended.
+   * After POD finalize, leave-site must stay available (do not lock on FINALIZED).
    */
   const tripActionsLocked =
     podFinalize.isPending ||
-    activePodStatus === 'FINALIZED' ||
+    leaveDropoff.isPending ||
     tripData.status === 'COMPLETED' ||
     tripData.status === 'CANCELLED';
-  const podCaptureLocked = tripActionsLocked || podBlockedBySurcharge;
+  const podCaptureLocked =
+    tripActionsLocked || activePodStatus === 'FINALIZED' || podBlockedBySurcharge;
   const signaturePreviewUrl = remoteSignatureUrl ?? localSignaturePreview;
   const photoPreviewUrls =
     remotePhotoUrls.length > 0 ? remotePhotoUrls : localPhotoPreviews;
@@ -769,19 +996,13 @@ export function DriverTripDetailPage() {
           </div>
         </div>
       ) : tripData.status === 'COMPLETED' || tripData.status === 'CANCELLED' ? (
-        <Notice
-          tone={tripData.status === 'COMPLETED' ? 'success' : 'warn'}
-          className="mt-6"
-        >
-          {tripData.status === 'COMPLETED'
-            ? t('trips.completedNotice')
-            : t('trips.cancelledNotice')}
+        <Notice tone={phaseBanner.tone} className="mt-6" title={phaseBanner.title}>
+          {phaseBanner.body}
         </Notice>
       ) : (
         <div className="mt-6 space-y-3">
-          <Notice tone="success">
-            {t('trips.inTransit')}
-            {tripData.onBreak ? ` · ${t('trips.onBreakEtaPaused')}` : ''}
+          <Notice tone={phaseBanner.tone} title={phaseBanner.title}>
+            {phaseBanner.body}
           </Notice>
           {tripData.onBreak ? (
             <div className="clox-card space-y-2 p-4">
@@ -875,9 +1096,36 @@ export function DriverTripDetailPage() {
                     ? t('trips.notifyApproachingNoDropHint')
                     : t('trips.notifyApproachingHint')}
           </p>
+          <Button
+            type="button"
+            variant="cta"
+            size="block"
+            disabled={
+              tripActionsLocked || !canArriveAtDropoff || arriveAtDropoff.isPending
+            }
+            onClick={() => arriveAtDropoff.mutate()}
+          >
+            {arriveAtDropoff.isPending
+              ? t('loading')
+              : arriveDisabledReason === 'already_at_drop'
+                ? t('trips.arriveAtDropoffDone')
+                : t('trips.arriveAtDropoff')}
+          </Button>
+          <p className="text-xs text-clox-mute">
+            {canArriveAtDropoff
+              ? t('trips.arriveAtDropoffHint')
+              : arriveDisabledReason === 'already_at_drop'
+                ? t('trips.arriveAtDropoffDoneHint')
+                : arriveDisabledReason === 'no_coords'
+                  ? t('trips.arriveAtDropoffNoCoords')
+                  : arriveDisabledReason === 'no_dropoff'
+                    ? t('trips.arriveAtDropoffNoDropHint')
+                    : t('trips.arriveAtDropoffHint')}
+          </p>
           {notifyDisabledReason === 'already_sent' &&
           tripData.status !== 'AT_DROPOFF' &&
-          tripData.status !== 'COMPLETED' ? (
+          tripData.status !== 'COMPLETED' &&
+          canArriveAtDropoff ? (
             <Notice tone="info" title={t('trips.notifyApproachingNextTitle')}>
               {t('trips.notifyApproachingNextBody')}
             </Notice>
@@ -1045,33 +1293,6 @@ export function DriverTripDetailPage() {
                       />
                     </label>
                     <p className="basis-full text-xs text-clox-mute">{t('trips.podPhotoHint')}</p>
-                    {isLastDropoffToFinalize ? (
-                      <Field
-                        className="basis-full"
-                        type="number"
-                        label={t('trips.odometerEndLabel')}
-                        hint={t('trips.odometerEndHint')}
-                        value={odometerEndKm}
-                        onChange={(e) => setOdometerEndKm(e.target.value)}
-                      />
-                    ) : null}
-                    <Button
-                      type="button"
-                      variant="cta"
-                      size="sm"
-                      disabled={podFinalize.isPending || !canFinalizePod}
-                      onClick={() => {
-                        if (!activePodStopId || podFinalize.isPending) return;
-                        podFinalize.mutate({
-                          jobStopId: activePodStopId,
-                          odometerEndKm: isLastDropoffToFinalize
-                            ? Number(odometerEndKm)
-                            : undefined,
-                        });
-                      }}
-                    >
-                      {podFinalize.isPending ? t('loading') : t('trips.podFinalize')}
-                    </Button>
                   </div>
                 </>
               ) : (
@@ -1109,6 +1330,60 @@ export function DriverTripDetailPage() {
                   </div>
                 </div>
               ) : null}
+
+              {activePodStatus !== 'FINALIZED' ? (
+                <div className="space-y-3 border-t border-clox-border-soft pt-3">
+                  {isLastDropoffToFinalize ? (
+                    <Field
+                      type="number"
+                      label={t('trips.odometerEndLabel')}
+                      hint={t('trips.odometerEndHint')}
+                      value={odometerEndKm}
+                      onChange={(e) => setOdometerEndKm(e.target.value)}
+                    />
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="cta"
+                    size="block"
+                    disabled={podFinalize.isPending || !canFinalizePod}
+                    onClick={() => {
+                      if (!activePodStopId || podFinalize.isPending) return;
+                      podFinalize.mutate({
+                        jobStopId: activePodStopId,
+                        odometerEndKm: isLastDropoffToFinalize
+                          ? Number(odometerEndKm)
+                          : undefined,
+                      });
+                    }}
+                  >
+                    {podFinalize.isPending ? t('loading') : t('trips.podFinalize')}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {canLeaveDropoff ? (
+            <div className="space-y-2">
+              <Button
+                type="button"
+                variant="cta"
+                size="block"
+                disabled={leaveDropoff.isPending}
+                onClick={() => leaveDropoff.mutate()}
+              >
+                {leaveDropoff.isPending
+                  ? t('loading')
+                  : dwellingIsDropoff
+                    ? t('trips.leaveDropoff')
+                    : t('trips.leaveStop')}
+              </Button>
+              <p className="text-xs text-clox-mute">
+                {dwellingIsDropoff
+                  ? t('trips.leaveDropoffHint')
+                  : t('trips.leaveStopHint')}
+              </p>
             </div>
           ) : null}
 

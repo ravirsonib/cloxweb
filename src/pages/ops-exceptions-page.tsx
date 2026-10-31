@@ -5,8 +5,10 @@ import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import {
   DataCardList,
   Notice,
+  PaginationBar,
   StatusPill,
   dataCardClassName,
+  useClientPagination,
 } from '@/components/ui';
 import { getErrorDetail, listOpsTripExceptions, type TripExceptionRow } from '@/lib/api';
 import { AdminRole } from '@/shared/types';
@@ -30,10 +32,11 @@ export function OpsExceptionsPage() {
     enabled: allowed,
   });
 
+  const items = list.data?.items ?? [];
+  const pager = useClientPagination(items, 10);
+
   if (!allowed) return <Navigate to="/" replace />;
   if (list.isLoading) return <LoadingBlock label={t('exceptions.opsLoading')} />;
-
-  const items = list.data?.items ?? [];
 
   return (
     <div>
@@ -54,12 +57,19 @@ export function OpsExceptionsPage() {
           />
         </div>
       ) : (
-        <DataCardList
-          className="mt-6"
-          items={items}
-          getKey={(row) => row.id}
-          renderItem={(row) => <OpsExceptionCard row={row} />}
-        />
+        <>
+          <DataCardList
+            className="mt-6"
+            items={pager.pagedItems}
+            getKey={(row) => row.id}
+            renderItem={(row) => <OpsExceptionCard row={row} />}
+          />
+          <PaginationBar
+            page={pager.page}
+            totalPages={pager.totalPages}
+            onPageChange={pager.setPage}
+          />
+        </>
       )}
     </div>
   );

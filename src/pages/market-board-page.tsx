@@ -18,10 +18,12 @@ import {
   DataCardList,
   Field,
   Notice,
+  PaginationBar,
   Select,
   StatusFilterChips,
   StatusPill,
   ViewModeToggle,
+  useClientPagination,
   useDataViewMode,
   useToast,
 } from '@/components/ui';
@@ -85,16 +87,28 @@ export function MarketBoardPage() {
     queryKey: ['matching', 'board'],
     queryFn: () => getMarketBoard(),
     enabled: role === AppRole.TRANSPORT_COMPANY,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchInterval: 10_000,
   });
   const vehiclesQuery = useQuery({
     queryKey: ['carrier', 'vehicles'],
     queryFn: ({ signal }) => listCarrierVehicles({ signal }),
     enabled: role === AppRole.TRANSPORT_COMPANY,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchInterval: 10_000,
   });
   const driversQuery = useQuery({
     queryKey: ['carrier', 'drivers'],
     queryFn: ({ signal }) => listCarrierDrivers({ signal }),
     enabled: role === AppRole.TRANSPORT_COMPANY,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchInterval: 10_000,
   });
 
   const [jobId, setJobId] = useState<string | null>(null);
@@ -120,6 +134,12 @@ export function MarketBoardPage() {
     () => filterAndSortByBucket(marketJobs, marketBucket, statusFilter, MARKET_SORT),
     [marketJobs, statusFilter],
   );
+  const {
+    page,
+    setPage,
+    totalPages,
+    pagedItems: pagedFilteredJobs,
+  } = useClientPagination(filteredJobs, 10);
 
   const selectedJob = useMemo(
     () => marketJobs.find((j) => j.id === jobId) ?? null,
@@ -315,65 +335,68 @@ export function MarketBoardPage() {
           {filteredJobs.length === 0 ? (
             <p className="mt-6 text-sm text-clox-faint">{t('market.emptyFilter')}</p>
           ) : (
-            <DataCardList
-              className="mt-6"
-              items={filteredJobs}
-              getKey={(j) => j.id}
-              mode={viewMode}
-              renderItem={(j) => {
-                const bucket = marketBucket(j);
-                const tone = MARKET_TONE[bucket];
-                const selected = jobId === j.id;
-                return (
-                  <button
-                    type="button"
-                    className={cn(
-                      'h-full w-full cursor-pointer rounded-clox-md border p-4 text-left shadow-clox-1 transition',
-                      statusAccentClass(tone),
-                      selected
-                        ? 'border-clox-orange ring-2 ring-clox-orange/30'
-                        : 'hover:border-clox-orange',
-                    )}
-                    onClick={() => setJobId(j.id)}
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-semibold text-clox-ink">
-                        {j.title ?? j.id.slice(0, 8)}
+            <>
+              <DataCardList
+                className="mt-6"
+                items={pagedFilteredJobs}
+                getKey={(j) => j.id}
+                mode={viewMode}
+                renderItem={(j) => {
+                  const bucket = marketBucket(j);
+                  const tone = MARKET_TONE[bucket];
+                  const selected = jobId === j.id;
+                  return (
+                    <button
+                      type="button"
+                      className={cn(
+                        'h-full w-full cursor-pointer rounded-clox-md border p-4 text-left shadow-clox-1 transition',
+                        statusAccentClass(tone),
+                        selected
+                          ? 'border-clox-orange ring-2 ring-clox-orange/30'
+                          : 'hover:border-clox-orange',
+                      )}
+                      onClick={() => setJobId(j.id)}
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold text-clox-ink">
+                          {j.title ?? j.id.slice(0, 8)}
+                        </p>
+                        <StatusPill tone={tone}>{t(`market.bucket.${bucket}`)}</StatusPill>
+                      </div>
+                      <p className="mt-0.5 font-mono text-[11px] text-clox-faint">
+                        {t('market.jobRef', { id: j.id.slice(0, 8) })}
+                        {j.publishedAt
+                          ? ` · ${new Date(j.publishedAt).toLocaleString()}`
+                          : ''}
+                        {j.pickupAt
+                          ? ` · ${t('market.pickupAt', { when: new Date(j.pickupAt).toLocaleString() })}`
+                          : ''}
                       </p>
-                      <StatusPill tone={tone}>{t(`market.bucket.${bucket}`)}</StatusPill>
-                    </div>
-                    <p className="mt-0.5 font-mono text-[11px] text-clox-faint">
-                      {t('market.jobRef', { id: j.id.slice(0, 8) })}
-                      {j.publishedAt
-                        ? ` · ${new Date(j.publishedAt).toLocaleString()}`
-                        : ''}
-                      {j.pickupAt
-                        ? ` · ${t('market.pickupAt', { when: new Date(j.pickupAt).toLocaleString() })}`
-                        : ''}
-                    </p>
-                    <p className="mt-1 font-mono text-xs text-clox-mute">
-                      {j.stopsSummary} · min {j.minVehicleClass}
-                      {j.chargeableWeightKg != null
-                        ? ` · ${t('market.weightKg', { kg: j.chargeableWeightKg })}`
-                        : ''}
-                      {j.requiresDg ? ` ${t('market.dgSuffix')}` : ''}
-                      {j.routeFatigueBreakMinutes > 0
-                        ? ` ${t('market.fatigueSuffix', { minutes: j.routeFatigueBreakMinutes })}`
-                        : ''}
-                      {j.estimateNetToCarrierCents != null
-                        ? ` ${t('market.netApprox', { amount: (j.estimateNetToCarrierCents / 100).toFixed(2) })}`
-                        : ''}
-                      {j.rescueDiscountPercent != null && j.rescueDiscountPercent > 0
-                        ? ` · ${t('market.rescueDiscount', { percent: j.rescueDiscountPercent })}`
-                        : ''}
-                      {j.minBidIncGstCents != null
-                        ? ` · ${t('market.minBidHint', { amount: (j.minBidIncGstCents / 100).toFixed(2) })}`
-                        : ''}
-                    </p>
-                  </button>
-                );
-              }}
-            />
+                      <p className="mt-1 font-mono text-xs text-clox-mute">
+                        {j.stopsSummary} · min {j.minVehicleClass}
+                        {j.chargeableWeightKg != null
+                          ? ` · ${t('market.weightKg', { kg: j.chargeableWeightKg })}`
+                          : ''}
+                        {j.requiresDg ? ` ${t('market.dgSuffix')}` : ''}
+                        {j.routeFatigueBreakMinutes > 0
+                          ? ` ${t('market.fatigueSuffix', { minutes: j.routeFatigueBreakMinutes })}`
+                          : ''}
+                        {j.estimateNetToCarrierCents != null
+                          ? ` ${t('market.netApprox', { amount: (j.estimateNetToCarrierCents / 100).toFixed(2) })}`
+                          : ''}
+                        {j.rescueDiscountPercent != null && j.rescueDiscountPercent > 0
+                          ? ` · ${t('market.rescueDiscount', { percent: j.rescueDiscountPercent })}`
+                          : ''}
+                        {j.minBidIncGstCents != null
+                          ? ` · ${t('market.minBidHint', { amount: (j.minBidIncGstCents / 100).toFixed(2) })}`
+                          : ''}
+                      </p>
+                    </button>
+                  );
+                }}
+              />
+              <PaginationBar page={page} totalPages={totalPages} onPageChange={setPage} />
+            </>
           )}
         </>
       )}

@@ -12,10 +12,12 @@ import {
   DataTable,
   Field,
   Notice,
+  PaginationBar,
   ResponsiveDataView,
   Select,
   StatusPill,
   dataCardClassName,
+  useClientPagination,
   useToast,
 } from '@/components/ui';
 import {
@@ -120,6 +122,7 @@ export function GrowthPipelinePage() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  const page = Number(searchParams.get('page') || '1') || 1;
   const stage = searchParams.get('stage') || '';
   const q = searchParams.get('q') || '';
   const [searchDraft, setSearchDraft] = useState(q);
@@ -127,12 +130,12 @@ export function GrowthPipelinePage() {
 
   const query = useMemo(
     () => ({
-      page: 1,
-      pageSize: 50,
+      page,
+      pageSize: 20,
       stage: stage || undefined,
       q: q || undefined,
     }),
-    [stage, q],
+    [page, stage, q],
   );
 
   const prospectsQuery = useQuery({
@@ -190,10 +193,11 @@ export function GrowthPipelinePage() {
     onError: (e) => toast.error(getErrorDetail(e)),
   });
 
-  function updateFilter(key: 'stage' | 'q', value: string) {
+  function updateFilter(key: 'stage' | 'q' | 'page', value: string) {
     const next = new URLSearchParams(searchParams);
     if (value) next.set(key, value);
     else next.delete(key);
+    if (key !== 'page') next.delete('page');
     setSearchParams(next);
   }
 
@@ -203,6 +207,7 @@ export function GrowthPipelinePage() {
 
   const items = prospectsQuery.data?.items ?? [];
   const total = prospectsQuery.data?.total ?? items.length;
+  const totalPages = prospectsQuery.data?.totalPages ?? 1;
 
   function invitePath(row: GrowthProspect) {
     return `/ops/growth/invite?prospectId=${row.id}&type=${row.companyType}&email=${encodeURIComponent(row.email ?? '')}&name=${encodeURIComponent(row.legalName)}`;
@@ -442,6 +447,15 @@ export function GrowthPipelinePage() {
           />
         )
       ) : null}
+
+      {items.length > 0 ? (
+        <PaginationBar
+          page={page}
+          totalPages={totalPages}
+          disabled={prospectsQuery.isFetching}
+          onPageChange={(nextPage) => updateFilter('page', String(nextPage))}
+        />
+      ) : null}
     </div>
   );
 }
@@ -504,6 +518,7 @@ export function GrowthInvitePage() {
   }
 
   const invites = invitesQuery.data?.items ?? [];
+  const invitesPager = useClientPagination(invites, 10);
 
   return (
     <div>
@@ -575,98 +590,105 @@ export function GrowthInvitePage() {
       ) : null}
 
       {invites.length > 0 ? (
-        <ResponsiveDataView
-          className="mt-4"
-          cards={
-            <DataCardList
-              items={invites}
-              getKey={(row) => row.id}
-              renderItem={(row) => (
-                <div className={dataCardClassName}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-clox-ink">{row.email}</p>
-                      <p className="mt-0.5 text-xs text-clox-faint">
-                        {row.companyType === 'CARRIER'
-                          ? t('companies.typeCarrier')
-                          : t('companies.typeSender')}
-                      </p>
+        <>
+          <ResponsiveDataView
+            className="mt-4"
+            cards={
+              <DataCardList
+                items={invitesPager.pagedItems}
+                getKey={(row) => row.id}
+                renderItem={(row) => (
+                  <div className={dataCardClassName}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-clox-ink">{row.email}</p>
+                        <p className="mt-0.5 text-xs text-clox-faint">
+                          {row.companyType === 'CARRIER'
+                            ? t('companies.typeCarrier')
+                            : t('companies.typeSender')}
+                        </p>
+                      </div>
+                      <StatusPill tone={inviteStatusTone(row.acceptedAt, row.expiresAt)}>
+                        {inviteStatusLabel(row.acceptedAt, row.expiresAt)}
+                      </StatusPill>
                     </div>
-                    <StatusPill tone={inviteStatusTone(row.acceptedAt, row.expiresAt)}>
-                      {inviteStatusLabel(row.acceptedAt, row.expiresAt)}
-                    </StatusPill>
+                    <p className="mt-3 text-xs text-clox-mute">
+                      {t('growth.expires')}: {formatDateTime(row.expiresAt)}
+                    </p>
+                    {!row.acceptedAt ? (
+                      <div className="mt-3">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          disabled={resendMutation.isPending}
+                          onClick={() => resendMutation.mutate(row.id)}
+                        >
+                          {t('growth.resend')}
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
-                  <p className="mt-3 text-xs text-clox-mute">
-                    {t('growth.expires')}: {formatDateTime(row.expiresAt)}
-                  </p>
-                  {!row.acceptedAt ? (
-                    <div className="mt-3">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        disabled={resendMutation.isPending}
-                        onClick={() => resendMutation.mutate(row.id)}
-                      >
-                        {t('growth.resend')}
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-              )}
-            />
-          }
-          table={
-            <DataTable
-              minWidthClassName="min-w-[44rem]"
-              headers={[
-                t('email'),
-                t('growth.companyType'),
-                t('growth.inviteStatus'),
-                t('growth.expires'),
-                t('growth.colActions'),
-              ]}
-              headerClassNames={[undefined, undefined, undefined, undefined, 'text-right']}
-            >
-              {invites.map((r) => (
-                <tr
-                  key={r.id}
-                  className="border-t border-clox-border-soft hover:bg-clox-surface-alt/60"
-                >
-                  <td className="px-4 py-3 font-medium text-clox-ink">{r.email}</td>
-                  <td className="px-4 py-3 text-clox-mute">
-                    {r.companyType === 'CARRIER'
-                      ? t('companies.typeCarrier')
-                      : t('companies.typeSender')}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusPill tone={inviteStatusTone(r.acceptedAt, r.expiresAt)}>
-                      {inviteStatusLabel(r.acceptedAt, r.expiresAt)}
-                    </StatusPill>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-clox-mute">
-                    {formatDateTime(r.expiresAt)}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {r.acceptedAt ? (
-                      <span className="text-clox-faint">{t('dash')}</span>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        disabled={resendMutation.isPending}
-                        onClick={() => resendMutation.mutate(r.id)}
-                      >
-                        {t('growth.resend')}
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </DataTable>
-          }
-        />
+                )}
+              />
+            }
+            table={
+              <DataTable
+                minWidthClassName="min-w-[44rem]"
+                headers={[
+                  t('email'),
+                  t('growth.companyType'),
+                  t('growth.inviteStatus'),
+                  t('growth.expires'),
+                  t('growth.colActions'),
+                ]}
+                headerClassNames={[undefined, undefined, undefined, undefined, 'text-right']}
+              >
+                {invitesPager.pagedItems.map((r) => (
+                  <tr
+                    key={r.id}
+                    className="border-t border-clox-border-soft hover:bg-clox-surface-alt/60"
+                  >
+                    <td className="px-4 py-3 font-medium text-clox-ink">{r.email}</td>
+                    <td className="px-4 py-3 text-clox-mute">
+                      {r.companyType === 'CARRIER'
+                        ? t('companies.typeCarrier')
+                        : t('companies.typeSender')}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusPill tone={inviteStatusTone(r.acceptedAt, r.expiresAt)}>
+                        {inviteStatusLabel(r.acceptedAt, r.expiresAt)}
+                      </StatusPill>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-clox-mute">
+                      {formatDateTime(r.expiresAt)}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {r.acceptedAt ? (
+                        <span className="text-clox-faint">{t('dash')}</span>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          disabled={resendMutation.isPending}
+                          onClick={() => resendMutation.mutate(r.id)}
+                        >
+                          {t('growth.resend')}
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </DataTable>
+            }
+          />
+          <PaginationBar
+            page={invitesPager.page}
+            totalPages={invitesPager.totalPages}
+            onPageChange={invitesPager.setPage}
+          />
+        </>
       ) : null}
     </div>
   );
@@ -987,36 +1009,17 @@ function MyCompaniesPage({ type }: { type: 'SENDER' | 'CARRIER' }) {
         )
       ) : null}
 
-      {totalPages > 1 ? (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-clox-mute">
-          <p>{t('pageOf', { page, totalPages })}</p>
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={page <= 1}
-              onClick={() => {
-                const next = new URLSearchParams(searchParams);
-                next.set('page', String(page - 1));
-                setSearchParams(next);
-              }}
-            >
-              {t('previous')}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={page >= totalPages}
-              onClick={() => {
-                const next = new URLSearchParams(searchParams);
-                next.set('page', String(page + 1));
-                setSearchParams(next);
-              }}
-            >
-              {t('next')}
-            </Button>
-          </div>
-        </div>
+      {items.length > 0 ? (
+        <PaginationBar
+          page={page}
+          totalPages={totalPages}
+          disabled={listQuery.isFetching}
+          onPageChange={(nextPage) => {
+            const next = new URLSearchParams(searchParams);
+            next.set('page', String(nextPage));
+            setSearchParams(next);
+          }}
+        />
       ) : null}
     </div>
   );

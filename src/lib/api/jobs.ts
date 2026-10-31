@@ -46,7 +46,26 @@ export type JobSummary = {
     amountIncGstCents: number;
     etaMinutes: number | null;
     carrierLabel: string;
+    carrierCompanyId?: string;
+    carrierCompanyIdMasked?: boolean;
+    carrierCompany?: {
+      id: string;
+      legalName: string;
+      tradingName?: string | null;
+      email?: string | null;
+      phone?: string | null;
+      abn?: string | null;
+    } | null;
     vehicleClass: string | null;
+    vehicleLabel?: string | null;
+    vehicleRegistration?: string | null;
+    driver?: {
+      id: string;
+      name?: string | null;
+      email?: string | null;
+      phone?: string | null;
+      licenceClass?: string | null;
+    } | null;
     netToCarrierCents: number;
   }>;
   assignment?: {

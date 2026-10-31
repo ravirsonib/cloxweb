@@ -509,7 +509,7 @@ export function PartnerPerformancePage() {
         />
       )}
 
-      {totalPages > 1 ? (
+      {items.length > 0 ? (
         <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-clox-mute">
           <Button
             variant="secondary"

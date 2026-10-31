@@ -13,10 +13,12 @@ import {
   Field,
   FileInput,
   Notice,
+  PaginationBar,
   ResponsiveDataView,
   Select,
   StatusPill,
   dataCardClassName,
+  useClientPagination,
   useConfirm,
   useToast,
 } from '@/components/ui';
@@ -139,6 +141,10 @@ export function CarrierFleetPage() {
   const vehiclesQuery = useQuery({
     queryKey: ['carrier', 'vehicles'],
     queryFn: ({ signal }) => listCarrierVehicles({ signal }),
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchInterval: 10_000,
   });
 
   const companyQuery = useQuery({
@@ -306,6 +312,12 @@ export function CarrierFleetPage() {
   });
 
   const items = vehiclesQuery.data?.items ?? [];
+  const {
+    page,
+    setPage,
+    totalPages,
+    pagedItems: pagedVehicles,
+  } = useClientPagination(items, 10);
   const missingRwcCount = items.filter(
     (row) =>
       row.status === 'ACTIVE' &&
@@ -686,94 +698,97 @@ export function CarrierFleetPage() {
             <EmptyBlock title={t('fleet.emptyTitle')} description={t('fleet.emptyHint')} />
           </div>
         ) : (
-          <ResponsiveDataView
-            className="mt-6"
-            cards={
-              <DataCardList
-                items={items}
-                getKey={(row) => row.id}
-                renderItem={(row) => (
-                  <div className={dataCardClassName}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-clox-ink">
-                          {row.registration ?? t('dash')}
-                        </p>
-                        <p className="mt-0.5 truncate text-xs text-clox-faint">
-                          {row.label ?? t('dash')} · {row.vehicleClass ?? t('dash')}
-                        </p>
+          <>
+            <ResponsiveDataView
+              className="mt-6"
+              cards={
+                <DataCardList
+                  items={pagedVehicles}
+                  getKey={(row) => row.id}
+                  renderItem={(row) => (
+                    <div className={dataCardClassName}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-clox-ink">
+                            {row.registration ?? t('dash')}
+                          </p>
+                          <p className="mt-0.5 truncate text-xs text-clox-faint">
+                            {row.label ?? t('dash')} · {row.vehicleClass ?? t('dash')}
+                          </p>
+                        </div>
+                        <div className="shrink-0">{renderRwc(row)}</div>
                       </div>
-                      <div className="shrink-0">{renderRwc(row)}</div>
-                    </div>
-                    <div className="mt-3">{renderStatus(row)}</div>
-                    {row.disabledReason ? (
-                      <p className="mt-2 text-xs text-clox-mute">
-                        {t('fleet.reasonLabel')}: {row.disabledReason}
-                      </p>
-                    ) : null}
-                    <div className="mt-3 overflow-x-auto">{renderActions(row)}</div>
-                  </div>
-                )}
-              />
-            }
-            table={
-              <DataTable
-                minWidthClassName="min-w-[72rem]"
-                headers={[
-                  t('fleet.colRego'),
-                  t('fleet.colLabel'),
-                  t('fleet.colClass'),
-                  t('fleet.colGvm'),
-                  t('fleet.colStatus'),
-                  t('fleet.colRwc'),
-                  t('fleet.colReason'),
-                  t('fleet.colActions'),
-                ]}
-                headerClassNames={[
-                  undefined,
-                  undefined,
-                  undefined,
-                  undefined,
-                  undefined,
-                  undefined,
-                  undefined,
-                  'text-right',
-                ]}
-              >
-                {items.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-t border-clox-border-soft hover:bg-clox-surface-alt/60"
-                  >
-                    <td className="px-4 py-3 align-top font-mono text-sm text-clox-ink">
-                      {row.registration ?? t('dash')}
-                    </td>
-                    <td className="px-4 py-3 align-top text-clox-mute">
-                      {row.label ?? t('dash')}
-                    </td>
-                    <td className="px-4 py-3 align-top text-clox-mute">
-                      {row.vehicleClass ?? t('dash')}
-                    </td>
-                    <td className="px-4 py-3 align-top font-mono text-xs text-clox-mute">
-                      {row.gvmKg != null ? `${row.gvmKg}` : t('dash')}
-                    </td>
-                    <td className="px-4 py-3 align-top">{renderStatus(row)}</td>
-                    <td className="px-4 py-3 align-top">{renderRwc(row)}</td>
-                    <td className="max-w-[12rem] px-4 py-3 align-top text-xs text-clox-mute">
+                      <div className="mt-3">{renderStatus(row)}</div>
                       {row.disabledReason ? (
-                        <span className="line-clamp-2" title={row.disabledReason}>
-                          {row.disabledReason}
-                        </span>
-                      ) : (
-                        t('dash')
-                      )}
-                    </td>
-                    <td className="px-4 py-3 align-top text-right">{renderActions(row)}</td>
-                  </tr>
-                ))}
-              </DataTable>
-            }
-          />
+                        <p className="mt-2 text-xs text-clox-mute">
+                          {t('fleet.reasonLabel')}: {row.disabledReason}
+                        </p>
+                      ) : null}
+                      <div className="mt-3 overflow-x-auto">{renderActions(row)}</div>
+                    </div>
+                  )}
+                />
+              }
+              table={
+                <DataTable
+                  minWidthClassName="min-w-[72rem]"
+                  headers={[
+                    t('fleet.colRego'),
+                    t('fleet.colLabel'),
+                    t('fleet.colClass'),
+                    t('fleet.colGvm'),
+                    t('fleet.colStatus'),
+                    t('fleet.colRwc'),
+                    t('fleet.colReason'),
+                    t('fleet.colActions'),
+                  ]}
+                  headerClassNames={[
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    'text-right',
+                  ]}
+                >
+                  {pagedVehicles.map((row) => (
+                    <tr
+                      key={row.id}
+                      className="border-t border-clox-border-soft hover:bg-clox-surface-alt/60"
+                    >
+                      <td className="px-4 py-3 align-top font-mono text-sm text-clox-ink">
+                        {row.registration ?? t('dash')}
+                      </td>
+                      <td className="px-4 py-3 align-top text-clox-mute">
+                        {row.label ?? t('dash')}
+                      </td>
+                      <td className="px-4 py-3 align-top text-clox-mute">
+                        {row.vehicleClass ?? t('dash')}
+                      </td>
+                      <td className="px-4 py-3 align-top font-mono text-xs text-clox-mute">
+                        {row.gvmKg != null ? `${row.gvmKg}` : t('dash')}
+                      </td>
+                      <td className="px-4 py-3 align-top">{renderStatus(row)}</td>
+                      <td className="px-4 py-3 align-top">{renderRwc(row)}</td>
+                      <td className="max-w-[12rem] px-4 py-3 align-top text-xs text-clox-mute">
+                        {row.disabledReason ? (
+                          <span className="line-clamp-2" title={row.disabledReason}>
+                            {row.disabledReason}
+                          </span>
+                        ) : (
+                          t('dash')
+                        )}
+                      </td>
+                      <td className="px-4 py-3 align-top text-right">{renderActions(row)}</td>
+                    </tr>
+                  ))}
+                </DataTable>
+              }
+            />
+            <PaginationBar page={page} totalPages={totalPages} onPageChange={setPage} />
+          </>
         )
       ) : null}
 

@@ -27,7 +27,7 @@ import {
   type CompanyListItem,
 } from '@/lib/api';
 import { formatDateTime } from '@/lib/leads';
-import { companyStatusTone } from '@/lib/status-tone';
+import { companyStatusTone, complianceCaseStatusTone } from '@/lib/status-tone';
 import {
   COMPANY_STATUS_KEYS,
   CompanyStatus,
@@ -419,9 +419,11 @@ export function CompaniesPage() {
                       {row.openCase ? (
                         <Link
                           to={`/compliance/${row.openCase.id}`}
-                          className="mt-3 inline-block text-xs font-semibold text-clox-orange hover:underline"
+                          className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-clox-orange hover:underline"
                         >
-                          {t('companies.openCaseLink', { status: row.openCase.status })}
+                          <StatusPill tone={complianceCaseStatusTone(row.openCase.status)}>
+                            {row.openCase.status}
+                          </StatusPill>
                         </Link>
                       ) : null}
                       <div className="mt-3">{renderActions(row)}</div>
@@ -494,9 +496,11 @@ export function CompaniesPage() {
                         {row.openCase ? (
                           <Link
                             to={`/compliance/${row.openCase.id}`}
-                            className="text-sm font-semibold text-clox-orange hover:underline"
+                            className="inline-flex items-center hover:opacity-85"
                           >
-                            {row.openCase.status}
+                            <StatusPill tone={complianceCaseStatusTone(row.openCase.status)}>
+                              {row.openCase.status}
+                            </StatusPill>
                           </Link>
                         ) : (
                           <span className="text-clox-faint">{t('dash')}</span>
@@ -512,7 +516,7 @@ export function CompaniesPage() {
         </>
       ) : null}
 
-      {totalPages > 1 ? (
+      {items.length > 0 ? (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-clox-mute">
           <Button
             variant="secondary"

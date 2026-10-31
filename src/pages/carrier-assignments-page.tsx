@@ -8,10 +8,12 @@ import {
   DataCard,
   DataCardList,
   Notice,
+  PaginationBar,
   Select,
   StatusFilterChips,
   StatusPill,
   ViewModeToggle,
+  useClientPagination,
   useDataViewMode,
   useToast,
 } from '@/components/ui';
@@ -219,6 +221,10 @@ export function CarrierAssignmentsPage() {
     queryKey: ['payments', 'assignments'],
     queryFn: () => getCarrierAssignments(),
     enabled: role === AppRole.TRANSPORT_COMPANY,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchInterval: 10_000,
   });
 
   const exceptions = useQuery({
@@ -232,12 +238,18 @@ export function CarrierAssignmentsPage() {
     queryKey: ['carrier', 'vehicles'],
     queryFn: ({ signal }) => listCarrierVehicles({ signal }),
     enabled: role === AppRole.TRANSPORT_COMPANY,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
 
   const driversQuery = useQuery({
     queryKey: ['carrier', 'drivers'],
     queryFn: ({ signal }) => listCarrierDrivers({ signal }),
     enabled: role === AppRole.TRANSPORT_COMPANY,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
 
   const reassignMutation = useMutation({
@@ -259,9 +271,28 @@ export function CarrierAssignmentsPage() {
           ? t('assignments.reassignSuccessSafetyReset')
           : t('assignments.reassignSuccess'),
       );
-      await queryClient.invalidateQueries({ queryKey: ['payments', 'assignments'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['payments', 'assignments'] }),
+        queryClient.invalidateQueries({ queryKey: ['carrier', 'vehicles'] }),
+        queryClient.invalidateQueries({ queryKey: ['carrier', 'drivers'] }),
+      ]);
     },
   });
+
+  const items = list.data ?? [];
+  const filterCounts = countByBucket(items, assignmentBucket, ASSIGNMENT_FILTERS);
+  const filteredItems = filterAndSortByBucket(
+    items,
+    assignmentBucket,
+    statusFilter,
+    ASSIGNMENT_SORT,
+  );
+  const {
+    page,
+    setPage,
+    totalPages,
+    pagedItems: pagedFilteredItems,
+  } = useClientPagination(filteredItems, 10);
 
   if (role !== AppRole.TRANSPORT_COMPANY) return <Navigate to="/" replace />;
   if (list.isLoading) return <LoadingBlock label={t('assignments.loading')} />;
@@ -275,15 +306,6 @@ export function CarrierAssignmentsPage() {
       return acc;
     },
     {},
-  );
-
-  const items = list.data ?? [];
-  const filterCounts = countByBucket(items, assignmentBucket, ASSIGNMENT_FILTERS);
-  const filteredItems = filterAndSortByBucket(
-    items,
-    assignmentBucket,
-    statusFilter,
-    ASSIGNMENT_SORT,
   );
   const activeVehicles = (vehiclesQuery.data?.items ?? []).filter((v) => v.status === 'ACTIVE');
   const activeDrivers = (driversQuery.data?.items ?? []).filter((d) => d.status === 'ACTIVE');
@@ -392,81 +414,84 @@ export function CarrierAssignmentsPage() {
           {filteredItems.length === 0 ? (
             <p className="mt-6 text-sm text-clox-faint">{t('assignments.emptyFilter')}</p>
           ) : (
-            <DataCardList
-              className="mt-6"
-              items={filteredItems}
-              getKey={(a) => a.id}
-              mode={viewMode}
-              renderItem={(a) => {
-                const bucket = assignmentBucket(a);
-                const tone = ASSIGNMENT_TONE[bucket];
-                const jobExceptions = exceptionsByJob[a.job.id] ?? [];
-                return (
-                  <DataCard
-                    className={cn(
-                      'flex h-full min-w-0 flex-col gap-2',
-                      statusAccentClass(tone),
-                    )}
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="min-w-0 break-words font-semibold text-clox-ink">
-                          {a.job.title ?? a.job.id.slice(0, 8)}
+            <>
+              <DataCardList
+                className="mt-6"
+                items={pagedFilteredItems}
+                getKey={(a) => a.id}
+                mode={viewMode}
+                renderItem={(a) => {
+                  const bucket = assignmentBucket(a);
+                  const tone = ASSIGNMENT_TONE[bucket];
+                  const jobExceptions = exceptionsByJob[a.job.id] ?? [];
+                  return (
+                    <DataCard
+                      className={cn(
+                        'flex h-full min-w-0 flex-col gap-2',
+                        statusAccentClass(tone),
+                      )}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="min-w-0 break-words font-semibold text-clox-ink">
+                            {a.job.title ?? a.job.id.slice(0, 8)}
+                          </p>
+                          <StatusPill tone={tone}>
+                            {t(`assignments.bucket.${bucket}`)}
+                          </StatusPill>
+                        </div>
+                        <p className="mt-1 break-words font-mono text-xs text-clox-mute">
+                          {a.status}
+                          {a.paidAndConfirmed
+                            ? ` · ${t('assignments.paidAndConfirmed')}`
+                            : ` · ${t('assignments.awaitingPayment')}`}
+                          {' · '}${(a.amountIncGstCents / 100).toFixed(2)}
+                          {a.tripBlockedUntilPaid
+                            ? ` · ${t('assignments.tripBlocked')}`
+                            : ` · ${t('assignments.tripGateOpen')}`}
                         </p>
-                        <StatusPill tone={tone}>
-                          {t(`assignments.bucket.${bucket}`)}
-                        </StatusPill>
+                        <p className="mt-2 break-words text-xs text-clox-mute">
+                          {t('assignments.assetLine', {
+                            vehicle:
+                              a.vehicle?.registration ??
+                              a.vehicle?.id?.slice(0, 8) ??
+                              t('dash'),
+                            driver: a.driver?.user.name ?? a.driver?.user.email ?? t('dash'),
+                            trip: a.trip?.status ?? t('dash'),
+                          })}
+                        </p>
+                        {a.trip?.status === 'AT_DROPOFF' ? (
+                          <p className="mt-1 text-xs text-clox-faint">
+                            {t('assignments.tripAtDropoffHint')}
+                          </p>
+                        ) : null}
+                        {jobExceptions.length > 0 ? (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {jobExceptions.map((exc) => (
+                              <ExceptionBadge key={exc.id} exc={exc} />
+                            ))}
+                          </div>
+                        ) : null}
+                        {a.canReassign ? (
+                          <div className="mt-3">
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => openReassign(a)}
+                            >
+                              {t('assignments.reassign')}
+                            </Button>
+                          </div>
+                        ) : null}
                       </div>
-                      <p className="mt-1 break-words font-mono text-xs text-clox-mute">
-                        {a.status}
-                        {a.paidAndConfirmed
-                          ? ` · ${t('assignments.paidAndConfirmed')}`
-                          : ` · ${t('assignments.awaitingPayment')}`}
-                        {' · '}${(a.amountIncGstCents / 100).toFixed(2)}
-                        {a.tripBlockedUntilPaid
-                          ? ` · ${t('assignments.tripBlocked')}`
-                          : ` · ${t('assignments.tripGateOpen')}`}
-                      </p>
-                      <p className="mt-2 break-words text-xs text-clox-mute">
-                        {t('assignments.assetLine', {
-                          vehicle:
-                            a.vehicle?.registration ??
-                            a.vehicle?.id?.slice(0, 8) ??
-                            t('dash'),
-                          driver: a.driver?.user.name ?? a.driver?.user.email ?? t('dash'),
-                          trip: a.trip?.status ?? t('dash'),
-                        })}
-                      </p>
-                      {a.trip?.status === 'AT_DROPOFF' ? (
-                        <p className="mt-1 text-xs text-clox-faint">
-                          {t('assignments.tripAtDropoffHint')}
-                        </p>
-                      ) : null}
-                      {jobExceptions.length > 0 ? (
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {jobExceptions.map((exc) => (
-                            <ExceptionBadge key={exc.id} exc={exc} />
-                          ))}
-                        </div>
-                      ) : null}
-                      {a.canReassign ? (
-                        <div className="mt-3">
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => openReassign(a)}
-                          >
-                            {t('assignments.reassign')}
-                          </Button>
-                        </div>
-                      ) : null}
-                    </div>
-                    {a.trip?.id ? <AssignmentPodPanel tripId={a.trip.id} /> : null}
-                  </DataCard>
-                );
-              }}
-            />
+                      {a.trip?.id ? <AssignmentPodPanel tripId={a.trip.id} /> : null}
+                    </DataCard>
+                  );
+                }}
+              />
+              <PaginationBar page={page} totalPages={totalPages} onPageChange={setPage} />
+            </>
           )}
         </>
       )}

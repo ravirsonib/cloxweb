@@ -47,6 +47,9 @@
     --status-warn: #9c6a0a;
     --status-warn-bg: #fcf0d8;
     --status-warn-bd: #f0d397;
+    --status-urgent: #b84312;
+    --status-urgent-bg: #fde7da;
+    --status-urgent-bd: #f4be9c;
     --status-danger: #b93a2b;
     --status-danger-bg: #fbe8e5;
     --status-danger-bd: #f0c4bc;
@@ -138,6 +141,9 @@
     --status-warn: var(--cab-amber);
     --status-warn-bg: rgba(255, 194, 75, 0.16);
     --status-warn-bd: rgba(255, 194, 75, 0.45);
+    --status-urgent: #ff9d5c;
+    --status-urgent-bg: rgba(242, 110, 34, 0.2);
+    --status-urgent-bd: rgba(242, 110, 34, 0.5);
     --status-danger: #ff7a72;
     --status-danger-bg: rgba(255, 93, 82, 0.16);
     --status-danger-bd: rgba(255, 93, 82, 0.45);
@@ -763,6 +769,12 @@
     color: var(--status-warn);
     background: var(--status-warn-bg);
     border-color: var(--status-warn-bd);
+  }
+
+  .clox-status-urgent {
+    color: var(--status-urgent);
+    background: var(--status-urgent-bg);
+    border-color: var(--status-urgent-bd);
   }
 
   .clox-status-danger {

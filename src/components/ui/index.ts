@@ -10,9 +10,11 @@ export {
   DataCard,
   DataCardList,
   DataTable,
+  PaginationBar,
   ResponsiveDataView,
   ViewModeToggle,
   dataCardClassName,
+  useClientPagination,
   useDataViewMode,
   type DataViewMode,
 } from './data-view';

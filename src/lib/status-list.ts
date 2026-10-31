@@ -1,9 +1,11 @@
 /** Shared list status accents / filter helpers (assignments, market board, …). */
 
-export type ListStatusTone = 'ok' | 'warn' | 'danger' | 'info' | 'neutral';
+export type ListStatusTone = 'ok' | 'warn' | 'urgent' | 'danger' | 'info' | 'neutral';
 
 const ACCENT: Record<ListStatusTone, string> = {
   warn: 'border-l-4 border-l-[var(--status-warn)] bg-[color-mix(in_srgb,var(--status-warn-bg)_55%,var(--clox-surface))]',
+  urgent:
+    'border-l-4 border-l-[var(--status-urgent)] bg-[color-mix(in_srgb,var(--status-urgent-bg)_55%,var(--clox-surface))]',
   info: 'border-l-4 border-l-[var(--status-info)] bg-[color-mix(in_srgb,var(--status-info-bg)_55%,var(--clox-surface))]',
   ok: 'border-l-4 border-l-[var(--status-ok)] opacity-90',
   danger: 'border-l-4 border-l-[var(--status-danger)] opacity-80',

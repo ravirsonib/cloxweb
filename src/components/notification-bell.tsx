@@ -41,9 +41,24 @@ export function NotificationBell({ className }: { className?: string }) {
     queryKey: ['notifications', 'unread-count'],
     queryFn: getNotificationUnreadCount,
     enabled,
-    refetchInterval: 30_000,
-    staleTime: 15_000,
+    refetchInterval: 15_000,
+    staleTime: 10_000,
+    refetchOnWindowFocus: true,
   });
+
+  const prevCountRef = useRef<number | null>(null);
+  useEffect(() => {
+    const current = unread.data?.count;
+    if (current == null) return;
+    if (prevCountRef.current != null && current !== prevCountRef.current) {
+      void qc.invalidateQueries({ queryKey: ['carrier', 'vehicles'] });
+      void qc.invalidateQueries({ queryKey: ['carrier', 'drivers'] });
+      void qc.invalidateQueries({ queryKey: ['payments', 'assignments'] });
+      void qc.invalidateQueries({ queryKey: ['matching', 'board'] });
+      void qc.invalidateQueries({ queryKey: ['jobs'] });
+    }
+    prevCountRef.current = current;
+  }, [unread.data?.count, qc]);
 
   const list = useQuery({
     queryKey: ['notifications', 'list'],

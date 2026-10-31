@@ -30,9 +30,11 @@ import {
   FileInput,
   LockedCta,
   Notice,
+  PaginationBar,
   Select,
   StatusPill,
   dataCardClassName,
+  useClientPagination,
   useConfirm,
 } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
@@ -96,10 +98,16 @@ export function DriverTripsPage() {
     enabled: role === AppRole.DRIVER,
   });
 
+  const items = trips.data ?? [];
+  const {
+    page,
+    setPage,
+    totalPages,
+    pagedItems: pagedTrips,
+  } = useClientPagination(items, 10);
+
   if (role !== AppRole.DRIVER) return <Navigate to="/" replace />;
   if (trips.isLoading) return <LoadingBlock label={t('trips.loadingList')} />;
-
-  const items = trips.data ?? [];
 
   return (
     <div>
@@ -113,27 +121,30 @@ export function DriverTripsPage() {
       {items.length === 0 ? (
         <p className="mt-6 text-sm text-clox-faint">{t('trips.empty')}</p>
       ) : (
-        <DataCardList
-          className="mt-6"
-          items={items}
-          getKey={(tripItem) => tripItem.id}
-          renderItem={(tripItem) => (
-            <Link to={`/trips/${tripItem.id}`} className={`block h-full ${dataCardClassName}`}>
-              <p className="font-semibold text-clox-ink">
-                {tripItem.job?.title ?? tripItem.jobId.slice(0, 8)}
-              </p>
-              <p className="mt-1 font-mono text-xs text-clox-mute">
-                {tripItem.status}
-                {tripItem.startedAt &&
-                tripItem.status !== 'COMPLETED' &&
-                tripItem.status !== 'CANCELLED'
-                  ? ` ${t('trips.startedSuffix')}`
-                  : ''}
-                {tripItem.gates.canStart ? ` · ${t('trips.readyToStart')}` : ''}
-              </p>
-            </Link>
-          )}
-        />
+        <>
+          <DataCardList
+            className="mt-6"
+            items={pagedTrips}
+            getKey={(tripItem) => tripItem.id}
+            renderItem={(tripItem) => (
+              <Link to={`/trips/${tripItem.id}`} className={`block h-full ${dataCardClassName}`}>
+                <p className="font-semibold text-clox-ink">
+                  {tripItem.job?.title ?? tripItem.jobId.slice(0, 8)}
+                </p>
+                <p className="mt-1 font-mono text-xs text-clox-mute">
+                  {tripItem.status}
+                  {tripItem.startedAt &&
+                  tripItem.status !== 'COMPLETED' &&
+                  tripItem.status !== 'CANCELLED'
+                    ? ` ${t('trips.startedSuffix')}`
+                    : ''}
+                  {tripItem.gates.canStart ? ` · ${t('trips.readyToStart')}` : ''}
+                </p>
+              </Link>
+            )}
+          />
+          <PaginationBar page={page} totalPages={totalPages} onPageChange={setPage} />
+        </>
       )}
     </div>
   );

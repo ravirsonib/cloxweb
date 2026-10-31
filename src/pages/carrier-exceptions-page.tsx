@@ -7,9 +7,11 @@ import {
   Button,
   DataCardList,
   Notice,
+  PaginationBar,
   Select,
   StatusPill,
   dataCardClassName,
+  useClientPagination,
   useToast,
 } from '@/components/ui';
 import {
@@ -49,10 +51,16 @@ export function CarrierExceptionsPage() {
     enabled: role === AppRole.TRANSPORT_COMPANY,
   });
 
+  const items = list.data?.items ?? [];
+  const {
+    page,
+    setPage,
+    totalPages,
+    pagedItems: pagedExceptions,
+  } = useClientPagination(items, 10);
+
   if (role !== AppRole.TRANSPORT_COMPANY) return <Navigate to="/" replace />;
   if (list.isLoading) return <LoadingBlock label={t('exceptions.loading')} />;
-
-  const items = list.data?.items ?? [];
 
   return (
     <div>
@@ -68,12 +76,15 @@ export function CarrierExceptionsPage() {
           <EmptyBlock title={t('exceptions.emptyTitle')} description={t('exceptions.emptyHint')} />
         </div>
       ) : (
-        <DataCardList
-          className="mt-6"
-          items={items}
-          getKey={(row) => row.id}
-          renderItem={(row) => <ExceptionCard row={row} />}
-        />
+        <>
+          <DataCardList
+            className="mt-6"
+            items={pagedExceptions}
+            getKey={(row) => row.id}
+            renderItem={(row) => <ExceptionCard row={row} />}
+          />
+          <PaginationBar page={page} totalPages={totalPages} onPageChange={setPage} />
+        </>
       )}
     </div>
   );
@@ -150,11 +161,17 @@ export function CarrierExceptionDetailPage() {
     queryKey: ['carrier', 'vehicles'],
     queryFn: ({ signal }) => listCarrierVehicles({ signal }),
     enabled: role === AppRole.TRANSPORT_COMPANY && Boolean(detail.data),
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
   const drivers = useQuery({
     queryKey: ['carrier', 'drivers'],
     queryFn: ({ signal }) => listCarrierDrivers({ signal }),
     enabled: role === AppRole.TRANSPORT_COMPANY && Boolean(detail.data),
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
 
   useEffect(() => {
@@ -166,8 +183,13 @@ export function CarrierExceptionDetailPage() {
   }, [candidates.data, prefilledSuggested]);
 
   async function refreshExceptionQueries() {
-    await qc.invalidateQueries({ queryKey: ['exceptions'] });
-    await qc.invalidateQueries({ queryKey: ['payments', 'assignments'] });
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ['exceptions'] }),
+      qc.invalidateQueries({ queryKey: ['payments', 'assignments'] }),
+      qc.invalidateQueries({ queryKey: ['carrier', 'vehicles'] }),
+      qc.invalidateQueries({ queryKey: ['carrier', 'drivers'] }),
+      qc.invalidateQueries({ queryKey: ['matching', 'board'] }),
+    ]);
   }
 
   const reassign = useMutation({

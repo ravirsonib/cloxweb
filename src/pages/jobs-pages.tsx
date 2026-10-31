@@ -30,12 +30,14 @@ import {
   DataTable,
   Field,
   Notice,
+  PaginationBar,
   RadioCardGroup,
   ResponsiveDataView,
   StatusFilterChips,
   StatusPill,
   StepChips,
   ViewModeToggle,
+  useClientPagination,
   useConfirm,
   useDataViewMode,
   useToast,
@@ -160,6 +162,13 @@ export function JobsListPage() {
     });
   }, [items, statusFilter]);
 
+  const {
+    page,
+    setPage,
+    totalPages,
+    pagedItems: pagedFilteredItems,
+  } = useClientPagination(filteredItems, 10);
+
   if (role !== AppRole.SENDER) return <Navigate to="/" replace />;
   if (jobs.isLoading) return <LoadingBlock label={t('jobs.loadingList')} />;
 
@@ -261,102 +270,108 @@ export function JobsListPage() {
       ) : filteredItems.length === 0 ? (
         <p className="mt-6 text-sm text-clox-faint">{t('jobs.emptyFilter')}</p>
       ) : viewMode === 'grid' ? (
-        <DataCardList
-          className="mt-6"
-          items={filteredItems}
-          getKey={(j) => j.id}
-          mode="grid"
-          renderItem={jobCard}
-        />
+        <>
+          <DataCardList
+            className="mt-6"
+            items={pagedFilteredItems}
+            getKey={(j) => j.id}
+            mode="grid"
+            renderItem={jobCard}
+          />
+          <PaginationBar page={page} totalPages={totalPages} onPageChange={setPage} />
+        </>
       ) : (
-        <ResponsiveDataView
-          className="mt-6"
-          cards={
-            <DataCardList
-              items={filteredItems}
-              getKey={(j) => j.id}
-              mode="list"
-              renderItem={jobCard}
-            />
-          }
-          table={
-            <DataTable
-              minWidthClassName="min-w-[56rem]"
-              headers={[
-                t('jobs.colTitle'),
-                t('jobs.colStatus'),
-                t('jobs.colPricing'),
-                t('jobs.colClass'),
-                t('jobs.colEstimate'),
-                t('jobs.colBids'),
-                t('jobs.colCreated'),
-                t('jobs.colCompleted'),
-              ]}
-            >
-              {filteredItems.map((j) => {
-                const openBids = j.openProposalCount ?? 0;
-                const hasOpenBids = openBids > 0;
-                const bucket = senderJobBucket(j);
-                return (
-                  <tr
-                    key={j.id}
-                    className={cn(
-                      'border-t border-clox-border-soft hover:bg-clox-surface-alt/60',
-                      statusAccentClass(SENDER_JOB_TONE[bucket]),
-                      hasOpenBids &&
-                        'bg-[color-mix(in_srgb,var(--status-warn-bg)_35%,transparent)]',
-                    )}
-                  >
-                    <td className="px-4 py-3">
-                      <Link
-                        to={`/jobs/${j.id}`}
-                        className="font-medium text-clox-ink hover:text-clox-orange"
-                      >
-                        {j.title ?? j.id.slice(0, 8)}
-                      </Link>
-                      <p className="font-mono text-[11px] text-clox-faint">
-                        {j.id.slice(0, 8)}
-                      </p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusPill tone={jobStatusTone(j.status)}>
-                        {t(`jobStatuses.${j.status}`, { defaultValue: j.status })}
-                      </StatusPill>
-                    </td>
-                    <td className="px-4 py-3 text-clox-mute">{j.pricingModel}</td>
-                    <td className="px-4 py-3 font-mono text-xs">
-                      {j.minVehicleClass ?? t('dash')}
-                    </td>
-                    <td className="px-4 py-3 text-clox-mute">
-                      {j.estimate.incGstCents != null
-                        ? `$${(j.estimate.incGstCents / 100).toFixed(2)}`
-                        : t('dash')}
-                    </td>
-                    <td className="px-4 py-3">
-                      {hasOpenBids ? (
-                        <StatusPill tone="warn">
-                          {t('jobs.bidsWaiting', { count: openBids })}
-                        </StatusPill>
-                      ) : bucket === 'bidding' ? (
-                        <span className="text-xs text-clox-faint">
-                          {t('jobs.noBidsYetShort')}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-clox-faint">{t('dash')}</span>
+        <>
+          <ResponsiveDataView
+            className="mt-6"
+            cards={
+              <DataCardList
+                items={pagedFilteredItems}
+                getKey={(j) => j.id}
+                mode="list"
+                renderItem={jobCard}
+              />
+            }
+            table={
+              <DataTable
+                minWidthClassName="min-w-[56rem]"
+                headers={[
+                  t('jobs.colTitle'),
+                  t('jobs.colStatus'),
+                  t('jobs.colPricing'),
+                  t('jobs.colClass'),
+                  t('jobs.colEstimate'),
+                  t('jobs.colBids'),
+                  t('jobs.colCreated'),
+                  t('jobs.colCompleted'),
+                ]}
+              >
+                {pagedFilteredItems.map((j) => {
+                  const openBids = j.openProposalCount ?? 0;
+                  const hasOpenBids = openBids > 0;
+                  const bucket = senderJobBucket(j);
+                  return (
+                    <tr
+                      key={j.id}
+                      className={cn(
+                        'border-t border-clox-border-soft hover:bg-clox-surface-alt/60',
+                        statusAccentClass(SENDER_JOB_TONE[bucket]),
+                        hasOpenBids &&
+                          'bg-[color-mix(in_srgb,var(--status-warn-bg)_35%,transparent)]',
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-clox-mute">
-                      {formatWhen(j.createdAt) ?? t('dash')}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-clox-mute">
-                      {formatWhen(j.completedAt) ?? t('dash')}
-                    </td>
-                  </tr>
-                );
-              })}
-            </DataTable>
-          }
-        />
+                    >
+                      <td className="px-4 py-3">
+                        <Link
+                          to={`/jobs/${j.id}`}
+                          className="font-medium text-clox-ink hover:text-clox-orange"
+                        >
+                          {j.title ?? j.id.slice(0, 8)}
+                        </Link>
+                        <p className="font-mono text-[11px] text-clox-faint">
+                          {j.id.slice(0, 8)}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusPill tone={jobStatusTone(j.status)}>
+                          {t(`jobStatuses.${j.status}`, { defaultValue: j.status })}
+                        </StatusPill>
+                      </td>
+                      <td className="px-4 py-3 text-clox-mute">{j.pricingModel}</td>
+                      <td className="px-4 py-3 font-mono text-xs">
+                        {j.minVehicleClass ?? t('dash')}
+                      </td>
+                      <td className="px-4 py-3 text-clox-mute">
+                        {j.estimate.incGstCents != null
+                          ? `$${(j.estimate.incGstCents / 100).toFixed(2)}`
+                          : t('dash')}
+                      </td>
+                      <td className="px-4 py-3">
+                        {hasOpenBids ? (
+                          <StatusPill tone="warn">
+                            {t('jobs.bidsWaiting', { count: openBids })}
+                          </StatusPill>
+                        ) : bucket === 'bidding' ? (
+                          <span className="text-xs text-clox-faint">
+                            {t('jobs.noBidsYetShort')}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-clox-faint">{t('dash')}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-clox-mute">
+                        {formatWhen(j.createdAt) ?? t('dash')}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-clox-mute">
+                        {formatWhen(j.completedAt) ?? t('dash')}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </DataTable>
+            }
+          />
+          <PaginationBar page={page} totalPages={totalPages} onPageChange={setPage} />
+        </>
       )}
     </div>
   );
@@ -1244,6 +1259,10 @@ export function JobDetailPage() {
     queryKey: ['jobs', id],
     queryFn: () => getSenderJob(id),
     enabled: role === AppRole.SENDER && Boolean(id),
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchInterval: 10_000,
   });
   const [acceptMsg, setAcceptMsg] = useState<string | null>(null);
   const [scaChallenge, setScaChallenge] = useState<{
@@ -1281,7 +1300,13 @@ export function JobDetailPage() {
         `${res.message ?? res.paymentStatus}${res.stripeStatus ? ` · ${res.stripeStatus}` : ''}`,
       );
     }
-    await qc.invalidateQueries({ queryKey: ['jobs', id] });
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ['jobs', id] }),
+      qc.invalidateQueries({ queryKey: ['jobs'] }),
+      qc.invalidateQueries({ queryKey: ['carrier', 'vehicles'] }),
+      qc.invalidateQueries({ queryKey: ['carrier', 'drivers'] }),
+      qc.invalidateQueries({ queryKey: ['matching', 'board'] }),
+    ]);
   };
 
   const toast = useToast();
@@ -1625,9 +1650,33 @@ export function JobDetailPage() {
                     className="rounded-clox-md border border-clox-border bg-clox-surface p-4 shadow-clox-1"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-clox-ink">{p.carrierLabel}</p>
-                        <p className="mt-1 text-sm text-clox-mute">
+                      <div className="min-w-0 space-y-1">
+                        <p className="font-semibold text-clox-ink">
+                          {p.carrierCompany?.tradingName ||
+                            p.carrierCompany?.legalName ||
+                            p.carrierLabel}
+                          {p.carrierCompany?.tradingName &&
+                          p.carrierCompany.legalName &&
+                          p.carrierCompany.tradingName !== p.carrierCompany.legalName ? (
+                            <span className="ml-1.5 text-xs font-normal text-clox-mute">
+                              ({p.carrierCompany.legalName})
+                            </span>
+                          ) : null}
+                        </p>
+                        {(p.carrierCompany?.email ||
+                          p.carrierCompany?.phone ||
+                          p.carrierCompany?.abn) ? (
+                          <p className="text-xs text-clox-mute">
+                            {[
+                              p.carrierCompany?.email,
+                              p.carrierCompany?.phone,
+                              p.carrierCompany?.abn ? `ABN ${p.carrierCompany.abn}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </p>
+                        ) : null}
+                        <p className="text-sm text-clox-mute">
                           {t('jobs.view.bidAmount', {
                             amount: (p.amountIncGstCents / 100).toFixed(2),
                           })}
@@ -1635,7 +1684,27 @@ export function JobDetailPage() {
                             ? ` · ${t('jobs.view.etaMinutes', { minutes: p.etaMinutes })}`
                             : ''}
                           {p.vehicleClass ? ` · ${p.vehicleClass}` : ''}
+                          {p.vehicleRegistration || p.vehicleLabel
+                            ? ` (${[p.vehicleLabel, p.vehicleRegistration]
+                                .filter(
+                                  (val, i, arr) => Boolean(val) && arr.indexOf(val) === i,
+                                )
+                                .join(' · ')})`
+                            : ''}
                         </p>
+                        {(p.driver?.name || p.driver?.email) ? (
+                          <p className="text-xs text-clox-faint">
+                            {[
+                              p.driver.name,
+                              p.driver.email,
+                              p.driver.licenceClass
+                                ? `${t('validation.licenceClassLabel')}: ${p.driver.licenceClass}`
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </p>
+                        ) : null}
                       </div>
                       <StatusPill
                         tone={

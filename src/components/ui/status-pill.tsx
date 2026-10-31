@@ -4,6 +4,7 @@ import { cn } from '@/lib/cn';
 const tones = {
   ok: 'clox-status-ok',
   warn: 'clox-status-warn',
+  urgent: 'clox-status-urgent',
   danger: 'clox-status-danger',
   info: 'clox-status-info',
   neutral: 'clox-status-neutral',

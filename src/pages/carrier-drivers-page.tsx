@@ -12,9 +12,11 @@ import {
   DataTable,
   Field,
   Notice,
+  PaginationBar,
   ResponsiveDataView,
   StatusPill,
   dataCardClassName,
+  useClientPagination,
   useConfirm,
   useToast,
 } from '@/components/ui';
@@ -100,6 +102,10 @@ export function CarrierDriversPage() {
   const driversQuery = useQuery({
     queryKey: ['carrier', 'drivers'],
     queryFn: ({ signal }) => listCarrierDrivers({ signal }),
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchInterval: 10_000,
   });
 
   const driverDocsQuery = useQuery({
@@ -190,6 +196,12 @@ export function CarrierDriversPage() {
   });
 
   const items = driversQuery.data?.items ?? [];
+  const {
+    page,
+    setPage,
+    totalPages,
+    pagedItems: pagedDrivers,
+  } = useClientPagination(items, 10);
   const inviting = inviteMutation.isPending;
   const busy =
     inviting ||
@@ -506,86 +518,89 @@ export function CarrierDriversPage() {
             <EmptyBlock title={t('drivers.emptyTitle')} description={t('drivers.emptyHint')} />
           </div>
         ) : (
-          <ResponsiveDataView
-            className="mt-6"
-            cards={
-              <DataCardList
-                items={items}
-                getKey={(row) => row.id}
-                renderItem={(row) => (
-                  <div className={dataCardClassName}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-clox-ink">
-                          {row.user.name ?? t('dash')}
-                        </p>
-                        <p className="mt-0.5 truncate text-xs text-clox-faint">{row.user.email}</p>
+          <>
+            <ResponsiveDataView
+              className="mt-6"
+              cards={
+                <DataCardList
+                  items={pagedDrivers}
+                  getKey={(row) => row.id}
+                  renderItem={(row) => (
+                    <div className={dataCardClassName}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-clox-ink">
+                            {row.user.name ?? t('dash')}
+                          </p>
+                          <p className="mt-0.5 truncate text-xs text-clox-faint">{row.user.email}</p>
+                        </div>
+                        <div className="shrink-0">{renderLicenceExpiry(row)}</div>
                       </div>
-                      <div className="shrink-0">{renderLicenceExpiry(row)}</div>
-                    </div>
-                    <div className="mt-3">{renderStatus(row)}</div>
-                    {row.disabledReason ? (
-                      <p className="mt-2 text-xs text-clox-mute">
-                        {t('drivers.reasonLabel')}: {row.disabledReason}
-                      </p>
-                    ) : null}
-                    <div className="mt-3 overflow-x-auto">{renderActions(row)}</div>
-                  </div>
-                )}
-              />
-            }
-            table={
-              <DataTable
-                minWidthClassName="min-w-[72rem]"
-                headers={[
-                  t('drivers.colName'),
-                  t('drivers.colEmail'),
-                  t('drivers.colLicence'),
-                  t('drivers.colLicenceExpiry'),
-                  t('drivers.colStatus'),
-                  t('drivers.colReason'),
-                  t('drivers.colActions'),
-                ]}
-                headerClassNames={[
-                  undefined,
-                  undefined,
-                  undefined,
-                  undefined,
-                  undefined,
-                  undefined,
-                  'text-right',
-                ]}
-              >
-                {items.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-t border-clox-border-soft hover:bg-clox-surface-alt/60"
-                  >
-                    <td className="px-4 py-3 align-top text-clox-ink">
-                      {row.user.name ?? t('dash')}
-                    </td>
-                    <td className="px-4 py-3 align-top text-clox-mute">{row.user.email}</td>
-                    <td className="px-4 py-3 align-top font-mono text-xs text-clox-mute">
-                      {row.licenceNo ?? t('dash')}
-                      {row.licenceClass ? ` · ${row.licenceClass}` : ''}
-                    </td>
-                    <td className="px-4 py-3 align-top">{renderLicenceExpiry(row)}</td>
-                    <td className="px-4 py-3 align-top">{renderStatus(row)}</td>
-                    <td className="max-w-[12rem] px-4 py-3 align-top text-xs text-clox-mute">
+                      <div className="mt-3">{renderStatus(row)}</div>
                       {row.disabledReason ? (
-                        <span className="line-clamp-2" title={row.disabledReason}>
-                          {row.disabledReason}
-                        </span>
-                      ) : (
-                        t('dash')
-                      )}
-                    </td>
-                    <td className="px-4 py-3 align-top text-right">{renderActions(row)}</td>
-                  </tr>
-                ))}
-              </DataTable>
-            }
-          />
+                        <p className="mt-2 text-xs text-clox-mute">
+                          {t('drivers.reasonLabel')}: {row.disabledReason}
+                        </p>
+                      ) : null}
+                      <div className="mt-3 overflow-x-auto">{renderActions(row)}</div>
+                    </div>
+                  )}
+                />
+              }
+              table={
+                <DataTable
+                  minWidthClassName="min-w-[72rem]"
+                  headers={[
+                    t('drivers.colName'),
+                    t('drivers.colEmail'),
+                    t('drivers.colLicence'),
+                    t('drivers.colLicenceExpiry'),
+                    t('drivers.colStatus'),
+                    t('drivers.colReason'),
+                    t('drivers.colActions'),
+                  ]}
+                  headerClassNames={[
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    'text-right',
+                  ]}
+                >
+                  {pagedDrivers.map((row) => (
+                    <tr
+                      key={row.id}
+                      className="border-t border-clox-border-soft hover:bg-clox-surface-alt/60"
+                    >
+                      <td className="px-4 py-3 align-top text-clox-ink">
+                        {row.user.name ?? t('dash')}
+                      </td>
+                      <td className="px-4 py-3 align-top text-clox-mute">{row.user.email}</td>
+                      <td className="px-4 py-3 align-top font-mono text-xs text-clox-mute">
+                        {row.licenceNo ?? t('dash')}
+                        {row.licenceClass ? ` · ${row.licenceClass}` : ''}
+                      </td>
+                      <td className="px-4 py-3 align-top">{renderLicenceExpiry(row)}</td>
+                      <td className="px-4 py-3 align-top">{renderStatus(row)}</td>
+                      <td className="max-w-[12rem] px-4 py-3 align-top text-xs text-clox-mute">
+                        {row.disabledReason ? (
+                          <span className="line-clamp-2" title={row.disabledReason}>
+                            {row.disabledReason}
+                          </span>
+                        ) : (
+                          t('dash')
+                        )}
+                      </td>
+                      <td className="px-4 py-3 align-top text-right">{renderActions(row)}</td>
+                    </tr>
+                  ))}
+                </DataTable>
+              }
+            />
+            <PaginationBar page={page} totalPages={totalPages} onPageChange={setPage} />
+          </>
         )
       ) : null}
 

@@ -24,10 +24,12 @@ import {
   DataTable,
   Field,
   Notice,
+  PaginationBar,
   ResponsiveDataView,
   SearchableSelect,
   Select,
   StatusPill,
+  useClientPagination,
   useConfirm,
   useToast,
 } from '@/components/ui';
@@ -307,6 +309,7 @@ export function OpsPartnersPage() {
   }
 
   const items = listQuery.data?.items ?? [];
+  const pager = useClientPagination(items, 10);
 
   return (
     <div>
@@ -430,7 +433,7 @@ export function OpsPartnersPage() {
             <ResponsiveDataView
               cards={
                 <CardCollection>
-                  {items.map((row) => (
+                  {pager.pagedItems.map((row) => (
                     <DataCard key={row.id}>
                       <div className="flex min-w-0 items-start justify-between gap-2">
                         <div className="min-w-0">
@@ -475,7 +478,7 @@ export function OpsPartnersPage() {
                     t('opsPartners.colActions'),
                   ]}
                 >
-                  {items.map((row) => (
+                  {pager.pagedItems.map((row) => (
                     <tr key={row.id} className="border-t border-clox-border-soft">
                       <td className="px-4 py-3">
                         <p className="font-medium text-clox-ink">
@@ -517,6 +520,11 @@ export function OpsPartnersPage() {
                   ))}
                 </DataTable>
               }
+            />
+            <PaginationBar
+              page={pager.page}
+              totalPages={pager.totalPages}
+              onPageChange={pager.setPage}
             />
           </div>
         ) : null}

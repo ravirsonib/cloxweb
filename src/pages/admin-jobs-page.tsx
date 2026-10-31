@@ -402,7 +402,7 @@ export function AdminJobsPage() {
         </div>
       )}
 
-      {totalPages > 1 ? (
+      {items.length > 0 ? (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
           <Button
             type="button"

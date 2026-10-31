@@ -1,6 +1,43 @@
 /** Map domain status strings to StatusPill tones. */
 
-export type StatusTone = 'ok' | 'warn' | 'danger' | 'info' | 'neutral';
+export type StatusTone = 'ok' | 'warn' | 'urgent' | 'danger' | 'info' | 'neutral';
+
+/** Compliance case review lifecycle — each queue status has a distinct tone. */
+export function complianceCaseStatusTone(status: string): StatusTone {
+  switch (status) {
+    case 'APPROVED':
+      return 'ok';
+    case 'REJECTED':
+      return 'danger';
+    case 'ESCALATED':
+      return 'urgent';
+    case 'INFO_REQUESTED':
+      return 'warn';
+    case 'OPEN':
+      return 'info';
+    case 'CLOSED':
+    default:
+      return 'neutral';
+  }
+}
+
+/** Compliance document verification status. */
+export function complianceDocStatusTone(status: string): StatusTone {
+  switch (status) {
+    case 'APPROVED':
+      return 'ok';
+    case 'REJECTED':
+    case 'EXPIRED':
+      return 'danger';
+    case 'UNDER_REVIEW':
+      return 'warn';
+    case 'UPLOADED':
+      return 'info';
+    case 'UPLOAD_PENDING':
+    default:
+      return 'neutral';
+  }
+}
 
 /** Marketplace / partner company lifecycle. */
 export function companyStatusTone(status: string): StatusTone {

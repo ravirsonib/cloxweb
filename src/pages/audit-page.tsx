@@ -268,7 +268,7 @@ export function AuditPage() {
         />
       ) : null}
 
-      {totalPages > 1 ? (
+      {items.length > 0 ? (
         <div className="mt-4 flex items-center justify-between gap-2 text-sm text-clox-mute">
           <Button
             variant="secondary"

@@ -11,6 +11,7 @@ import {
   DataCardList,
   DataTable,
   Field,
+  InteractiveChart,
   Notice,
   PaginationBar,
   ResponsiveDataView,
@@ -19,6 +20,7 @@ import {
   dataCardClassName,
   useClientPagination,
   useToast,
+  type ChartDataItem,
 } from '@/components/ui';
 import {
   createCompanyInvite,
@@ -221,6 +223,36 @@ export function GrowthPipelinePage() {
     return value === 'CARRIER' ? t('companies.typeCarrier') : t('companies.typeSender');
   }
 
+  const pipelineChartData: ChartDataItem[] = useMemo(() => {
+    const stageCounts: Record<string, number> = {
+      LEAD: 0,
+      CONTACTED: 0,
+      INVITED: 0,
+      ONBOARDING: 0,
+      WON: 0,
+      LOST: 0,
+    };
+    for (const item of items) {
+      if (item.stage in stageCounts) {
+        stageCounts[item.stage]++;
+      }
+    }
+    const colors: Record<string, string> = {
+      LEAD: '#0284c7', // Sky Blue
+      CONTACTED: '#2563eb', // Royal Blue
+      INVITED: '#1d4ed8', // Deep Blue
+      ONBOARDING: '#fb923c', // Warm Light Orange
+      WON: '#f97316', // Clox Orange
+      LOST: '#94a3b8', // Slate Muted
+    };
+    return STAGES.map((s) => ({
+      id: s,
+      label: stageLabel(s),
+      value: stageCounts[s] ?? 0,
+      color: colors[s],
+    }));
+  }, [items]);
+
   return (
     <div>
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -251,6 +283,17 @@ export function GrowthPipelinePage() {
       <Notice tone="info" className="mt-4" title={t('growth.prospectExplainTitle')}>
         {t('growth.prospectExplainBody')}
       </Notice>
+
+      <div className="mt-6">
+        <InteractiveChart
+          title="Growth Partner Pipeline"
+          subtitle="Visual distribution of carrier and sender prospects across onboarding stages"
+          items={pipelineChartData}
+          defaultVisual="bar"
+          allowedVisuals={['bar', 'pie', 'line', 'area']}
+          valueSuffix=" accounts"
+        />
+      </div>
 
       {showCreate ? (
         <form

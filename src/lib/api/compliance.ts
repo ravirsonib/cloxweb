@@ -62,6 +62,7 @@ export function listComplianceCases(params?: {
   status?: string;
   caseType?: string;
   regionCode?: string;
+  search?: string;
   page?: number;
   pageSize?: number;
   signal?: AbortSignal;
@@ -76,6 +77,7 @@ export function listComplianceCases(params?: {
         status: params?.status,
         caseType: params?.caseType,
         regionCode: params?.regionCode,
+        search: params?.search,
         page: params?.page ?? 1,
         pageSize: params?.pageSize ?? 20,
       },

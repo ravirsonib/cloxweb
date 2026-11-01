@@ -8,12 +8,14 @@ import { z } from 'zod';
 import { getErrorDetail, peekCompanyInvite, registerSender } from '@/lib/api';
 import { BrandLogo } from '@/components/brand-logo';
 import { Button, Field, Notice } from '@/components/ui';
-import { optionalPhoneSchema } from '@/lib/validation';
+import { optionalPhoneSchema, requiredPhoneSchema } from '@/lib/validation';
 
 type Form = {
   name: string;
   email: string;
   phone: string;
+  alternateEmail?: string;
+  alternatePhone: string;
   acceptedTerms: boolean;
 };
 
@@ -37,7 +39,14 @@ export function SenderRegisterPage() {
       .trim()
       .min(1, t('validation.emailRequired'))
       .email(t('validation.emailInvalid')),
-    phone: optionalPhoneSchema(t('validation.phoneInvalid')),
+    phone: requiredPhoneSchema(t('validation.phoneRequired'), t('validation.phoneInvalid')),
+    alternateEmail: z
+      .string()
+      .trim()
+      .email(t('validation.emailInvalid'))
+      .or(z.literal(''))
+      .optional(),
+    alternatePhone: optionalPhoneSchema(t('validation.phoneInvalid')),
     acceptedTerms: z.boolean().refine((value) => value === true, {
       message: t('validation.termsRequired'),
     }),
@@ -49,6 +58,8 @@ export function SenderRegisterPage() {
       name: '',
       email: '',
       phone: '',
+      alternateEmail: '',
+      alternatePhone: '',
       acceptedTerms: false,
     },
   });
@@ -66,7 +77,9 @@ export function SenderRegisterPage() {
       registerSender({
         name: values.name.trim(),
         email: values.email.trim(),
-        phone: values.phone.trim() || undefined,
+        phone: values.phone.trim(),
+        alternateEmail: values.alternateEmail?.trim() || undefined,
+        alternatePhone: values.alternatePhone?.trim() || undefined,
         acceptedTerms: values.acceptedTerms,
         inviteToken,
       }),
@@ -77,10 +90,10 @@ export function SenderRegisterPage() {
 
   return (
     <main
-      className="flex min-h-screen items-center justify-center bg-clox-bg px-4 py-10 text-clox-text sm:px-6"
+      className="auth-shell flex min-h-[100dvh] items-center justify-center px-4 py-8 sm:px-6 sm:py-12"
       data-role="sender"
     >
-      <div className="clox-card w-full max-w-md p-6 shadow-clox-2 sm:p-8">
+      <div className="clox-card w-full max-w-lg p-6 shadow-clox-2 sm:p-8">
         <BrandLogo variant="default" className="h-9 w-auto object-contain object-left" />
         <h1 className="mt-4 font-display text-3xl font-bold text-clox-ink">
           {t('senderRegister.title')}
@@ -102,7 +115,7 @@ export function SenderRegisterPage() {
 
         <form
           className="mt-6"
-          onSubmit={form.handleSubmit((v) => mutation.mutate(v))}
+          onSubmit={form.handleSubmit((v) => mutation.mutate(v as Form))}
           noValidate
         >
           <Field
@@ -119,13 +132,30 @@ export function SenderRegisterPage() {
             {...form.register('email')}
           />
           <Field
-            label={t('phoneOptional')}
+            label={t('phone')}
             type="tel"
             inputMode="tel"
             autoComplete="tel"
+            required
             error={form.formState.errors.phone?.message}
             {...form.register('phone')}
           />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field
+              label={t('alternateEmailOptional', { defaultValue: 'Alternate email (optional)' })}
+              type="email"
+              error={form.formState.errors.alternateEmail?.message}
+              {...form.register('alternateEmail')}
+            />
+            <Field
+              label={t('alternatePhoneOptional', { defaultValue: 'Alternate phone (optional)' })}
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              error={form.formState.errors.alternatePhone?.message}
+              {...form.register('alternatePhone')}
+            />
+          </div>
           <label className="mb-4 flex items-start gap-2 text-sm text-clox-mute">
             <input type="checkbox" className="mt-1 accent-clox-accent" {...form.register('acceptedTerms')} />
             <span>

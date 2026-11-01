@@ -32,6 +32,8 @@ export type TripSummary = {
   job: {
     title: string | null;
     status: string;
+    pricingModel?: string;
+    hourlyPattern?: string | null;
     deadWeightKg: number | null;
     chargeableWeightKg: number | null;
     stops: Array<{

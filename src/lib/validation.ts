@@ -24,6 +24,101 @@ export function isChargeableOverLimit(chargeableKg: number): boolean {
 
 export const AU_STATES = ['NSW', 'VIC', 'QLD', 'SA', 'WA', 'TAS', 'NT', 'ACT'] as const;
 
+export const AU_STATE_NAMES: Record<(typeof AU_STATES)[number], string> = {
+  NSW: 'New South Wales',
+  VIC: 'Victoria',
+  QLD: 'Queensland',
+  SA: 'South Australia',
+  WA: 'Western Australia',
+  TAS: 'Tasmania',
+  NT: 'Northern Territory',
+  ACT: 'Australian Capital Territory',
+};
+
+export const AU_STATE_OPTIONS: ReadonlyArray<{
+  code: (typeof AU_STATES)[number];
+  name: string;
+  label: string;
+}> = AU_STATES.map((code) => ({
+  code,
+  name: AU_STATE_NAMES[code],
+  label: `${code} — ${AU_STATE_NAMES[code]}`,
+}));
+
+const AU_STATE_POSTCODE_RANGES: Record<string, ReadonlyArray<[number, number]>> = {
+  NSW: [
+    [1000, 2599],
+    [2619, 2899],
+    [2921, 2999],
+  ],
+  ACT: [
+    [200, 299],
+    [2600, 2618],
+    [2900, 2920],
+  ],
+  VIC: [
+    [3000, 3999],
+    [8000, 8999],
+  ],
+  QLD: [
+    [4000, 4999],
+    [9000, 9999],
+  ],
+  SA: [[5000, 5999]],
+  WA: [
+    [6000, 6797],
+    [6800, 6999],
+  ],
+  TAS: [[7000, 7999]],
+  NT: [[800, 999]],
+};
+
+export const AU_STATE_POSTCODE_HINTS: Record<string, string> = {
+  NSW: '1000–2599, 2619–2899, 2921–2999',
+  ACT: '0200–0299, 2600–2618, 2900–2920',
+  VIC: '3000–3999, 8000–8999',
+  QLD: '4000–4999, 9000–9999',
+  SA: '5000–5999',
+  WA: '6000–6797, 6800–6999',
+  TAS: '7000–7999',
+  NT: '0800–0999',
+};
+
+/** Validates 4-digit numeric Australian postcode within valid Australia Post ranges (0200–9999). */
+export function isValidAuPostcode(postcode: string | null | undefined): boolean {
+  const trimmed = String(postcode ?? '').trim();
+  if (!/^\d{4}$/.test(trimmed)) return false;
+  const num = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(num) || num < 200) return false;
+  return Object.values(AU_STATE_POSTCODE_RANGES).some((ranges) =>
+    ranges.some(([min, max]) => num >= min && num <= max),
+  );
+}
+
+/** Validates 4-digit Australian postcode against the selected Australian state's postcode range. */
+export function isValidAuPostcodeForState(
+  postcode: string | null | undefined,
+  state: string | null | undefined,
+): boolean {
+  const trimmed = String(postcode ?? '').trim();
+  if (!/^\d{4}$/.test(trimmed)) return false;
+  const num = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(num) || num < 200) return false;
+  const st = String(state ?? '').trim().toUpperCase();
+  const ranges = AU_STATE_POSTCODE_RANGES[st];
+  if (!ranges) return isValidAuPostcode(trimmed);
+  return ranges.some(([min, max]) => num >= min && num <= max);
+}
+
+export function auPostcodeErrorForState(state: string | null | undefined): string {
+  const st = String(state ?? '').trim().toUpperCase();
+  const hint = AU_STATE_POSTCODE_HINTS[st];
+  if (hint) {
+    return `Enter a valid 4-digit postcode for ${st} (${hint})`;
+  }
+  return 'Enter a valid 4-digit Australian postcode (e.g. 3000)';
+}
+
 export const LICENCE_CLASSES = ['C', 'LR', 'MR', 'HR', 'HC', 'MC'] as const;
 
 export const VEHICLE_CLASSES = [
@@ -60,14 +155,22 @@ const SUGGESTED_TARE_KG: Record<VehicleClass, number> = {
   BDOUBLE: 20_000,
 };
 
-export function suggestedGvmKgForClass(vehicleClass: string | null | undefined): number {
-  const key = String(vehicleClass ?? '').toUpperCase() as VehicleClass;
-  return SUGGESTED_GVM_KG[key] ?? SUGGESTED_GVM_KG.RIGID_1_2T;
+export function suggestedGvmKgForClass(
+  vehicleClass: string | null | undefined,
+  map?: Record<string, number>,
+): number {
+  const key = String(vehicleClass ?? '').toUpperCase();
+  if (map && map[key] != null) return map[key];
+  return (SUGGESTED_GVM_KG as Record<string, number>)[key] ?? SUGGESTED_GVM_KG.RIGID_1_2T;
 }
 
-export function suggestedTareKgForClass(vehicleClass: string | null | undefined): number {
-  const key = String(vehicleClass ?? '').toUpperCase() as VehicleClass;
-  return SUGGESTED_TARE_KG[key] ?? SUGGESTED_TARE_KG.RIGID_1_2T;
+export function suggestedTareKgForClass(
+  vehicleClass: string | null | undefined,
+  map?: Record<string, number>,
+): number {
+  const key = String(vehicleClass ?? '').toUpperCase();
+  if (map && map[key] != null) return map[key];
+  return (SUGGESTED_TARE_KG as Record<string, number>)[key] ?? SUGGESTED_TARE_KG.RIGID_1_2T;
 }
 
 /** Keep in sync with api/src/modules/jobs/job-pricing.util.ts (G0-12 ranks). */
@@ -80,9 +183,13 @@ const VEHICLE_CLASS_RANK: Record<string, number> = {
   BDOUBLE: 6,
 };
 
-export function vehicleClassRank(vehicleClass: string | null | undefined): number {
+export function vehicleClassRank(
+  vehicleClass: string | null | undefined,
+  ranks?: Record<string, number>,
+): number {
   if (!vehicleClass) return 0;
-  return VEHICLE_CLASS_RANK[vehicleClass.toUpperCase()] ?? 0;
+  const map = ranks ?? VEHICLE_CLASS_RANK;
+  return map[vehicleClass.toUpperCase()] ?? 0;
 }
 
 /** Keep in sync with api VEHICLE_CLASS_MAX_CHARGEABLE_KG / recommendVehicleClass. */
@@ -108,9 +215,10 @@ export function recommendVehicleClass(chargeableKg: number): string {
 export function isVehicleClassAdequate(
   offeredClass: string | null | undefined,
   minClass: string | null | undefined,
+  ranks?: Record<string, number>,
 ): boolean {
   if (!minClass) return true;
-  return vehicleClassRank(offeredClass) >= vehicleClassRank(minClass);
+  return vehicleClassRank(offeredClass, ranks) >= vehicleClassRank(minClass, ranks);
 }
 
 /** Board/bid: rank adequate, or UTE/etc. payload covers chargeable kg for near minClass. */
@@ -118,15 +226,16 @@ export function isVehicleAdequateForJob(
   offeredClass: string | null | undefined,
   minClass: string | null | undefined,
   chargeableKg: number | null | undefined,
+  ranks?: Record<string, number>,
 ): boolean {
-  if (isVehicleClassAdequate(offeredClass, minClass)) return true;
+  if (isVehicleClassAdequate(offeredClass, minClass, ranks)) return true;
   if (chargeableKg == null || chargeableKg <= 0 || !offeredClass) return false;
   const offeredMax = VEHICLE_CLASS_MAX_CHARGEABLE_KG[offeredClass.toUpperCase()];
   if (offeredMax == null || chargeableKg > offeredMax) return false;
   const weightMin = recommendVehicleClass(chargeableKg);
-  if (!minClass) return isVehicleClassAdequate(offeredClass, weightMin);
-  if (vehicleClassRank(minClass) > vehicleClassRank(weightMin) + 1) return false;
-  return isVehicleClassAdequate(offeredClass, weightMin);
+  if (!minClass) return isVehicleClassAdequate(offeredClass, weightMin, ranks);
+  if (vehicleClassRank(minClass, ranks) > vehicleClassRank(weightMin, ranks) + 1) return false;
+  return isVehicleClassAdequate(offeredClass, weightMin, ranks);
 }
 
 /** Align with API carrier/sender ABN: strip spaces, then require 11 digits. */

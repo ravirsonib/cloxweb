@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import {
@@ -49,15 +49,17 @@ export function ComplianceQueuePage() {
   const [regionCode, setRegionCode] = useState(
     role === AdminRole.SUPER_ADMIN ? '' : 'VIC',
   );
+  const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
 
   const query = useQuery({
-    queryKey: ['compliance', 'cases', status, caseType, regionCode, page],
+    queryKey: ['compliance', 'cases', status, caseType, regionCode, search, page],
     queryFn: ({ signal }) =>
       listComplianceCases({
         status: status || undefined,
         caseType: caseType || undefined,
         regionCode: regionCode || undefined,
+        search: search.trim() || undefined,
         page,
         pageSize: COMPLIANCE_PAGE_SIZE,
         signal,
@@ -121,6 +123,23 @@ export function ComplianceQueuePage() {
       </div>
 
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+        <label className="mb-0 block w-full sm:w-auto sm:min-w-[16rem] flex-1">
+          <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
+            {t('search', { defaultValue: 'Search' })}
+          </span>
+          <input
+            type="search"
+            className="clox-field-control w-full"
+            placeholder={t('compliance.searchPlaceholder', {
+              defaultValue: 'Search company, ABN, or case ID…',
+            })}
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+          />
+        </label>
         <Select
           className="mb-0 w-full min-w-[10rem] sm:w-auto"
           label={t('compliance.colStatus')}
@@ -289,6 +308,7 @@ export function ComplianceQueuePage() {
 
 export function ComplianceCasePage({ caseId }: { caseId: string }) {
   const { t } = useTranslation('common');
+  const navigate = useNavigate();
   const role = useAuthStore((s) => s.role);
   const qc = useQueryClient();
   const toast = useToast();
@@ -389,9 +409,16 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
 
   return (
     <div>
-      <Link to="/compliance" className="text-sm text-clox-mute hover:text-clox-ink">
-        {t('compliance.backQueue')}
-      </Link>
+      <div className="mb-4">
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => navigate('/compliance')}
+        >
+          ← {t('compliance.backQueue')}
+        </Button>
+      </div>
       <h1 className="mt-3 font-display text-2xl font-bold text-clox-ink">{c.company.legalName}</h1>
       <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-sm text-clox-mute">
         <span>{c.caseType}</span>
@@ -566,7 +593,7 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
           hint={t('compliance.noteHint')}
         />
 
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           {canDecide ? (
             <>
               <Button
@@ -605,6 +632,13 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
               {t('compliance.escalate')}
             </Button>
           ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => navigate('/compliance')}
+          >
+            ← {t('compliance.backQueue')}
+          </Button>
           {!canDecide && !canEscalate ? (
             <p className="text-sm text-clox-mute">{t('compliance.noActions')}</p>
           ) : null}

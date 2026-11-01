@@ -39,6 +39,10 @@ export type CarrierOnboarding = {
     hasRwc?: boolean;
     /** Latest RWC document id for this vehicle (for View). */
     rwcDocumentId?: string | null;
+    /** True when a DG_LICENCE document is uploaded for this vehicleId. */
+    hasDg?: boolean;
+    /** Latest DG_LICENCE document id for this vehicle (for View / Bid auto-attach). */
+    dgDocumentId?: string | null;
   }>;
   drivers: Array<{
     id: string;
@@ -76,6 +80,8 @@ export function registerCarrier(payload: {
   email: string;
   name: string;
   phone?: string;
+  alternateEmail?: string;
+  alternatePhone?: string;
   acceptedTerms: boolean;
   inviteToken?: string;
 }) {
@@ -124,6 +130,11 @@ export type CarrierVehicleListItem = {
   activityStatus?: string | null;
   /** False when on trip, pending assignment, or open bid on another job. */
   bidAvailable?: boolean;
+  /** True when vehicle has a DG_LICENCE document eligible for DG jobs. */
+  hasDg?: boolean;
+  /** Latest DG_LICENCE document id for this vehicle (auto-attached on DG bids). */
+  dgDocumentId?: string | null;
+  dgDocumentFilename?: string | null;
   committedJob?: FleetCommittedJob | null;
   currentTrip?: {
     id: string;
@@ -156,6 +167,11 @@ export type CarrierDriverListItem = {
   activityStatus?: string | null;
   /** False when on trip, pending assignment, or open bid on another job. */
   bidAvailable?: boolean;
+  /** True when vehicle has a DG_LICENCE document eligible for DG jobs. */
+  hasDg?: boolean;
+  /** Latest DG_LICENCE document id for this vehicle (auto-attached on DG bids). */
+  dgDocumentId?: string | null;
+  dgDocumentFilename?: string | null;
   committedJob?: FleetCommittedJob | null;
   currentTrip?: {
     id: string;

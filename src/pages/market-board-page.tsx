@@ -10,6 +10,7 @@ import {
   getMarketBoard,
   listCarrierDrivers,
   listCarrierVehicles,
+  openDocumentContent,
   submitBid,
   type MarketBoardJob,
 } from '@/lib/api';
@@ -188,12 +189,14 @@ export function MarketBoardPage() {
   useEffect(() => {
     if (!selectedJob) return;
     const eligibleVehicle =
-      selectableVehicles.find((v) =>
-        isVehicleAdequateForJob(
-          v.vehicleClass,
-          selectedJob.minVehicleClass,
-          selectedJob.chargeableWeightKg,
-        ),
+      selectableVehicles.find(
+        (v) =>
+          isVehicleAdequateForJob(
+            v.vehicleClass,
+            selectedJob.minVehicleClass,
+            selectedJob.chargeableWeightKg,
+          ) &&
+          (!selectedJob.requiresDg || Boolean(v.hasDg && v.dgDocumentId)),
       ) ?? null;
     const nextVehicleId = eligibleVehicle?.id ?? '';
     const nextDriverId = selectableDrivers[0]?.id ?? '';
@@ -220,9 +223,13 @@ export function MarketBoardPage() {
   }, [selectedJob, selectableVehicles, selectableDrivers, form]);
 
   const selectedVehicle = activeVehicles.find((v) => v.id === vehicleIdWatch);
+  const selectedVehicleDgOk =
+    !selectedJob?.requiresDg ||
+    Boolean(selectedVehicle?.hasDg && selectedVehicle?.dgDocumentId);
   const vehicleEligible =
     !!selectedVehicle &&
     selectedVehicle.bidAvailable !== false &&
+    selectedVehicleDgOk &&
     isVehicleAdequateForJob(
       selectedVehicle.vehicleClass,
       selectedJob?.minVehicleClass,
@@ -247,6 +254,13 @@ export function MarketBoardPage() {
       ) {
         throw new Error(t('market.errorVehicleUndersize'));
       }
+      if (selectedJob?.requiresDg && (!vehicle?.hasDg || !vehicle?.dgDocumentId)) {
+        throw new Error(
+          t('market.errorVehicleNotDg', {
+            defaultValue: 'Selected vehicle does not have a Dangerous Goods (DG) document attached.',
+          }),
+        );
+      }
       if (vehicle?.bidAvailable === false) {
         throw new Error(t('market.errorVehicleBusy'));
       }
@@ -259,6 +273,7 @@ export function MarketBoardPage() {
         driverId: values.driverId,
         amountIncGstCents: Math.round(values.amountAud * 100),
         etaMinutes: values.etaMinutes,
+        dgDocumentId: selectedJob?.requiresDg ? (vehicle?.dgDocumentId ?? null) : null,
       });
     },
     onSuccess: async () => {
@@ -346,8 +361,9 @@ export function MarketBoardPage() {
                   const tone = MARKET_TONE[bucket];
                   const selected = jobId === j.id;
                   return (
-                    <button
-                      type="button"
+                    <div
+                      role="button"
+                      tabIndex={0}
                       className={cn(
                         'h-full w-full cursor-pointer rounded-clox-md border p-4 text-left shadow-clox-1 transition',
                         statusAccentClass(tone),
@@ -356,12 +372,21 @@ export function MarketBoardPage() {
                           : 'hover:border-clox-orange',
                       )}
                       onClick={() => setJobId(j.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setJobId(j.id);
+                        }
+                      }}
                     >
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-semibold text-clox-ink">
                           {j.title ?? j.id.slice(0, 8)}
                         </p>
                         <StatusPill tone={tone}>{t(`market.bucket.${bucket}`)}</StatusPill>
+                        {j.requiresDg ? (
+                          <StatusPill tone="warn">DG</StatusPill>
+                        ) : null}
                       </div>
                       <p className="mt-0.5 font-mono text-[11px] text-clox-faint">
                         {t('market.jobRef', { id: j.id.slice(0, 8) })}
@@ -374,6 +399,10 @@ export function MarketBoardPage() {
                       </p>
                       <p className="mt-1 font-mono text-xs text-clox-mute">
                         {j.stopsSummary} · min {j.minVehicleClass}
+                        {j.deadWeightKg != null ? ` · ${j.deadWeightKg}kg` : ''}
+                        {j.lengthCm != null && j.widthCm != null && j.heightCm != null
+                          ? ` · ${j.lengthCm}×${j.widthCm}×${j.heightCm}cm`
+                          : ''}
                         {j.chargeableWeightKg != null
                           ? ` · ${t('market.weightKg', { kg: j.chargeableWeightKg })}`
                           : ''}
@@ -391,7 +420,27 @@ export function MarketBoardPage() {
                           ? ` · ${t('market.minBidHint', { amount: (j.minBidIncGstCents / 100).toFixed(2) })}`
                           : ''}
                       </p>
-                    </button>
+                      {j.requiresDg && j.dgDocumentId ? (
+                        <div className="mt-2">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            className="text-xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void openDocumentContent(j.dgDocumentId!).catch((err) =>
+                                toast.error(getErrorDetail(err)),
+                              );
+                            }}
+                          >
+                            {t('market.viewSenderDgDoc', {
+                              defaultValue: 'View Sender DG Document',
+                            })}
+                            {j.dgDocumentFilename ? ` (${j.dgDocumentFilename})` : ''}
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
                   );
                 }}
               />
@@ -412,13 +461,44 @@ export function MarketBoardPage() {
           <p className="mb-1 mt-1 text-sm font-medium text-clox-ink">
             {selectedJob.title ?? selectedJob.id.slice(0, 8)}
           </p>
-          <p className="mb-4 font-mono text-[11px] text-clox-faint">
+          <p className="mb-2 font-mono text-[11px] text-clox-faint">
             {t('market.jobRef', { id: selectedJob.id.slice(0, 8) })}
             {' · '}
             {t('market.minClassLine', {
               minClass: selectedJob.minVehicleClass ?? t('dash'),
             })}
+            {selectedJob.lengthCm != null &&
+            selectedJob.widthCm != null &&
+            selectedJob.heightCm != null
+              ? ` · ${selectedJob.lengthCm}×${selectedJob.widthCm}×${selectedJob.heightCm} cm`
+              : ''}
+            {selectedJob.deadWeightKg != null ? ` · ${selectedJob.deadWeightKg} kg` : ''}
           </p>
+
+          {selectedJob.requiresDg && selectedJob.dgDocumentId ? (
+            <div className="mb-3 rounded-clox-sm border border-clox-border bg-clox-surface-alt p-2.5 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium text-clox-ink">
+                  {t('market.senderDgDocLabel', {
+                    defaultValue: 'Sender DG Document:',
+                  })}{' '}
+                  {selectedJob.dgDocumentFilename || 'DG Declaration'}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-xs"
+                  onClick={() =>
+                    void openDocumentContent(selectedJob.dgDocumentId!).catch((err) =>
+                      toast.error(getErrorDetail(err)),
+                    )
+                  }
+                >
+                  {t('market.viewDoc', { defaultValue: 'View Document' })}
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           <Select
             className="mb-3"
@@ -435,8 +515,9 @@ export function MarketBoardPage() {
                 selectedJob.minVehicleClass,
                 selectedJob.chargeableWeightKg,
               );
+              const dgOk = !selectedJob.requiresDg || Boolean(v.hasDg && v.dgDocumentId);
               const busy = v.bidAvailable === false;
-              const disabled = !classOk || busy;
+              const disabled = !classOk || !dgOk || busy;
               const busyHint = busy
                 ? v.activityStatus === 'BID_COMMITTED'
                   ? t('market.busyOpenBid')
@@ -447,12 +528,42 @@ export function MarketBoardPage() {
               return (
                 <option key={v.id} value={v.id} disabled={disabled}>
                   {carrierVehicleSelectLabel(v, t('dash'))}
+                  {v.hasDg ? ' · DG' : ''}
                   {!classOk ? ` · ${t('market.notEligible')}` : ''}
+                  {!dgOk
+                    ? ` · ${t('market.notDgLicensed', { defaultValue: 'Not DG licensed' })}`
+                    : ''}
                   {busy ? ` · ${busyHint}` : ''}
                 </option>
               );
             })}
           </Select>
+
+          {selectedJob.requiresDg && selectedVehicle?.dgDocumentId ? (
+            <div className="mb-3 rounded-clox-sm border border-clox-border bg-clox-surface-alt p-2.5 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium text-[var(--status-ok)]">
+                  ✓{' '}
+                  {t('market.autoAttachedVehicleDgDoc', {
+                    defaultValue: 'Auto-attached Vehicle DG Document:',
+                  })}{' '}
+                  {selectedVehicle.dgDocumentFilename || 'DG Licence'}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-xs"
+                  onClick={() =>
+                    void openDocumentContent(selectedVehicle.dgDocumentId!).catch((err) =>
+                      toast.error(getErrorDetail(err)),
+                    )
+                  }
+                >
+                  {t('market.viewVehicleDgDoc', { defaultValue: 'View DG Doc' })}
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           <Select
             className="mb-3"
@@ -488,6 +599,17 @@ export function MarketBoardPage() {
           ) : null}
           {vehicleIdWatch &&
           selectedVehicle?.bidAvailable !== false &&
+          !selectedVehicleDgOk ? (
+            <Notice tone="warn" className="mb-3">
+              {t('market.errorVehicleNotDg', {
+                defaultValue:
+                  'This job requires a Dangerous Goods (DG) licensed vehicle with a DG document uploaded.',
+              })}
+            </Notice>
+          ) : null}
+          {vehicleIdWatch &&
+          selectedVehicle?.bidAvailable !== false &&
+          selectedVehicleDgOk &&
           !vehicleEligible ? (
             <Notice tone="warn" className="mb-3">
               {t('market.errorVehicleUndersize')}

@@ -1,17 +1,21 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useForm } from 'react-hook-form';
+import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { z } from 'zod';
 import {
   acceptProposal,
   approveTripExceptionReplacement,
+  confirmDocument,
   createJob,
+  createUploadIntent,
   getErrorDetail,
   getSenderJob,
+  getSenderOnboarding,
   listSenderJobs,
+  openDocumentContent,
   previewJobRoute,
   publishJob,
   recommendVehicle,
@@ -19,7 +23,9 @@ import {
   syncJobPayment,
   updateJob,
   updateJobReceiver,
+  uploadDocumentContent,
   type AcceptProposalResult,
+  type JobRouteEstimate,
   type JobSummary,
 } from '@/lib/api';
 import { ScaPaymentConfirm } from '@/components/stripe/ScaPaymentConfirm';
@@ -29,10 +35,12 @@ import {
   DataCardList,
   DataTable,
   Field,
+  FileInput,
   Notice,
   PaginationBar,
   RadioCardGroup,
   ResponsiveDataView,
+  Select,
   StatusFilterChips,
   StatusPill,
   StepChips,
@@ -44,6 +52,7 @@ import {
 } from '@/components/ui';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import { cn } from '@/lib/cn';
+import { resolveUploadMime } from '@/lib/upload-mime';
 import {
   countByBucket,
   filterAndSortByBucket,
@@ -52,13 +61,16 @@ import {
 } from '@/lib/status-list';
 import { jobStatusTone } from '@/lib/status-tone';
 import {
+  AU_STATE_OPTIONS,
   MAX_JOB_CHARGEABLE_WEIGHT_KG,
   MAX_JOB_DEAD_WEIGHT_KG,
   MAX_JOB_HEIGHT_CM,
   MAX_JOB_LENGTH_CM,
   MAX_JOB_WIDTH_CM,
+  auPostcodeErrorForState,
   chargeableWeightKg,
   isChargeableOverLimit,
+  isValidAuPostcodeForState,
 } from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
@@ -377,52 +389,199 @@ export function JobsListPage() {
   );
 }
 
+const STATE_ANCHOR_COORDS: Record<string, { lat: number; lng: number }> = {
+  VIC: { lat: -37.8136, lng: 144.9631 },
+  NSW: { lat: -33.8688, lng: 151.2093 },
+  QLD: { lat: -27.4705, lng: 153.026 },
+  WA: { lat: -31.9523, lng: 115.8613 },
+  SA: { lat: -34.9285, lng: 138.6007 },
+  TAS: { lat: -42.8821, lng: 147.3272 },
+  ACT: { lat: -35.2809, lng: 149.13 },
+  NT: { lat: -12.4634, lng: 130.8456 },
+};
+
+function computeStopCoords(state: string, postcode: string, suburb: string, isDropoff: boolean) {
+  const base = STATE_ANCHOR_COORDS[state.toUpperCase()] ?? STATE_ANCHOR_COORDS.VIC!;
+  const pcNum = parseInt(postcode.replace(/\D/g, ''), 10);
+  const offsetSeed = Number.isFinite(pcNum)
+    ? ((pcNum % 100) - 30) * 0.0035
+    : (suburb.trim().length % 20) * 0.005;
+  const dir = isDropoff ? 1 : -1;
+  return {
+    lat: Number((base.lat + dir * (0.06 + offsetSeed)).toFixed(5)),
+    lng: Number((base.lng - dir * (0.05 + offsetSeed * 0.8)).toFixed(5)),
+  };
+}
+
+type ExtraPickupStopForm = {
+  addressLine: string;
+  suburb: string;
+  state: string;
+  postcode: string;
+};
+
+type ExtraDropoffStopForm = {
+  addressLine: string;
+  suburb: string;
+  state: string;
+  postcode: string;
+  receiverName?: string;
+  receiverEmail?: string;
+};
+
 type JobCreateForm = {
   pricingModel: 'PER_KM' | 'HOURLY';
-  distanceKm: number;
+  distanceKm?: number;
+  pickupAddressLine: string;
+  pickupSuburb: string;
+  pickupState: string;
+  pickupPostcode: string;
+  extraPickups: ExtraPickupStopForm[];
+  dropoffAddressLine: string;
+  dropoffSuburb: string;
+  dropoffState: string;
+  dropoffPostcode: string;
+  extraDropoffs: ExtraDropoffStopForm[];
   deadWeightKg: number;
   lengthCm: number;
   widthCm: number;
   heightCm: number;
   loadDg: boolean;
+  dgDocumentId?: string | null;
   receiverName: string;
   receiverEmail: string;
+  receiverPhone: string;
+  receiverAltEmail?: string;
+  receiverAltPhone?: string;
   siteDisclaimerAccepted: boolean;
 };
 
-/** Single pickup → single dropoff only (multi-stop / multi-pickup deferred). */
-function buildDemoStops(values: Pick<JobCreateForm, 'receiverName' | 'receiverEmail'>) {
-  return [
+function buildStopsFromForm(
+  values: Pick<
+    JobCreateForm,
+    | 'pricingModel'
+    | 'pickupAddressLine'
+    | 'pickupSuburb'
+    | 'pickupState'
+    | 'pickupPostcode'
+    | 'extraPickups'
+    | 'dropoffAddressLine'
+    | 'dropoffSuburb'
+    | 'dropoffState'
+    | 'dropoffPostcode'
+    | 'extraDropoffs'
+    | 'receiverName'
+    | 'receiverEmail'
+  >,
+) {
+  const pickupState = values.pickupState?.trim() || 'VIC';
+  const pickupPostcode = values.pickupPostcode?.trim() || '3000';
+  const pickupSuburb = values.pickupSuburb?.trim() || 'Melbourne';
+  const pickupCoords = computeStopCoords(pickupState, pickupPostcode, pickupSuburb, false);
+
+  const dropoffState = values.dropoffState?.trim() || 'VIC';
+  const dropoffPostcode = values.dropoffPostcode?.trim() || '3045';
+  const dropoffSuburb = values.dropoffSuburb?.trim() || 'Tullamarine';
+  const dropoffCoords = computeStopCoords(dropoffState, dropoffPostcode, dropoffSuburb, true);
+
+  const rawStops: Array<{
+    stopType: 'PICKUP' | 'DROPOFF';
+    addressLine: string;
+    suburb: string;
+    state: string;
+    postcode: string;
+    lat: number;
+    lng: number;
+    receiverName?: string;
+    receiverEmail?: string;
+  }> = [
     {
-      sequence: 0,
-      stopType: 'PICKUP' as const,
-      addressLine: '1 Collins St',
-      suburb: 'Melbourne',
-      state: 'VIC',
-      postcode: '3000',
-      lat: -37.8136,
-      lng: 144.9631,
-    },
-    {
-      sequence: 1,
-      stopType: 'DROPOFF' as const,
-      addressLine: '100 Airport Dr',
-      suburb: 'Tullamarine',
-      state: 'VIC',
-      postcode: '3045',
-      lat: -37.669,
-      lng: 144.841,
-      receiverName: values.receiverName,
-      receiverEmail: values.receiverEmail,
+      stopType: 'PICKUP',
+      addressLine: values.pickupAddressLine?.trim() || '1 Collins St',
+      suburb: pickupSuburb,
+      state: pickupState,
+      postcode: pickupPostcode,
+      lat: pickupCoords.lat,
+      lng: pickupCoords.lng,
     },
   ];
+
+  if (values.pricingModel === 'HOURLY' && Array.isArray(values.extraPickups)) {
+    values.extraPickups.forEach((p, idx) => {
+      if (!p.addressLine?.trim() && !p.suburb?.trim()) return;
+      const pState = p.state?.trim() || pickupState;
+      const pPostcode = p.postcode?.trim() || '3000';
+      const pSuburb = p.suburb?.trim() || pickupSuburb;
+      const pCoords = computeStopCoords(pState, pPostcode, pSuburb, false);
+      const jitter = (idx + 1) * 0.02;
+      rawStops.push({
+        stopType: 'PICKUP',
+        addressLine: p.addressLine?.trim() || `${idx + 2} Pickup St`,
+        suburb: pSuburb,
+        state: pState,
+        postcode: pPostcode,
+        lat: Number((pCoords.lat - jitter).toFixed(5)),
+        lng: Number((pCoords.lng - jitter).toFixed(5)),
+      });
+    });
+  }
+
+  rawStops.push({
+    stopType: 'DROPOFF',
+    addressLine: values.dropoffAddressLine?.trim() || '100 Airport Dr',
+    suburb: dropoffSuburb,
+    state: dropoffState,
+    postcode: dropoffPostcode,
+    lat: dropoffCoords.lat,
+    lng: dropoffCoords.lng,
+    receiverName: values.receiverName?.trim() || undefined,
+    receiverEmail: values.receiverEmail?.trim() || undefined,
+  });
+
+  if (values.pricingModel === 'HOURLY' && Array.isArray(values.extraDropoffs)) {
+    values.extraDropoffs.forEach((d, idx) => {
+      if (!d.addressLine?.trim() && !d.suburb?.trim()) return;
+      const dState = d.state?.trim() || dropoffState;
+      const dPostcode = d.postcode?.trim() || '3000';
+      const dSuburb = d.suburb?.trim() || dropoffSuburb;
+      const dCoords = computeStopCoords(dState, dPostcode, dSuburb, true);
+      const jitter = (idx + 1) * 0.025;
+      rawStops.push({
+        stopType: 'DROPOFF',
+        addressLine: d.addressLine?.trim() || `${idx + 2} Dropoff St`,
+        suburb: dSuburb,
+        state: dState,
+        postcode: dPostcode,
+        lat: Number((dCoords.lat + jitter).toFixed(5)),
+        lng: Number((dCoords.lng + jitter).toFixed(5)),
+        receiverName:
+          d.receiverName?.trim() || values.receiverName?.trim() || undefined,
+        receiverEmail:
+          d.receiverEmail?.trim() || values.receiverEmail?.trim() || undefined,
+      });
+    });
+  }
+
+  return rawStops.map((s, idx) => ({
+    sequence: idx,
+    ...s,
+  }));
 }
 
 function buildJobTitle(
   values: JobCreateForm,
-  stops: ReturnType<typeof buildDemoStops>,
+  stops: ReturnType<typeof buildStopsFromForm>,
 ): string {
-  const pickup = stops.find((s) => s.stopType === 'PICKUP')?.suburb?.trim() || 'Pickup';
+  const pickups = stops
+    .filter((s) => s.stopType === 'PICKUP')
+    .map((s) => s.suburb?.trim())
+    .filter((s): s is string => Boolean(s));
+  const origin =
+    pickups.length === 0
+      ? 'Pickup'
+      : pickups.length === 1
+        ? pickups[0]!
+        : pickups.join(' / ');
   const dropoffs = stops
     .filter((s) => s.stopType === 'DROPOFF')
     .map((s) => s.suburb?.trim())
@@ -433,26 +592,36 @@ function buildJobTitle(
       : dropoffs.length === 1
         ? dropoffs[0]!
         : dropoffs.join(' / ');
-  // Route-first label; include weight so demo jobs are distinguishable on the market board.
-  return `${pickup} → ${destination} · ${values.pricingModel} · ${values.deadWeightKg}kg`;
+  return `${origin} → ${destination} · ${values.pricingModel} · ${values.deadWeightKg}kg`;
 }
 
 function buildJobPayload(values: JobCreateForm) {
   const loadTypes = ['GENERAL', ...(values.loadDg ? (['DG'] as const) : [])];
-  const stops = buildDemoStops(values);
+  const stops = buildStopsFromForm(values);
+  const pickupCount = stops.filter((s) => s.stopType === 'PICKUP').length;
   return {
     title: buildJobTitle(values, stops),
     pricingModel: values.pricingModel,
-    // Pattern A reserved for simple 1 pickup → 1 drop; multi-stop / Pattern B deferred.
-    hourlyPattern: values.pricingModel === 'HOURLY' ? ('A' as const) : undefined,
+    hourlyPattern:
+      values.pricingModel === 'HOURLY'
+        ? pickupCount > 1
+          ? ('B' as const)
+          : ('A' as const)
+        : undefined,
     pickupAt: new Date(Date.now() + 86_400_000).toISOString(),
-    receiverName: values.receiverName,
-    receiverEmail: values.receiverEmail,
+    receiverName: values.receiverName.trim(),
+    receiverEmail: values.receiverEmail.trim(),
+    receiverPhone: values.receiverPhone.trim(),
+    receiverAltEmail: values.receiverAltEmail?.trim() || null,
+    receiverAltPhone: values.receiverAltPhone?.trim() || null,
+    dgDocumentId: values.loadDg ? (values.dgDocumentId ?? null) : null,
     deadWeightKg: values.deadWeightKg,
     lengthCm: values.lengthCm,
     widthCm: values.widthCm,
     heightCm: values.heightCm,
-    distanceKm: values.distanceKm,
+    ...(values.pricingModel === 'PER_KM' && Number.isFinite(values.distanceKm)
+      ? { distanceKm: values.distanceKm }
+      : {}),
     loadTypes,
     siteManeuverability: 'MODERATE',
     siteFacility: 'GROUND',
@@ -521,7 +690,18 @@ function JobReceiverForm({ jobId, job }: { jobId: string; job: JobSummary }) {
       .trim()
       .min(1, t('validation.receiverEmailRequired'))
       .email(t('validation.receiverEmailInvalid')),
-    receiverPhone: z.string().trim().optional(),
+    receiverPhone: z
+      .string()
+      .trim()
+      .min(8, t('validation.receiverPhoneRequired', { defaultValue: 'Enter a valid phone number' })),
+    receiverAltEmail: z
+      .string()
+      .trim()
+      .optional()
+      .refine((v) => !v || z.string().email().safeParse(v).success, {
+        message: t('validation.receiverEmailInvalid'),
+      }),
+    receiverAltPhone: z.string().trim().optional(),
   });
 
   type ReceiverForm = z.infer<typeof schema>;
@@ -532,6 +712,8 @@ function JobReceiverForm({ jobId, job }: { jobId: string; job: JobSummary }) {
       receiverName: job.receiverName || '',
       receiverEmail: job.receiverEmail || '',
       receiverPhone: job.receiverPhone || '',
+      receiverAltEmail: job.receiverAltEmail || '',
+      receiverAltPhone: job.receiverAltPhone || '',
     },
   });
 
@@ -554,7 +736,9 @@ function JobReceiverForm({ jobId, job }: { jobId: string; job: JobSummary }) {
       updateJobReceiver(jobId, {
         receiverName: values.receiverName.trim(),
         receiverEmail: values.receiverEmail.trim(),
-        receiverPhone: values.receiverPhone?.trim() || null,
+        receiverPhone: values.receiverPhone.trim(),
+        receiverAltEmail: values.receiverAltEmail?.trim() || null,
+        receiverAltPhone: values.receiverAltPhone?.trim() || null,
         stops: dropoffs
           .filter((s): s is typeof s & { id: string } => Boolean(s.id))
           .map((s) => ({
@@ -571,7 +755,13 @@ function JobReceiverForm({ jobId, job }: { jobId: string; job: JobSummary }) {
   });
 
   const goNextFromPrimary = async () => {
-    const ok = await form.trigger(['receiverName', 'receiverEmail', 'receiverPhone']);
+    const ok = await form.trigger([
+      'receiverName',
+      'receiverEmail',
+      'receiverPhone',
+      'receiverAltEmail',
+      'receiverAltPhone',
+    ]);
     if (!ok) return;
     if (hasMultiDropoffs) {
       setStep('dropoffs');
@@ -583,7 +773,13 @@ function JobReceiverForm({ jobId, job }: { jobId: string; job: JobSummary }) {
   const selectReceiverStep = async (next: ReceiverWizardStep) => {
     if (next === step) return;
     if (next === 'dropoffs' && step === 'primary') {
-      const ok = await form.trigger(['receiverName', 'receiverEmail', 'receiverPhone']);
+      const ok = await form.trigger([
+        'receiverName',
+        'receiverEmail',
+        'receiverPhone',
+        'receiverAltEmail',
+        'receiverAltPhone',
+      ]);
       if (!ok) return;
     }
     setStep(next);
@@ -604,7 +800,34 @@ function JobReceiverForm({ jobId, job }: { jobId: string; job: JobSummary }) {
         error={form.formState.errors.receiverEmail?.message}
         {...form.register('receiverEmail')}
       />
-      <Field label={t('jobs.receiverPhone')} {...form.register('receiverPhone')} />
+      <Field
+        label={t('jobs.receiverPhone')}
+        required
+        type="tel"
+        placeholder={t('jobs.placeholderReceiverPhone', { defaultValue: '+61 400 000 000' })}
+        error={form.formState.errors.receiverPhone?.message}
+        {...form.register('receiverPhone')}
+      />
+      <div className="grid grid-cols-1 gap-0 sm:grid-cols-2 sm:gap-2">
+        <Field
+          label={t('jobs.receiverAltEmail', { defaultValue: 'Alternate Email (optional)' })}
+          type="email"
+          placeholder={t('jobs.placeholderReceiverAltEmail', {
+            defaultValue: 'secondary@example.com',
+          })}
+          error={form.formState.errors.receiverAltEmail?.message}
+          {...form.register('receiverAltEmail')}
+        />
+        <Field
+          label={t('jobs.receiverAltPhone', { defaultValue: 'Alternate Phone (optional)' })}
+          type="tel"
+          placeholder={t('jobs.placeholderReceiverAltPhone', {
+            defaultValue: '+61 3 9000 0000',
+          })}
+          error={form.formState.errors.receiverAltPhone?.message}
+          {...form.register('receiverAltPhone')}
+        />
+      </div>
     </>
   );
 
@@ -724,9 +947,28 @@ const DRAFT_WIZARD_STEPS = ['pricing', 'cargo', 'receiver', 'confirm'] as const;
 type DraftWizardStep = (typeof DRAFT_WIZARD_STEPS)[number];
 
 const DRAFT_STEP_FIELDS: Record<DraftWizardStep, (keyof JobCreateForm)[]> = {
-  pricing: ['pricingModel', 'distanceKm'],
-  cargo: ['deadWeightKg', 'lengthCm', 'widthCm', 'heightCm', 'loadDg'],
-  receiver: ['receiverName', 'receiverEmail'],
+  pricing: [
+    'pricingModel',
+    'pickupAddressLine',
+    'pickupSuburb',
+    'pickupState',
+    'pickupPostcode',
+    'extraPickups',
+    'dropoffAddressLine',
+    'dropoffSuburb',
+    'dropoffState',
+    'dropoffPostcode',
+    'extraDropoffs',
+    'distanceKm',
+  ],
+  cargo: ['deadWeightKg', 'lengthCm', 'widthCm', 'heightCm', 'loadDg', 'dgDocumentId'],
+  receiver: [
+    'receiverName',
+    'receiverEmail',
+    'receiverPhone',
+    'receiverAltEmail',
+    'receiverAltPhone',
+  ],
   confirm: ['siteDisclaimerAccepted'],
 };
 
@@ -745,10 +987,67 @@ function JobDraftForm({
   const [step, setStep] = useState<DraftWizardStep>('pricing');
   const cancelTo = isEdit && jobId ? `/jobs/${jobId}` : '/jobs';
 
+  const senderOnboarding = useQuery({
+    queryKey: ['sender', 'onboarding'],
+    queryFn: getSenderOnboarding,
+    enabled: role === AppRole.SENDER,
+  });
+  const senderCompanyId = senderOnboarding.data?.company.id;
+
+  const [dgDocFilename, setDgDocFilename] = useState<string | null>(null);
+  const [dgUploading, setDgUploading] = useState(false);
+
   const schema = z
     .object({
       pricingModel: z.enum(['PER_KM', 'HOURLY']),
-      distanceKm: z.number().positive(t('validation.distancePositive')),
+      distanceKm: z
+        .number()
+        .optional()
+        .transform((v) => (typeof v === 'number' && Number.isNaN(v) ? undefined : v)),
+      pickupAddressLine: z
+        .string()
+        .trim()
+        .min(2, t('validation.pickupAddressRequired', { defaultValue: 'Enter pickup street address' })),
+      pickupSuburb: z
+        .string()
+        .trim()
+        .min(2, t('validation.pickupSuburbRequired', { defaultValue: 'Enter pickup suburb' })),
+      pickupState: z.string().trim().min(2),
+      pickupPostcode: z
+        .string()
+        .trim()
+        .regex(/^\d{4}$/, t('validation.postcodeInvalid', { defaultValue: 'Enter a 4-digit postcode' })),
+      extraPickups: z.array(
+        z.object({
+          addressLine: z.string().trim(),
+          suburb: z.string().trim(),
+          state: z.string().trim(),
+          postcode: z.string().trim(),
+        }),
+      ),
+      dropoffAddressLine: z
+        .string()
+        .trim()
+        .min(2, t('validation.dropoffAddressRequired', { defaultValue: 'Enter dropoff street address' })),
+      dropoffSuburb: z
+        .string()
+        .trim()
+        .min(2, t('validation.dropoffSuburbRequired', { defaultValue: 'Enter dropoff suburb' })),
+      dropoffState: z.string().trim().min(2),
+      dropoffPostcode: z
+        .string()
+        .trim()
+        .regex(/^\d{4}$/, t('validation.postcodeInvalid', { defaultValue: 'Enter a 4-digit postcode' })),
+      extraDropoffs: z.array(
+        z.object({
+          addressLine: z.string().trim(),
+          suburb: z.string().trim(),
+          state: z.string().trim(),
+          postcode: z.string().trim(),
+          receiverName: z.string().trim().optional(),
+          receiverEmail: z.string().trim().optional(),
+        }),
+      ),
       deadWeightKg: z
         .number({ message: t('validation.weightPositive') })
         .positive(t('validation.weightPositive'))
@@ -769,17 +1068,54 @@ function JobDraftForm({
         .positive(t('validation.dimensionPositive'))
         .max(MAX_JOB_HEIGHT_CM, t('validation.heightMax', { max: MAX_JOB_HEIGHT_CM })),
       loadDg: z.boolean(),
+      dgDocumentId: z.string().uuid().nullable().optional(),
       receiverName: z.string().trim().min(1, t('validation.receiverNameRequired')),
       receiverEmail: z
         .string()
         .trim()
         .min(1, t('validation.receiverEmailRequired'))
         .email(t('validation.receiverEmailInvalid')),
+      receiverPhone: z
+        .string()
+        .trim()
+        .min(8, t('validation.receiverPhoneRequired', { defaultValue: 'Enter receiver phone number' })),
+      receiverAltEmail: z
+        .string()
+        .trim()
+        .optional()
+        .refine((v) => !v || z.string().email().safeParse(v).success, {
+          message: t('validation.receiverEmailInvalid'),
+        }),
+      receiverAltPhone: z.string().trim().optional(),
       siteDisclaimerAccepted: z.boolean().refine((value) => value === true, {
         message: t('validation.siteDisclaimerRequired'),
       }),
     })
     .superRefine((values, ctx) => {
+      if (
+        values.pricingModel === 'PER_KM' &&
+        (values.distanceKm == null || !Number.isFinite(values.distanceKm) || values.distanceKm <= 0)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['distanceKm'],
+          message: t('validation.distancePositive'),
+        });
+      }
+      if (!isValidAuPostcodeForState(values.pickupPostcode, values.pickupState)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['pickupPostcode'],
+          message: auPostcodeErrorForState(values.pickupState),
+        });
+      }
+      if (!isValidAuPostcodeForState(values.dropoffPostcode, values.dropoffState)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['dropoffPostcode'],
+          message: auPostcodeErrorForState(values.dropoffState),
+        });
+      }
       const chargeable = chargeableWeightKg({
         deadWeightKg: values.deadWeightKg,
         lengthCm: values.lengthCm,
@@ -796,22 +1132,124 @@ function JobDraftForm({
           }),
         });
       }
+      if (values.loadDg && !values.dgDocumentId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['dgDocumentId'],
+          message: t('validation.dgDocumentRequired', {
+            defaultValue: 'Please upload the Dangerous Goods (DG) document for this load',
+          }),
+        });
+      }
+      if (values.pricingModel === 'HOURLY') {
+        values.extraPickups.forEach((p, idx) => {
+          if (!p.addressLine || p.addressLine.length < 2) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['extraPickups', idx, 'addressLine'],
+              message: t('validation.pickupAddressRequired', {
+                defaultValue: `Enter pickup #${idx + 2} street address`,
+              }),
+            });
+          }
+          if (!p.suburb || p.suburb.length < 2) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['extraPickups', idx, 'suburb'],
+              message: t('validation.pickupSuburbRequired', {
+                defaultValue: `Enter pickup #${idx + 2} suburb`,
+              }),
+            });
+          }
+          const pState = p.state?.trim() || 'VIC';
+          if (!isValidAuPostcodeForState(p.postcode, pState)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['extraPickups', idx, 'postcode'],
+              message: auPostcodeErrorForState(pState),
+            });
+          }
+        });
+
+        values.extraDropoffs.forEach((d, idx) => {
+          if (!d.addressLine || d.addressLine.length < 2) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['extraDropoffs', idx, 'addressLine'],
+              message: t('validation.dropoffAddressRequired', {
+                defaultValue: `Enter dropoff #${idx + 2} street address`,
+              }),
+            });
+          }
+          if (!d.suburb || d.suburb.length < 2) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['extraDropoffs', idx, 'suburb'],
+              message: t('validation.dropoffSuburbRequired', {
+                defaultValue: `Enter dropoff #${idx + 2} suburb`,
+              }),
+            });
+          }
+          const dState = d.state?.trim() || 'VIC';
+          if (!isValidAuPostcodeForState(d.postcode, dState)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['extraDropoffs', idx, 'postcode'],
+              message: auPostcodeErrorForState(dState),
+            });
+          }
+          if (
+            d.receiverEmail &&
+            !z.string().email().safeParse(d.receiverEmail).success
+          ) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['extraDropoffs', idx, 'receiverEmail'],
+              message: t('validation.receiverEmailInvalid'),
+            });
+          }
+        });
+      }
     });
 
   const form = useForm<JobCreateForm>({
     resolver: zodResolver(schema),
     defaultValues: {
       pricingModel: 'PER_KM',
-      distanceKm: undefined as unknown as number,
+      distanceKm: undefined,
+      pickupAddressLine: '1 Collins St',
+      pickupSuburb: 'Melbourne',
+      pickupState: 'VIC',
+      pickupPostcode: '3000',
+      extraPickups: [],
+      dropoffAddressLine: '100 Airport Dr',
+      dropoffSuburb: 'Tullamarine',
+      dropoffState: 'VIC',
+      dropoffPostcode: '3045',
+      extraDropoffs: [],
       deadWeightKg: 800,
       lengthCm: 120,
       widthCm: 80,
       heightCm: 80,
       loadDg: false,
+      dgDocumentId: null,
       receiverName: '',
       receiverEmail: '',
+      receiverPhone: '',
+      receiverAltEmail: '',
+      receiverAltPhone: '',
       siteDisclaimerAccepted: false,
     },
+  });
+
+  const extraPickupsArray = useFieldArray({
+    control: form.control,
+    name: 'extraPickups',
+  });
+
+  const extraDropoffsArray = useFieldArray({
+    control: form.control,
+    name: 'extraDropoffs',
   });
 
   const existing = useQuery({
@@ -822,6 +1260,7 @@ function JobDraftForm({
 
   const lastSuggestedKm = useRef<number | null>(null);
   const [suggestedKm, setSuggestedKm] = useState<number | null>(null);
+  const [routeEstimate, setRouteEstimate] = useState<JobRouteEstimate | null>(null);
   const hydratedEdit = useRef(false);
 
   useEffect(() => {
@@ -836,16 +1275,53 @@ function JobDraftForm({
       return;
     }
     const savedKm = Number(existing.data.route.distanceKm);
+    const pickupStops = (existing.data.stops ?? []).filter((s) => s.stopType === 'PICKUP');
+    const pickupStop = pickupStops[0];
+    const remainingPickups = pickupStops.slice(1).map((s) => ({
+      addressLine: s.addressLine || '',
+      suburb: s.suburb || '',
+      state: s.state || 'VIC',
+      postcode: s.postcode || '',
+    }));
+    const dropoffStops = (existing.data.stops ?? []).filter((s) => s.stopType === 'DROPOFF');
+    const drop1 = dropoffStops[0];
+    const remainingDropoffs = dropoffStops.slice(1).map((s) => ({
+      addressLine: s.addressLine || '',
+      suburb: s.suburb || '',
+      state: s.state || 'VIC',
+      postcode: s.postcode || '',
+      receiverName: s.receiverName || '',
+      receiverEmail: s.receiverEmail || '',
+    }));
+
+    if (existing.data.dgDocumentFilename) {
+      setDgDocFilename(existing.data.dgDocumentFilename);
+    }
+
     form.reset({
       pricingModel: existing.data.pricingModel === 'HOURLY' ? 'HOURLY' : 'PER_KM',
-      distanceKm: Number.isFinite(savedKm) && savedKm > 0 ? savedKm : (undefined as unknown as number),
+      distanceKm: Number.isFinite(savedKm) && savedKm > 0 ? savedKm : undefined,
+      pickupAddressLine: pickupStop?.addressLine || '1 Collins St',
+      pickupSuburb: pickupStop?.suburb || 'Melbourne',
+      pickupState: pickupStop?.state || 'VIC',
+      pickupPostcode: pickupStop?.postcode || '3000',
+      extraPickups: remainingPickups,
+      dropoffAddressLine: drop1?.addressLine || '100 Airport Dr',
+      dropoffSuburb: drop1?.suburb || 'Tullamarine',
+      dropoffState: drop1?.state || 'VIC',
+      dropoffPostcode: drop1?.postcode || '3045',
+      extraDropoffs: remainingDropoffs,
       deadWeightKg: Number(existing.data.deadWeightKg) || 800,
       lengthCm: Number(existing.data.lengthCm) || 120,
       widthCm: Number(existing.data.widthCm) || 80,
       heightCm: Number(existing.data.heightCm) || 80,
       loadDg: Boolean(existing.data.requiresDg),
+      dgDocumentId: existing.data.dgDocumentId ?? null,
       receiverName: existing.data.receiverName || '',
       receiverEmail: existing.data.receiverEmail || '',
+      receiverPhone: existing.data.receiverPhone || '',
+      receiverAltEmail: existing.data.receiverAltEmail || '',
+      receiverAltPhone: existing.data.receiverAltPhone || '',
       siteDisclaimerAccepted: true,
     });
     if (Number.isFinite(savedKm) && savedKm > 0) {
@@ -858,30 +1334,61 @@ function JobDraftForm({
   }, [existing.data]);
 
   const pricingModel = form.watch('pricingModel');
+  const pickupAddressLine = form.watch('pickupAddressLine');
+  const pickupSuburb = form.watch('pickupSuburb');
+  const pickupState = form.watch('pickupState');
+  const pickupPostcode = form.watch('pickupPostcode');
+  const extraPickups = form.watch('extraPickups');
+  const dropoffAddressLine = form.watch('dropoffAddressLine');
+  const dropoffSuburb = form.watch('dropoffSuburb');
+  const dropoffState = form.watch('dropoffState');
+  const dropoffPostcode = form.watch('dropoffPostcode');
+  const extraDropoffs = form.watch('extraDropoffs');
   const receiverName = form.watch('receiverName');
   const receiverEmail = form.watch('receiverEmail');
+  const receiverPhone = form.watch('receiverPhone');
+  const receiverAltEmail = form.watch('receiverAltEmail');
+  const receiverAltPhone = form.watch('receiverAltPhone');
   const deadWeightKg = form.watch('deadWeightKg');
   const lengthCm = form.watch('lengthCm');
   const widthCm = form.watch('widthCm');
   const heightCm = form.watch('heightCm');
   const distanceKm = form.watch('distanceKm');
   const loadDg = form.watch('loadDg');
+  const dgDocumentId = form.watch('dgDocumentId');
+
+  const extraStopsSignature = JSON.stringify({
+    extraPickups: (extraPickups ?? []).map((p) => [p.state, p.postcode, p.suburb, p.addressLine]),
+    extraDropoffs: (extraDropoffs ?? []).map((d) => [d.state, d.postcode, d.suburb, d.addressLine]),
+  });
 
   useEffect(() => {
     if (role !== AppRole.SENDER) return;
     if (isEdit && !hydratedEdit.current) return;
     let cancelled = false;
-    const stops = buildDemoStops({
+    const stops = buildStopsFromForm({
+      pricingModel,
+      pickupAddressLine,
+      pickupSuburb,
+      pickupState,
+      pickupPostcode,
+      extraPickups: extraPickups ?? [],
+      dropoffAddressLine,
+      dropoffSuburb,
+      dropoffState,
+      dropoffPostcode,
+      extraDropoffs: extraDropoffs ?? [],
       receiverName: receiverName.trim() || 'Receiver',
       receiverEmail: receiverEmail.trim() || 'receiver@example.com',
     });
     void previewJobRoute({ pricingModel, stops })
       .then((route) => {
         if (cancelled) return;
+        setRouteEstimate(route);
         setSuggestedKm(route.distanceKm);
         const current = form.getValues('distanceKm');
         const last = lastSuggestedKm.current;
-        const isEmpty = !Number.isFinite(current) || current <= 0;
+        const isEmpty = current == null || !Number.isFinite(current) || current <= 0;
         const matchesLastSuggestion = last != null && current === last;
         if (isEmpty || matchesLastSuggestion) {
           form.setValue('distanceKm', route.distanceKm, { shouldValidate: true });
@@ -894,8 +1401,55 @@ function JobDraftForm({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- suggest from pricing + demo stops
-  }, [pricingModel, isEdit, role]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- suggest from pricing + stop addresses
+  }, [
+    pricingModel,
+    pickupState,
+    pickupPostcode,
+    pickupSuburb,
+    dropoffState,
+    dropoffPostcode,
+    dropoffSuburb,
+    extraStopsSignature,
+    isEdit,
+    role,
+  ]);
+
+  const handleDgUpload = async (file: File) => {
+    if (!senderCompanyId) {
+      toast.error(t('jobs.senderCompanyMissing', { defaultValue: 'Sender profile not loaded yet.' }));
+      return;
+    }
+    setDgUploading(true);
+    try {
+      const mime = resolveUploadMime(file);
+      const intent = await createUploadIntent({
+        companyId: senderCompanyId,
+        docType: 'DG_LICENCE',
+        originalFilename:
+          file.name ||
+          `dg-declaration.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
+        mimeType: mime,
+        sizeBytes: file.size,
+      });
+      const up = await uploadDocumentContent(intent.id, file);
+      await confirmDocument(intent.id, up.contentHash);
+      form.setValue('dgDocumentId', intent.id, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+      setDgDocFilename(file.name);
+      toast.success(
+        t('jobs.dgDocUploaded', {
+          defaultValue: 'Dangerous Goods document uploaded.',
+        }),
+      );
+    } catch (err) {
+      toast.error(getErrorDetail(err));
+    } finally {
+      setDgUploading(false);
+    }
+  };
 
   const cargoForRecommend = {
     deadWeightKg: Number(deadWeightKg) || 0,
@@ -1056,20 +1610,337 @@ function JobDraftForm({
                 },
               ]}
             />
-            <Field
-              type="number"
-              step="0.1"
-              min={0.1}
-              label={t('jobs.distanceKmLabel')}
-              required
-              hint={
-                suggestedKm != null
-                  ? t('jobs.distanceKmSuggested', { km: suggestedKm })
-                  : t('jobs.distanceKmHint')
-              }
-              error={form.formState.errors.distanceKm?.message}
-              {...form.register('distanceKm', { valueAsNumber: true })}
-            />
+
+            {pricingModel === 'HOURLY' ? (
+              <Notice
+                tone="info"
+                className="mb-4"
+                title={t('jobs.hourlyMinimumTitle', {
+                  defaultValue: 'Hourly Basis Pricing & Minimum Charge',
+                })}
+              >
+                <p>
+                  {t('jobs.hourlyMinimumBody', {
+                    defaultValue:
+                      'Minimum hourly base charge: $320.00 inc GST (4-hour minimum @ $80.00/hr inc GST; platform base floor $200.00 inc GST). After 4 hours, time is billed in 15-minute increments.',
+                  })}
+                </p>
+                <p className="mt-1.5 text-xs">
+                  {t('jobs.hourlyNoManualDistanceNote', {
+                    defaultValue:
+                      'No manual distance entry is required for hourly jobs — route distance, duration, and billable hours are automatically calculated from your pickup and dropoff stops.',
+                  })}
+                  {routeEstimate?.billableHours != null ? (
+                    <span className="mt-1 block font-semibold">
+                      {t('jobs.hourlyLiveEstimate', {
+                        defaultValue: `Estimated from stops: ${routeEstimate.billableHours} billable hrs (~${routeEstimate.distanceKm} km, ${routeEstimate.durationMinutes} min) · Est. $${((routeEstimate.estimateIncGstCents ?? Math.max(20_000, routeEstimate.billableHours * 8_000)) / 100).toFixed(2)} inc GST`,
+                        hours: routeEstimate.billableHours,
+                        km: routeEstimate.distanceKm,
+                        mins: routeEstimate.durationMinutes,
+                        amount: (
+                          (routeEstimate.estimateIncGstCents ??
+                            Math.max(20_000, routeEstimate.billableHours * 8_000)) / 100
+                        ).toFixed(2),
+                      })}
+                    </span>
+                  ) : null}
+                </p>
+              </Notice>
+            ) : null}
+
+            <div className="mb-4 rounded-clox-md border border-clox-border bg-clox-surface-alt p-4">
+              <p className="mb-3 font-display text-sm font-semibold text-clox-ink">
+                {t('jobs.pickupLocationTitle', { defaultValue: 'Pickup Location' })}
+              </p>
+              <Field
+                label={t('jobs.addressLineLabel', { defaultValue: 'Street Address' })}
+                required
+                placeholder="1 Collins St"
+                error={form.formState.errors.pickupAddressLine?.message}
+                {...form.register('pickupAddressLine')}
+              />
+              <div className="grid grid-cols-1 gap-0 sm:grid-cols-3 sm:gap-2">
+                <Field
+                  label={t('jobs.suburbLabel', { defaultValue: 'Suburb' })}
+                  required
+                  placeholder="Melbourne"
+                  error={form.formState.errors.pickupSuburb?.message}
+                  {...form.register('pickupSuburb')}
+                />
+                <Select
+                  label={t('jobs.stateLabel', { defaultValue: 'State' })}
+                  required
+                  error={form.formState.errors.pickupState?.message}
+                  value={pickupState}
+                  {...form.register('pickupState')}
+                >
+                  {AU_STATE_OPTIONS.map((st) => (
+                    <option key={st.code} value={st.code}>
+                      {st.label}
+                    </option>
+                  ))}
+                </Select>
+                <Field
+                  label={t('jobs.postcodeLabel', { defaultValue: 'Postcode' })}
+                  required
+                  inputMode="numeric"
+                  maxLength={4}
+                  placeholder="3000"
+                  error={form.formState.errors.pickupPostcode?.message}
+                  {...form.register('pickupPostcode')}
+                />
+              </div>
+            </div>
+
+            {pricingModel === 'HOURLY' ? (
+              <div className="mb-4 space-y-3">
+                {extraPickupsArray.fields.map((field, index) => (
+                  <div
+                    key={field.id}
+                    className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-4"
+                  >
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-display text-sm font-semibold text-clox-ink">
+                        {t('jobs.additionalPickupTitle', {
+                          defaultValue: `Pickup Location #${index + 2}`,
+                          num: index + 2,
+                        })}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="text-xs text-[var(--status-danger)]"
+                        onClick={() => extraPickupsArray.remove(index)}
+                      >
+                        {t('jobs.removeStop', { defaultValue: 'Remove Pickup' })}
+                      </Button>
+                    </div>
+                    <Field
+                      label={t('jobs.addressLineLabel', { defaultValue: 'Street Address' })}
+                      required
+                      placeholder="50 Bourke St"
+                      error={form.formState.errors.extraPickups?.[index]?.addressLine?.message}
+                      {...form.register(`extraPickups.${index}.addressLine` as const)}
+                    />
+                    <div className="grid grid-cols-1 gap-0 sm:grid-cols-3 sm:gap-2">
+                      <Field
+                        label={t('jobs.suburbLabel', { defaultValue: 'Suburb' })}
+                        required
+                        placeholder="Port Melbourne"
+                        error={form.formState.errors.extraPickups?.[index]?.suburb?.message}
+                        {...form.register(`extraPickups.${index}.suburb` as const)}
+                      />
+                      <Select
+                        label={t('jobs.stateLabel', { defaultValue: 'State' })}
+                        value={extraPickups?.[index]?.state ?? 'VIC'}
+                        error={form.formState.errors.extraPickups?.[index]?.state?.message}
+                        {...form.register(`extraPickups.${index}.state` as const)}
+                      >
+                        {AU_STATE_OPTIONS.map((st) => (
+                          <option key={st.code} value={st.code}>
+                            {st.label}
+                          </option>
+                        ))}
+                      </Select>
+                      <Field
+                        label={t('jobs.postcodeLabel', { defaultValue: 'Postcode' })}
+                        required
+                        inputMode="numeric"
+                        maxLength={4}
+                        placeholder="3207"
+                        error={form.formState.errors.extraPickups?.[index]?.postcode?.message}
+                        {...form.register(`extraPickups.${index}.postcode` as const)}
+                      />
+                    </div>
+                  </div>
+                ))}
+                <div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() =>
+                      extraPickupsArray.append({
+                        addressLine: '',
+                        suburb: '',
+                        state: pickupState || 'VIC',
+                        postcode: '',
+                      })
+                    }
+                  >
+                    +{' '}
+                    {t('jobs.addPickupStopButton', {
+                      defaultValue: 'Add Another Pickup Stop',
+                    })}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mb-4 rounded-clox-md border border-clox-border bg-clox-surface-alt p-4">
+              <p className="mb-3 font-display text-sm font-semibold text-clox-ink">
+                {t('jobs.dropoffLocationTitle', { defaultValue: 'Dropoff Location' })}
+              </p>
+              <Field
+                label={t('jobs.addressLineLabel', { defaultValue: 'Street Address' })}
+                required
+                placeholder="100 Airport Dr"
+                error={form.formState.errors.dropoffAddressLine?.message}
+                {...form.register('dropoffAddressLine')}
+              />
+              <div className="grid grid-cols-1 gap-0 sm:grid-cols-3 sm:gap-2">
+                <Field
+                  label={t('jobs.suburbLabel', { defaultValue: 'Suburb' })}
+                  required
+                  placeholder="Tullamarine"
+                  error={form.formState.errors.dropoffSuburb?.message}
+                  {...form.register('dropoffSuburb')}
+                />
+                <Select
+                  label={t('jobs.stateLabel', { defaultValue: 'State' })}
+                  required
+                  error={form.formState.errors.dropoffState?.message}
+                  value={dropoffState}
+                  {...form.register('dropoffState')}
+                >
+                  {AU_STATE_OPTIONS.map((st) => (
+                    <option key={st.code} value={st.code}>
+                      {st.label}
+                    </option>
+                  ))}
+                </Select>
+                <Field
+                  label={t('jobs.postcodeLabel', { defaultValue: 'Postcode' })}
+                  required
+                  inputMode="numeric"
+                  maxLength={4}
+                  placeholder="3045"
+                  error={form.formState.errors.dropoffPostcode?.message}
+                  {...form.register('dropoffPostcode')}
+                />
+              </div>
+            </div>
+
+            {pricingModel === 'HOURLY' ? (
+              <div className="mb-4 space-y-3">
+                {extraDropoffsArray.fields.map((field, index) => (
+                  <div
+                    key={field.id}
+                    className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-4"
+                  >
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-display text-sm font-semibold text-clox-ink">
+                        {t('jobs.additionalDropoffTitle', {
+                          defaultValue: `Dropoff Location #${index + 2}`,
+                          num: index + 2,
+                        })}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="text-xs text-[var(--status-danger)]"
+                        onClick={() => extraDropoffsArray.remove(index)}
+                      >
+                        {t('jobs.removeDropoffStop', { defaultValue: 'Remove Dropoff' })}
+                      </Button>
+                    </div>
+                    <Field
+                      label={t('jobs.addressLineLabel', { defaultValue: 'Street Address' })}
+                      required
+                      placeholder="250 Flinders St"
+                      error={form.formState.errors.extraDropoffs?.[index]?.addressLine?.message}
+                      {...form.register(`extraDropoffs.${index}.addressLine` as const)}
+                    />
+                    <div className="grid grid-cols-1 gap-0 sm:grid-cols-3 sm:gap-2">
+                      <Field
+                        label={t('jobs.suburbLabel', { defaultValue: 'Suburb' })}
+                        required
+                        placeholder="Docklands"
+                        error={form.formState.errors.extraDropoffs?.[index]?.suburb?.message}
+                        {...form.register(`extraDropoffs.${index}.suburb` as const)}
+                      />
+                      <Select
+                        label={t('jobs.stateLabel', { defaultValue: 'State' })}
+                        value={extraDropoffs?.[index]?.state ?? 'VIC'}
+                        error={form.formState.errors.extraDropoffs?.[index]?.state?.message}
+                        {...form.register(`extraDropoffs.${index}.state` as const)}
+                      >
+                        {AU_STATE_OPTIONS.map((st) => (
+                          <option key={st.code} value={st.code}>
+                            {st.label}
+                          </option>
+                        ))}
+                      </Select>
+                      <Field
+                        label={t('jobs.postcodeLabel', { defaultValue: 'Postcode' })}
+                        required
+                        inputMode="numeric"
+                        maxLength={4}
+                        placeholder="3008"
+                        error={form.formState.errors.extraDropoffs?.[index]?.postcode?.message}
+                        {...form.register(`extraDropoffs.${index}.postcode` as const)}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 gap-0 sm:grid-cols-2 sm:gap-2">
+                      <Field
+                        label={t('jobs.dropoff2ReceiverNameLabel', {
+                          defaultValue: 'Stop Receiver Name (optional — defaults to primary)',
+                        })}
+                        placeholder={t('jobs.placeholderReceiverName')}
+                        error={form.formState.errors.extraDropoffs?.[index]?.receiverName?.message}
+                        {...form.register(`extraDropoffs.${index}.receiverName` as const)}
+                      />
+                      <Field
+                        type="email"
+                        label={t('jobs.dropoff2ReceiverEmailLabel', {
+                          defaultValue: 'Stop Receiver Email (optional — defaults to primary)',
+                        })}
+                        placeholder={t('jobs.placeholderReceiverEmail')}
+                        error={form.formState.errors.extraDropoffs?.[index]?.receiverEmail?.message}
+                        {...form.register(`extraDropoffs.${index}.receiverEmail` as const)}
+                      />
+                    </div>
+                  </div>
+                ))}
+                <div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() =>
+                      extraDropoffsArray.append({
+                        addressLine: '',
+                        suburb: '',
+                        state: dropoffState || 'VIC',
+                        postcode: '',
+                        receiverName: '',
+                        receiverEmail: '',
+                      })
+                    }
+                  >
+                    +{' '}
+                    {t('jobs.addDropoffStopButton', {
+                      defaultValue: 'Add Another Dropoff Stop',
+                    })}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {pricingModel === 'PER_KM' ? (
+              <Field
+                type="number"
+                step="0.1"
+                min={0.1}
+                label={t('jobs.distanceKmLabel')}
+                required
+                hint={
+                  suggestedKm != null
+                    ? t('jobs.distanceKmSuggested', { km: suggestedKm })
+                    : t('jobs.distanceKmHint')
+                }
+                error={form.formState.errors.distanceKm?.message}
+                {...form.register('distanceKm', { valueAsNumber: true })}
+              />
+            ) : null}
           </>
         ) : null}
 
@@ -1130,6 +2001,51 @@ function JobDraftForm({
             <ChoiceCheck className="mb-4" {...form.register('loadDg')}>
               {t('jobs.dgLoad')}
             </ChoiceCheck>
+
+            {loadDg ? (
+              <div className="mb-4 rounded-clox-md border border-clox-border bg-clox-surface-alt p-4">
+                <FileInput
+                  className="mb-0"
+                  label={t('jobs.dgDocUploadLabel', {
+                    defaultValue: 'Dangerous Goods (DG) Declaration / SDS Document',
+                  })}
+                  hint={t('jobs.dgDocUploadHint', {
+                    defaultValue:
+                      'Upload the DG transport declaration or Safety Data Sheet (document or image). Carriers will review this before bidding.',
+                  })}
+                  accept=".pdf,image/png,image/jpeg,image/webp"
+                  fileName={dgDocFilename}
+                  disabled={dgUploading}
+                  error={form.formState.errors.dgDocumentId?.message}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void handleDgUpload(file);
+                  }}
+                />
+                {dgUploading ? (
+                  <p className="mt-1 text-xs text-clox-mute">{t('uploading', { defaultValue: 'Uploading…' })}</p>
+                ) : null}
+                {dgDocumentId ? (
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-clox-sm border border-clox-border bg-clox-surface px-3 py-2 text-xs">
+                    <span className="font-medium text-[var(--status-ok)]">
+                      ✓ {dgDocFilename || t('jobs.dgDocAttached', { defaultValue: 'DG document attached' })}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="text-xs"
+                      onClick={() =>
+                        void openDocumentContent(dgDocumentId).catch((err) =>
+                          toast.error(getErrorDetail(err)),
+                        )
+                      }
+                    >
+                      {t('jobs.viewDgDoc', { defaultValue: 'View Document' })}
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </>
         ) : null}
 
@@ -1152,6 +2068,39 @@ function JobDraftForm({
               error={form.formState.errors.receiverEmail?.message}
               {...form.register('receiverEmail')}
             />
+            <Field
+              type="tel"
+              label={t('jobs.receiverPhone', { defaultValue: 'Receiver Phone' })}
+              placeholder={t('jobs.placeholderReceiverPhone', { defaultValue: '+61 400 000 000' })}
+              required
+              autoComplete="tel"
+              error={form.formState.errors.receiverPhone?.message}
+              {...form.register('receiverPhone')}
+            />
+            <div className="grid grid-cols-1 gap-0 sm:grid-cols-2 sm:gap-2">
+              <Field
+                type="email"
+                label={t('jobs.receiverAltEmail', {
+                  defaultValue: 'Alternate Email (optional)',
+                })}
+                placeholder={t('jobs.placeholderReceiverAltEmail', {
+                  defaultValue: 'secondary@example.com',
+                })}
+                error={form.formState.errors.receiverAltEmail?.message}
+                {...form.register('receiverAltEmail')}
+              />
+              <Field
+                type="tel"
+                label={t('jobs.receiverAltPhone', {
+                  defaultValue: 'Alternate Phone (optional)',
+                })}
+                placeholder={t('jobs.placeholderReceiverAltPhone', {
+                  defaultValue: '+61 3 9000 0000',
+                })}
+                error={form.formState.errors.receiverAltPhone?.message}
+                {...form.register('receiverAltPhone')}
+              />
+            </div>
           </>
         ) : null}
 
@@ -1164,14 +2113,60 @@ function JobDraftForm({
               <dl className="mt-3 space-y-2 text-sm">
                 <div className="flex flex-wrap justify-between gap-2">
                   <dt className="text-clox-mute">{t('jobs.wizard.summaryPricing')}</dt>
-                  <dd className="font-medium text-clox-ink">
+                  <dd className="text-right font-medium text-clox-ink">
                     {pricingModel === 'HOURLY'
-                      ? t('jobs.pricingHourly')
-                      : t('jobs.pricingPerKm')}
-                    {' · '}
-                    {t('jobs.wizard.summaryDistance', {
-                      km: Number.isFinite(distanceKm) ? distanceKm : '—',
-                    })}
+                      ? `${t('jobs.pricingHourly')} · ${
+                          routeEstimate?.billableHours != null
+                            ? `${routeEstimate.billableHours} billable hrs (~${routeEstimate.distanceKm} km)`
+                            : 'Min 4 billable hrs'
+                        }`
+                      : `${t('jobs.pricingPerKm')} · ${t('jobs.wizard.summaryDistance', {
+                          km: Number.isFinite(distanceKm) ? distanceKm : '—',
+                        })}`}
+                    {pricingModel === 'HOURLY' ? (
+                      <span className="mt-0.5 block text-xs font-normal text-clox-faint">
+                        {t('jobs.hourlyMinSummaryLine', {
+                          defaultValue: `Minimum hourly base charge: $320.00 inc GST (4 hrs @ $80.00/hr)${
+                            routeEstimate?.estimateIncGstCents != null
+                              ? ` · Est. $${(routeEstimate.estimateIncGstCents / 100).toFixed(2)} inc GST`
+                              : ''
+                          }`,
+                        })}
+                      </span>
+                    ) : null}
+                  </dd>
+                </div>
+                <div className="flex flex-wrap justify-between gap-2">
+                  <dt className="text-clox-mute">
+                    {t('jobs.view.sectionStops', { defaultValue: 'Route Stops' })}
+                  </dt>
+                  <dd className="text-right font-medium text-clox-ink">
+                    {pickupAddressLine}, {pickupSuburb} {pickupState} {pickupPostcode}
+                    {pricingModel === 'HOURLY' &&
+                      (extraPickups ?? []).map((p, idx) =>
+                        p.suburb ? (
+                          <span
+                            key={`sum-p-${idx}`}
+                            className="mt-0.5 block text-xs font-normal text-clox-faint"
+                          >
+                            + Pickup #{idx + 2}: {p.addressLine}, {p.suburb} {p.state} {p.postcode}
+                          </span>
+                        ) : null,
+                      )}
+                    <span className="mt-0.5 block text-xs font-normal text-clox-faint">
+                      → {dropoffAddressLine}, {dropoffSuburb} {dropoffState} {dropoffPostcode}
+                    </span>
+                    {pricingModel === 'HOURLY' &&
+                      (extraDropoffs ?? []).map((d, idx) =>
+                        d.suburb ? (
+                          <span
+                            key={`sum-d-${idx}`}
+                            className="mt-0.5 block text-xs font-normal text-clox-faint"
+                          >
+                            → Dropoff #{idx + 2}: {d.addressLine}, {d.suburb} {d.state} {d.postcode}
+                          </span>
+                        ) : null,
+                      )}
                   </dd>
                 </div>
                 <div className="flex flex-wrap justify-between gap-2">
@@ -1199,8 +2194,13 @@ function JobDraftForm({
                   <dd className="text-right font-medium text-clox-ink">
                     {receiverName || '—'}
                     <span className="mt-0.5 block text-xs font-normal text-clox-faint">
-                      {receiverEmail || '—'}
+                      {[receiverEmail, receiverPhone].filter(Boolean).join(' · ') || '—'}
                     </span>
+                    {receiverAltEmail || receiverAltPhone ? (
+                      <span className="mt-0.5 block text-xs font-normal text-clox-faint">
+                        Alt: {[receiverAltEmail, receiverAltPhone].filter(Boolean).join(' · ')}
+                      </span>
+                    ) : null}
                   </dd>
                 </div>
               </dl>
@@ -1235,7 +2235,7 @@ function JobDraftForm({
               {t('jobs.wizard.next')}
             </Button>
           ) : (
-            <Button type="submit" variant="cta" disabled={save.isPending}>
+            <Button type="submit" variant="cta" disabled={save.isPending || dgUploading}>
               {save.isPending
                 ? t('saving')
                 : isEdit
@@ -1545,8 +2545,14 @@ export function JobDetailPage() {
                     className="flex flex-wrap items-baseline justify-between gap-2 text-sm"
                   >
                     <span className="font-medium text-clox-ink">
-                      {s.stopType} · {s.suburb ?? t('dash')}
-                      {s.state ? `, ${s.state}` : ''}
+                      {s.stopType} ·{' '}
+                      {[
+                        s.addressLine,
+                        s.suburb ?? t('dash'),
+                        [s.state, s.postcode].filter(Boolean).join(' '),
+                      ]
+                        .filter(Boolean)
+                        .join(', ')}
                     </span>
                     {s.receiverName || s.receiverEmail ? (
                       <span className="text-xs text-clox-faint">
@@ -1705,6 +2711,25 @@ export function JobDetailPage() {
                               .join(' · ')}
                           </p>
                         ) : null}
+                        {p.dgDocumentId ? (
+                          <div className="pt-1">
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              className="text-xs"
+                              onClick={() =>
+                                void openDocumentContent(p.dgDocumentId!).catch((err) =>
+                                  toast.error(getErrorDetail(err)),
+                                )
+                              }
+                            >
+                              {t('jobs.viewCarrierDgDoc', {
+                                defaultValue: 'View Carrier DG Document',
+                              })}
+                              {p.dgDocumentFilename ? ` (${p.dgDocumentFilename})` : ''}
+                            </Button>
+                          </div>
+                        ) : null}
                       </div>
                       <StatusPill
                         tone={
@@ -1802,6 +2827,23 @@ export function JobDetailPage() {
                 ? detailRow(t('jobs.view.minClass'), j.minVehicleClass)
                 : null}
             </dl>
+            {j.requiresDg && j.dgDocumentId ? (
+              <div className="mt-3 border-t border-clox-border pt-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full text-xs"
+                  onClick={() =>
+                    void openDocumentContent(j.dgDocumentId!).catch((err) =>
+                      toast.error(getErrorDetail(err)),
+                    )
+                  }
+                >
+                  {t('jobs.viewDgDoc', { defaultValue: 'View Sender DG Document' })}
+                  {j.dgDocumentFilename ? ` (${j.dgDocumentFilename})` : ''}
+                </Button>
+              </div>
+            ) : null}
           </section>
 
           <section className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-4">
@@ -1811,8 +2853,18 @@ export function JobDetailPage() {
             <dl className="mt-3 space-y-2">
               {detailRow(t('jobs.receiverName'), j.receiverName || t('dash'))}
               {detailRow(t('jobs.receiverEmail'), j.receiverEmail || t('dash'))}
-              {j.receiverPhone
-                ? detailRow(t('jobs.receiverPhone'), j.receiverPhone)
+              {detailRow(t('jobs.receiverPhone'), j.receiverPhone || t('dash'))}
+              {j.receiverAltEmail
+                ? detailRow(
+                    t('jobs.receiverAltEmail', { defaultValue: 'Alternate Email' }),
+                    j.receiverAltEmail,
+                  )
+                : null}
+              {j.receiverAltPhone
+                ? detailRow(
+                    t('jobs.receiverAltPhone', { defaultValue: 'Alternate Phone' }),
+                    j.receiverAltPhone,
+                  )
                 : null}
             </dl>
           </section>

@@ -146,7 +146,7 @@ export function LoginPage() {
 
   return (
     <main
-      className="auth-shell flex items-center justify-center px-4 py-10 sm:px-6"
+      className="auth-shell flex min-h-[100dvh] items-center justify-center px-4 py-8 sm:px-6 sm:py-12"
       data-role="default"
       data-theme="ops"
     >
@@ -192,7 +192,7 @@ export function LoginPage() {
               autoComplete="email"
               label={t('email')}
               required
-              placeholder="name@yopmail.com"
+              placeholder="you@company.com.au"
               error={emailForm.formState.errors.email?.message}
               {...emailForm.register('email')}
             />

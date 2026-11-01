@@ -25,13 +25,20 @@ import {
   FileInput,
   Notice,
   RadioCardGroup,
+  Select,
   StepChips,
   useConfirm,
   useToast,
 } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
 import { resolveUploadMime } from '@/lib/upload-mime';
-import { abnSchema, AU_STATES } from '@/lib/validation';
+import {
+  abnSchema,
+  AU_STATES,
+  AU_STATE_OPTIONS,
+  auPostcodeErrorForState,
+  isValidAuPostcodeForState,
+} from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -395,6 +402,13 @@ function InvoiceStep({
       gstRegistered: z.boolean(),
     })
     .superRefine((values, ctx) => {
+      if (!isValidAuPostcodeForState(values.invoicePostcode, values.invoiceState)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['invoicePostcode'],
+          message: auPostcodeErrorForState(values.invoiceState),
+        });
+      }
       if (!isBusiness) return;
       // Prefer form value; fall back to ABN already saved on account step.
       const candidate = (values.abn || data.company.abn || '').replace(/\s/g, '');
@@ -507,18 +521,24 @@ function InvoiceStep({
           error={form.formState.errors.invoiceSuburb?.message}
           {...form.register('invoiceSuburb')}
         />
-        <Field
+        <Select
           label={t('senderOnboarding.placeholderState')}
           required
           error={form.formState.errors.invoiceState?.message}
-          {...form.register('invoiceState', {
-            setValueAs: (value: string) => value.toUpperCase(),
-          })}
-        />
+          value={form.watch('invoiceState')}
+          {...form.register('invoiceState')}
+        >
+          {AU_STATE_OPTIONS.map((st) => (
+            <option key={st.code} value={st.code}>
+              {st.label}
+            </option>
+          ))}
+        </Select>
         <Field
           label={t('senderOnboarding.placeholderPostcode')}
           required
           inputMode="numeric"
+          maxLength={4}
           error={form.formState.errors.invoicePostcode?.message}
           {...form.register('invoicePostcode')}
         />

@@ -100,6 +100,15 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
       ) : null}
       {isSuper ? (
         <SidebarLink
+          to="/vehicle-classes"
+          icon={navIconForPath('/vehicle-classes')}
+          onNavigate={onNavigate}
+        >
+          {t('nav.vehicleClasses', { defaultValue: 'Vehicle Classes' })}
+        </SidebarLink>
+      ) : null}
+      {isSuper ? (
+        <SidebarLink
           to="/platform-settings"
           icon={navIconForPath('/platform-settings')}
           onNavigate={onNavigate}
@@ -354,14 +363,14 @@ function DriverCabShell({ children }: { children?: ReactNode }) {
             <p className="truncate font-mono text-[11px] text-clox-mute">{title}</p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
           <RoleBadge role={role} className="hidden sm:inline-flex" />
-          <NotificationBell />
-          <LanguageSwitcher />
+          <NotificationBell className="shrink-0" />
+          <LanguageSwitcher className="shrink-0" />
           <Button
             variant="destructive"
             size="sm"
-            className="gap-1.5"
+            className="shrink-0 gap-1.5 px-2 sm:px-3"
             onClick={() => void signOut()}
           >
             <LogOut className="h-3.5 w-3.5" aria-hidden />
@@ -499,7 +508,7 @@ function OpsShell({ children }: { children?: ReactNode }) {
             >
               <Menu className="h-[18px] w-[18px]" aria-hidden strokeWidth={2} />
             </button>
-            <div className="min-w-0">
+            <div className="min-w-0 max-w-[calc(100vw-190px)] sm:max-w-none">
               <p className="truncate font-mono text-[12.5px] text-clox-faint">
                 <b className="font-semibold text-clox-navy">{t('nav.platformTitle')}</b>
               </p>
@@ -512,16 +521,16 @@ function OpsShell({ children }: { children?: ReactNode }) {
             <RoleBadge role={role} className="hidden sm:inline-flex" />
           </div>
 
-          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-            <NotificationBell />
-            <LanguageSwitcher />
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            <NotificationBell className="shrink-0" />
+            <LanguageSwitcher className="shrink-0" />
             <Button
               variant="destructive"
               size="sm"
-              className="gap-1.5"
+              className="shrink-0 gap-1.5 px-2 sm:px-3"
               onClick={() => void signOut()}
             >
-              <LogOut className="h-3.5 w-3.5" aria-hidden />
+              <LogOut className="h-3.5 w-3.5 shrink-0" aria-hidden />
               <span className="hidden sm:inline">{t('signOut')}</span>
             </Button>
           </div>

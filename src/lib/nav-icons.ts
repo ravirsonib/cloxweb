@@ -35,6 +35,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   '/sender/onboarding': BadgeCheck,
   '/jobs': Package,
   '/surcharges': CircleDollarSign,
+  '/vehicle-classes': Truck,
   '/platform-settings': Settings,
   '/revenue-split': CircleDollarSign,
   '/partner-performance': Handshake,

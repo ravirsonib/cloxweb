@@ -28,7 +28,10 @@ import { LoadingBlock } from '@/components/status-blocks';
 import { resolveUploadMime } from '@/lib/upload-mime';
 import {
   AU_STATES,
+  AU_STATE_OPTIONS,
+  auPostcodeErrorForState,
   futureDateSchema,
+  isValidAuPostcodeForState,
   LICENCE_CLASSES,
   requiredPhoneSchema,
 } from '@/lib/validation';
@@ -41,7 +44,7 @@ function formatLicenceSubmitError(error: unknown, fallback: (err: unknown) => st
   if (/licenceDocumentId/i.test(detail)) {
     return detail.includes('uuid') || /invalid/i.test(detail)
       ? detail
-      : 'Upload your driver licence document (PDF or image) before submitting.';
+      : 'Upload your driver licence document before submitting.';
   }
   if (/DRIVER_LICENCE_DOC_REQUIRED/i.test(detail)) {
     return 'A usable driver licence document is required before activation. Upload the file and try again.';
@@ -285,6 +288,14 @@ function LicenceStep({
     nhvrAcknowledged: z.boolean().refine((value) => value === true, {
       message: t('validation.nhvrRequired'),
     }),
+  }).superRefine((values, ctx) => {
+    if (!isValidAuPostcodeForState(values.postcode, values.state)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['postcode'],
+        message: auPostcodeErrorForState(values.state),
+      });
+    }
   });
 
   const licenceClassDefault = (LICENCE_CLASSES as readonly string[]).includes(
@@ -529,9 +540,9 @@ function LicenceStep({
                     error={fieldState.error?.message}
                     onChange={(e) => field.onChange(e.target.value)}
                   >
-                    {AU_STATES.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
+                    {AU_STATE_OPTIONS.map((st) => (
+                      <option key={st.code} value={st.code}>
+                        {st.label}
                       </option>
                     ))}
                   </Select>

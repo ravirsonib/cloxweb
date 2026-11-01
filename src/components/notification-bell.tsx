@@ -114,18 +114,18 @@ export function NotificationBell({ className }: { className?: string }) {
   };
 
   return (
-    <div ref={rootRef} className={cn('relative', className)}>
+    <div ref={rootRef} className={cn('relative shrink-0', className)}>
       <button
         type="button"
-        className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg text-clox-mute transition hover:bg-clox-surface-alt hover:text-clox-ink"
+        className="relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-clox-mute transition hover:bg-clox-surface-alt hover:text-clox-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-clox-accent"
         aria-label={t('notifications.bellLabel')}
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((v) => !v)}
       >
-        <Bell className="h-4 w-4" aria-hidden strokeWidth={1.9} />
+        <Bell className="h-4 w-4 shrink-0" aria-hidden strokeWidth={1.9} />
         {count > 0 ? (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--status-warn)] px-1 font-mono text-[10px] font-semibold text-white">
+          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--status-warn)] px-1 font-mono text-[10px] font-semibold text-white shadow-sm ring-2 ring-clox-surface">
             {count > 99 ? '99+' : count}
           </span>
         ) : null}
@@ -135,7 +135,7 @@ export function NotificationBell({ className }: { className?: string }) {
         <div
           role="dialog"
           aria-label={t('notifications.panelTitle')}
-          className="absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-1.5rem))] overflow-hidden rounded-clox-md border border-clox-border bg-clox-surface shadow-clox-2"
+          className="fixed inset-x-3 top-[62px] z-50 overflow-hidden rounded-clox-md border border-clox-border bg-clox-surface shadow-clox-2 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-88"
         >
           <div className="flex items-center justify-between gap-2 border-b border-clox-border px-3 py-2">
             <p className="text-sm font-semibold text-clox-ink">

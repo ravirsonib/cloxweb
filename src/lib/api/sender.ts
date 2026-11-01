@@ -50,6 +50,8 @@ export function registerSender(payload: {
   email: string;
   name: string;
   phone?: string;
+  alternateEmail?: string;
+  alternatePhone?: string;
   acceptedTerms: boolean;
   inviteToken?: string;
 }) {

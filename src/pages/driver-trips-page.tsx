@@ -5,6 +5,8 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import {
   confirmDocument,
   createUploadIntent,
+  downloadBlob,
+  fetchTripDocumentBlob,
   fetchTripPodArtifactBlob,
   getDriverTrip,
   getErrorDetail,
@@ -21,6 +23,7 @@ import {
   tripSafetyCheck,
   tripStart,
   uploadDocumentContent,
+  type TripDocumentKind,
   type TripExceptionKind,
 } from '@/lib/api';
 import {
@@ -585,6 +588,19 @@ export function DriverTripDetailPage() {
     onError: (e) => setMsg(getErrorDetail(e) || t('trips.leaveDropoffFailed')),
   });
 
+  const downloadDocMutation = useMutation({
+    mutationFn: async (kind: TripDocumentKind) => {
+      const blob = await fetchTripDocumentBlob(tripId, kind);
+      const names: Record<TripDocumentKind, string> = {
+        pod: `CLOX-pod-${tripId.slice(0, 8)}.pdf`,
+        'tax-invoice': `CLOX-tax-invoice-${tripId.slice(0, 8)}.pdf`,
+        'run-sheet': `CLOX-run-sheet-${tripId.slice(0, 8)}.pdf`,
+      };
+      downloadBlob(blob, names[kind]);
+    },
+    onError: (err) => setMsg(getErrorDetail(err)),
+  });
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -806,9 +822,16 @@ export function DriverTripDetailPage() {
       <Link to="/trips" className="text-sm font-semibold text-clox-orange hover:underline">
         ← {t('trips.backToTrips')}
       </Link>
-      <h1 className="mt-2 font-display text-2xl font-bold text-clox-ink">
-        {tripData.job?.title ?? t('trips.fallbackTitle')}
-      </h1>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <h1 className="font-display text-2xl font-bold text-clox-ink">
+          {tripData.job?.title ?? t('trips.fallbackTitle')}
+        </h1>
+        {tripData.job?.pricingModel === 'HOURLY' ? (
+          <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 border border-blue-200">
+            Hourly Basis (Min 4.0 hrs{tripData.job.hourlyPattern ? ` · Pattern ${tripData.job.hourlyPattern}` : ''})
+          </span>
+        ) : null}
+      </div>
       <p className="mt-1 font-mono text-sm text-clox-mute">{tripData.status}</p>
 
       {tripData.openException ? (
@@ -1403,14 +1426,30 @@ export function DriverTripDetailPage() {
 
       {tripData.taxInvoiceStorageKey || tripData.runSheetStorageKey ? (
         <Notice tone="info" className="mt-6" title={t('trips.completionDocsTitle')}>
-          <ul className="mt-1 space-y-1 font-mono text-xs text-clox-ink">
-            {tripData.taxInvoiceStorageKey ? (
-              <li>{t('trips.taxInvoiceKey', { key: tripData.taxInvoiceStorageKey })}</li>
-            ) : null}
+          <div className="mt-2 flex flex-wrap gap-2">
             {tripData.runSheetStorageKey ? (
-              <li>{t('trips.runSheetKey', { key: tripData.runSheetStorageKey })}</li>
+              <Button
+                type="button"
+                variant="secondary"
+                className="text-xs"
+                disabled={downloadDocMutation.isPending}
+                onClick={() => downloadDocMutation.mutate('run-sheet')}
+              >
+                📄 {t('trips.downloadRunSheet', { defaultValue: 'Download Hourly Run Sheet (Document)' })}
+              </Button>
             ) : null}
-          </ul>
+            {tripData.taxInvoiceStorageKey ? (
+              <Button
+                type="button"
+                variant="secondary"
+                className="text-xs"
+                disabled={downloadDocMutation.isPending}
+                onClick={() => downloadDocMutation.mutate('tax-invoice')}
+              >
+                🧾 {t('trips.downloadTaxInvoice', { defaultValue: 'Download Tax Invoice (Document)' })}
+              </Button>
+            ) : null}
+          </div>
         </Notice>
       ) : null}
 

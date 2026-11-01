@@ -135,11 +135,11 @@ export function LanguageSwitcher({ className = '' }: { className?: string }) {
       : null;
 
   return (
-    <div ref={rootRef} className={cn('relative', className)}>
+    <div ref={rootRef} className={cn('relative shrink-0', className)}>
       <button
         ref={triggerRef}
         type="button"
-        className="inline-flex items-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium text-clox-mute transition hover:bg-clox-surface-alt hover:text-clox-ink"
+        className="inline-flex shrink-0 items-center gap-1 sm:gap-1.5 rounded-lg px-1.5 py-1.5 text-xs font-medium text-clox-mute transition hover:bg-clox-surface-alt hover:text-clox-ink sm:px-2 sm:py-2 sm:text-sm"
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listboxId}

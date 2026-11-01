@@ -41,3 +41,10 @@ export { RoleBadge } from './role-badge';
 export { StatusFilterChips } from './status-filter-chips';
 export { StatusPill } from './status-pill';
 export { Timeline, type TimelineItem, type TimelineItemTone } from './timeline';
+export {
+  InteractiveChart,
+  AnimatedNumber,
+  useAnimatedNumber,
+  type ChartDataItem,
+  type ChartVisualType,
+} from './interactive-chart';

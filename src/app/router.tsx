@@ -43,6 +43,7 @@ import { SenderRegisterPage } from '@/pages/sender-register-page';
 import { SenderOnboardingPage } from '@/pages/sender-onboarding-page';
 import { SurchargesPage } from '@/pages/surcharges-page';
 import { PlatformSettingsPage } from '@/pages/platform-settings-page';
+import { AdminVehicleClassesPage } from '@/pages/admin-vehicle-classes-page';
 import { RevenueSplitSettingsPage } from '@/pages/revenue-split-settings-page';
 import { PartnerPerformancePage } from '@/pages/partner-performance-page';
 
@@ -343,6 +344,18 @@ export function AppRouter() {
         />
         <Route path="/jobs/:jobId/track" element={<SenderTrackPage />} />
         <Route path="/surcharges" element={<SurchargesPage />} />
+        <Route
+          path="/vehicle-classes"
+          element={
+            <SuperOnly>
+              <AdminVehicleClassesPage />
+            </SuperOnly>
+          }
+        />
+        <Route
+          path="/admin/vehicle-classes"
+          element={<Navigate to="/vehicle-classes" replace />}
+        />
         <Route
           path="/platform-settings"
           element={

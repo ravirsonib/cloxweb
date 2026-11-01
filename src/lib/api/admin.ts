@@ -1,10 +1,14 @@
 import type {
   AdminAuditQuery,
   AdminCompanyListQuery,
+  AdminDashboardQuery,
   AdminLeadExportQuery,
   AdminLeadListQuery,
   CreateLeadNoteInput,
   UpdateLeadInput,
+  VehicleClassCreateInput,
+  VehicleClassDto,
+  VehicleClassUpdateInput,
 } from '@/shared/types';
 import { http } from '@/lib/http';
 import type { AdminRef, LeadDetail, LeadListItem } from '@/lib/leads';
@@ -25,6 +29,17 @@ export type DashboardActivityItem = {
   } | null;
 };
 
+export type TimelinePoint = {
+  date: string;
+  label: string;
+  jobs: number;
+  trips: number;
+  exceptions: number;
+  senders: number;
+  carriers: number;
+  volumeCents: number;
+};
+
 export type DashboardStats = {
   totals: {
     all: number;
@@ -39,6 +54,102 @@ export type DashboardStats = {
   byStatus: Record<string, number>;
   recentLeads: LeadListItem[];
   recentActivity: DashboardActivityItem[];
+
+  period?: string;
+  from?: string;
+  to?: string;
+
+  analytics?: {
+    senders: {
+      total: number;
+      active: number;
+      pending: number;
+      inPeriod: number;
+    };
+    carriers: {
+      total: number;
+      active: number;
+      pending: number;
+      inPeriod: number;
+    };
+    trucks: {
+      total: number;
+      active: number;
+      inTransit: number;
+      pending: number;
+      inPeriod: number;
+      byClass: Record<string, number>;
+    };
+    drivers: {
+      total: number;
+      active: number;
+      onTrip: number;
+      pending: number;
+      inPeriod: number;
+    };
+    receivers: {
+      total: number;
+      inPeriod: number;
+      recent: Array<{
+        name: string | null;
+        email: string | null;
+        phone: string | null;
+        jobTitle?: string | null;
+      }>;
+    };
+    breakdowns: {
+      total: number;
+      inPeriod: number;
+      open: number;
+      resolved: number;
+      byKind: {
+        breakdown: number;
+        accident: number;
+        traffic: number;
+        driverUnavailable: number;
+        other: number;
+      };
+      recent: Array<{
+        id: string;
+        tripId: string;
+        kind: string;
+        status: string;
+        createdAt: string;
+        note?: string | null;
+        companyName: string;
+      }>;
+    };
+    jobs: {
+      total: number;
+      inPeriod: number;
+      active: number;
+      assigned: number;
+      inTransit: number;
+      completed: number;
+      cancelled: number;
+      draft: number;
+      totalEstimateCents: number;
+      recent: Array<{
+        id: string;
+        title: string;
+        status: string;
+        pricingModel: string;
+        estimateIncGstCents: number;
+        receiverName: string | null;
+        createdAt: string;
+        companyName: string;
+      }>;
+    };
+    trips: {
+      total: number;
+      inPeriod: number;
+      active: number;
+      completed: number;
+      cancelled: number;
+      breakdown: number;
+    };
+    timeline: TimelinePoint[];
+  };
 };
 
 export type Paginated<T> = {
@@ -66,9 +177,15 @@ export type AuditListItem = {
   } | null;
 };
 
-export function getDashboardStats(options?: { signal?: AbortSignal }) {
+export function getDashboardStats(
+  query?: AdminDashboardQuery,
+  options?: { signal?: AbortSignal },
+) {
   return http
-    .get<DashboardStats>('/admin/dashboard/stats', { signal: options?.signal })
+    .get<DashboardStats>('/admin/dashboard/stats', {
+      params: query,
+      signal: options?.signal,
+    })
     .then((res) => res.data);
 }
 
@@ -136,6 +253,26 @@ export function patchPlatformSettings(
 ) {
   return http
     .patch<PlatformSettings>('/admin/platform-settings', input, { signal: options?.signal })
+    .then((res) => res.data);
+}
+
+export function listAdminVehicleClasses(options?: { signal?: AbortSignal }) {
+  return http
+    .get<VehicleClassDto[]>('/admin/vehicle-classes', { signal: options?.signal })
+    .then((res) => res.data);
+}
+
+export function createAdminVehicleClass(input: VehicleClassCreateInput) {
+  return http.post<VehicleClassDto>('/admin/vehicle-classes', input).then((res) => res.data);
+}
+
+export function updateAdminVehicleClass(id: string, input: VehicleClassUpdateInput) {
+  return http.patch<VehicleClassDto>(`/admin/vehicle-classes/${id}`, input).then((res) => res.data);
+}
+
+export function deleteAdminVehicleClass(id: string) {
+  return http
+    .delete<{ success: boolean; deletedCode: string }>(`/admin/vehicle-classes/${id}`)
     .then((res) => res.data);
 }
 
@@ -297,6 +434,11 @@ export type AdminJobListItem = {
     status: string;
     lockedAt: string | null;
     carrierCompany: { id: string; legalName: string } | null;
+    vehicle?: { id: string; registration: string; vehicleClass: string } | null;
+    driver?: {
+      id: string;
+      user?: { email?: string | null; name?: string | null } | null;
+    } | null;
   } | null;
   trip: {
     id: string;
@@ -312,15 +454,22 @@ export type AdminJobListItem = {
 };
 
 export type AdminJobDetail = AdminJobListItem & {
+  minVehicleClass?: string | null;
+  receiverPhone?: string | null;
   stops: Array<{
     id: string;
     sequence: number;
     stopType: string;
     suburb: string | null;
     state: string | null;
+    postcode?: string | null;
     addressLine: string | null;
     receiverName: string | null;
     receiverEmail: string | null;
+    receiverPhone?: string | null;
+    notes?: string | null;
+    windowStart?: string | null;
+    windowEnd?: string | null;
   }>;
   proposals: Array<{
     id: string;

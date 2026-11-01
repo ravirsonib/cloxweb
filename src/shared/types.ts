@@ -484,6 +484,14 @@ export type CompanyStatus = (typeof CompanyStatus)[keyof typeof CompanyStatus];
 
 export const COMPANY_STATUS_KEYS = Object.values(CompanyStatus);
 
+export const adminDashboardQuerySchema = z.object({
+  period: z.enum(['today', 'week', 'month', '30d', 'year', 'all']).optional(),
+  from: z.string().trim().optional(),
+  to: z.string().trim().optional(),
+});
+
+export type AdminDashboardQuery = z.infer<typeof adminDashboardQuerySchema>;
+
 export const adminCompanyListQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
@@ -507,3 +515,58 @@ export const adminCompanyListQuerySchema = z.object({
 });
 
 export type AdminCompanyListQuery = z.infer<typeof adminCompanyListQuerySchema>;
+
+export const vehicleClassCodeSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(32)
+  .regex(/^[A-Za-z0-9_]+$/, 'Code must be alphanumeric with underscores only')
+  .transform((v) => v.toUpperCase());
+
+export const vehicleClassCreateSchema = z.object({
+  code: vehicleClassCodeSchema,
+  name: z.string().trim().min(1, 'Name is required').max(64),
+  rank: z.number().int().min(1, 'Rank must be at least 1').max(999),
+  maxChargeableWeightKg: z.number().positive('Max chargeable weight must be positive').max(100_000),
+  maxLengthCm: z.number().positive('Length must be positive').max(10_000),
+  maxWidthCm: z.number().positive('Width must be positive').max(1_000),
+  maxHeightCm: z.number().positive('Height must be positive').max(1_000),
+  minLicenceClass: z.string().trim().min(1, 'Min licence class is required').max(10),
+  suggestedGvmKg: z.number().int().positive('Suggested GVM must be positive').max(200_000),
+  suggestedTareKg: z.number().int().positive('Suggested Tare must be positive').max(200_000),
+  isActive: z.boolean().default(true),
+});
+
+export const vehicleClassUpdateSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(64).optional(),
+  rank: z.number().int().min(1, 'Rank must be at least 1').max(999).optional(),
+  maxChargeableWeightKg: z.number().positive('Max chargeable weight must be positive').max(100_000).optional(),
+  maxLengthCm: z.number().positive('Length must be positive').max(10_000).optional(),
+  maxWidthCm: z.number().positive('Width must be positive').max(1_000).optional(),
+  maxHeightCm: z.number().positive('Height must be positive').max(1_000).optional(),
+  minLicenceClass: z.string().trim().min(1, 'Min licence class is required').max(10).optional(),
+  suggestedGvmKg: z.number().int().positive('Suggested GVM must be positive').max(200_000).optional(),
+  suggestedTareKg: z.number().int().positive('Suggested Tare must be positive').max(200_000).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export type VehicleClassCreateInput = z.infer<typeof vehicleClassCreateSchema>;
+export type VehicleClassUpdateInput = z.infer<typeof vehicleClassUpdateSchema>;
+
+export type VehicleClassDto = {
+  id: string;
+  code: string;
+  name: string;
+  rank: number;
+  maxChargeableWeightKg: number;
+  maxLengthCm: number;
+  maxWidthCm: number;
+  maxHeightCm: number;
+  minLicenceClass: string;
+  suggestedGvmKg: number;
+  suggestedTareKg: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};

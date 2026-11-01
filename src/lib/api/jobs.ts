@@ -10,6 +10,8 @@ export type JobSummary = {
   receiverName?: string | null;
   receiverEmail?: string | null;
   receiverPhone?: string | null;
+  receiverAltEmail?: string | null;
+  receiverAltPhone?: string | null;
   deadWeightKg?: number | null;
   lengthCm?: number | null;
   widthCm?: number | null;
@@ -20,6 +22,8 @@ export type JobSummary = {
   recommendedVehicleClass: string | null;
   chargeableWeightKg: number | null;
   requiresDg: boolean;
+  dgDocumentId?: string | null;
+  dgDocumentFilename?: string | null;
   createdAt?: string;
   publishedAt?: string | null;
   pickupAt?: string | null;
@@ -66,6 +70,8 @@ export type JobSummary = {
       phone?: string | null;
       licenceClass?: string | null;
     } | null;
+    dgDocumentId?: string | null;
+    dgDocumentFilename?: string | null;
     netToCarrierCents: number;
   }>;
   assignment?: {
@@ -103,8 +109,13 @@ export type JobSummary = {
     id?: string;
     sequence: number;
     stopType: string;
+    label?: string | null;
+    addressLine?: string | null;
     suburb: string | null;
     state: string | null;
+    postcode?: string | null;
+    lat?: number | null;
+    lng?: number | null;
     receiverName?: string | null;
     receiverEmail?: string | null;
   }>;
@@ -166,8 +177,14 @@ export type MarketBoardJob = {
   pricingModel: string;
   minVehicleClass: string | null;
   requiresDg: boolean;
+  dgDocumentId?: string | null;
+  dgDocumentFilename?: string | null;
   requiresReefer: boolean;
   requiresOversize?: boolean;
+  deadWeightKg?: number | null;
+  lengthCm?: number | null;
+  widthCm?: number | null;
+  heightCm?: number | null;
   chargeableWeightKg?: number | null;
   estimateIncGstCents: number | null;
   estimateNetToCarrierCents: number | null;
@@ -181,6 +198,14 @@ export type MarketBoardJob = {
   pickupAt: string | null;
   publishedAt: string | null;
   alreadyBid: boolean;
+  stops?: Array<{
+    sequence: number;
+    stopType: string;
+    addressLine?: string | null;
+    suburb?: string | null;
+    state?: string | null;
+    postcode?: string | null;
+  }>;
   stopsSummary: string;
 };
 
@@ -211,6 +236,8 @@ export function updateJobReceiver(
     receiverName: string;
     receiverEmail: string;
     receiverPhone?: string | null;
+    receiverAltEmail?: string | null;
+    receiverAltPhone?: string | null;
     stops?: Array<{
       id: string;
       receiverName?: string | null;
@@ -266,6 +293,11 @@ export type JobRouteEstimate = {
   drivingMinutes: number;
   fatigueBreakMinutes: number;
   billableHours: number | null;
+  minBillableHours?: number | null;
+  hourlyRateCents?: number | null;
+  minBaseCents?: number;
+  minChargeIncGstCents?: number;
+  estimateIncGstCents?: number;
   mock: boolean;
 };
 
@@ -286,6 +318,38 @@ export function submitBid(payload: {
   driverId: string;
   amountIncGstCents: number;
   etaMinutes: number;
+  dgDocumentId?: string | null;
 }) {
   return http.post('/matching/bids', payload).then((r) => r.data);
+}
+
+export type VehicleClassItem = {
+  id?: string;
+  code: string;
+  name?: string;
+  rank: number;
+  maxChargeableWeightKg: number;
+  maxLengthCm: number;
+  maxWidthCm: number;
+  maxHeightCm: number;
+  minLicenceClass: string;
+  suggestedGvmKg?: number;
+  suggestedTareKg?: number;
+  isActive?: boolean;
+};
+
+export type VehicleClassesMetaResponse = {
+  classes: VehicleClassItem[];
+  classCodes: string[];
+  ranks: Record<string, number>;
+  minLicences: Record<string, string>;
+  maxChargeableKg: Record<string, number>;
+  maxDimsCm: Record<string, { lengthCm: number; widthCm: number; heightCm: number }>;
+  suggestedGvmKg: Record<string, number>;
+  suggestedTareKg: Record<string, number>;
+  chargeableFormula: string;
+};
+
+export function getVehicleClassesMeta() {
+  return http.get<VehicleClassesMetaResponse>('/jobs/meta/vehicle-classes').then((r) => r.data);
 }

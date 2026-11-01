@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import {
   Button,
+  ChoiceCheck,
   DataCardList,
   DataTable,
   Field,
@@ -35,6 +36,7 @@ import {
   reactivateCarrierVehicle,
   retireCarrierVehicle,
   uploadDocumentContent,
+  getVehicleClassesMeta,
   type CarrierVehicleListItem,
 } from '@/lib/api';
 import { resolveUploadMime } from '@/lib/upload-mime';
@@ -47,7 +49,7 @@ import {
 type VehicleForm = {
   label: string;
   registration: string;
-  vehicleClass: (typeof VEHICLE_CLASSES)[number];
+  vehicleClass: string;
   tareKg: number;
   gvmKg: number;
 };
@@ -59,6 +61,21 @@ async function uploadVehicleRwc(companyId: string, vehicleId: string, file: File
     docType: 'RWC',
     originalFilename:
       file.name || `rwc.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
+    mimeType: mime,
+    sizeBytes: file.size,
+    vehicleId,
+  });
+  const up = await uploadDocumentContent(intent.id, file);
+  await confirmDocument(intent.id, up.contentHash);
+}
+
+async function uploadVehicleDgDoc(companyId: string, vehicleId: string, file: File) {
+  const mime = resolveUploadMime(file);
+  const intent = await createUploadIntent({
+    companyId,
+    docType: 'DG_LICENCE',
+    originalFilename:
+      file.name || `dg-licence.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
     mimeType: mime,
     sizeBytes: file.size,
     vehicleId,
@@ -127,8 +144,11 @@ export function CarrierFleetPage() {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [rwcFile, setRwcFile] = useState<File | null>(null);
+  const [hasDgForm, setHasDgForm] = useState(false);
+  const [dgFile, setDgFile] = useState<File | null>(null);
   const [rwcFormError, setRwcFormError] = useState<string | null>(null);
   const [uploadingVehicleId, setUploadingVehicleId] = useState<string | null>(null);
+  const [uploadingDgVehicleId, setUploadingDgVehicleId] = useState<string | null>(null);
   const [openingDocId, setOpeningDocId] = useState<string | null>(null);
   const [reasonTarget, setReasonTarget] = useState<{
     row: CarrierVehicleListItem;
@@ -158,9 +178,7 @@ export function CarrierFleetPage() {
     .object({
       label: z.string().trim().min(1, t('validation.vehicleLabelRequired')),
       registration: z.string().trim().min(1, t('validation.registrationRequired')),
-      vehicleClass: z.enum(VEHICLE_CLASSES, {
-        message: t('validation.vehicleClassRequired'),
-      }),
+      vehicleClass: z.string().min(1, t('validation.vehicleClassRequired')),
       tareKg: z
         .number({ message: t('validation.tareKgRequired') })
         .int()
@@ -182,6 +200,11 @@ export function CarrierFleetPage() {
       }
     });
 
+  const vehicleClassesQuery = useQuery({
+    queryKey: ['jobs', 'meta', 'vehicle-classes'],
+    queryFn: () => getVehicleClassesMeta(),
+  });
+
   const form = useForm<VehicleForm>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -196,9 +219,16 @@ export function CarrierFleetPage() {
   const watchedClass = form.watch('vehicleClass');
   const setValue = form.setValue;
   useEffect(() => {
-    setValue('gvmKg', suggestedGvmKgForClass(watchedClass));
-    setValue('tareKg', suggestedTareKgForClass(watchedClass));
-  }, [watchedClass, setValue]);
+    if (!watchedClass) return;
+    const gvm =
+      vehicleClassesQuery.data?.suggestedGvmKg?.[watchedClass] ??
+      suggestedGvmKgForClass(watchedClass);
+    const tare =
+      vehicleClassesQuery.data?.suggestedTareKg?.[watchedClass] ??
+      suggestedTareKgForClass(watchedClass);
+    setValue('gvmKg', gvm);
+    setValue('tareKg', tare);
+  }, [watchedClass, setValue, vehicleClassesQuery.data]);
 
   const invalidate = async () => {
     await Promise.all([
@@ -211,6 +241,13 @@ export function CarrierFleetPage() {
     mutationFn: async (values: VehicleForm) => {
       if (!rwcFile) {
         throw new Error(t('fleet.rwcRequiredError'));
+      }
+      if (hasDgForm && !dgFile) {
+        throw new Error(
+          t('fleet.dgDocRequiredError', {
+            defaultValue: 'Please upload the Dangerous Goods (DG) document for this vehicle.',
+          }),
+        );
       }
       if (!companyId) {
         throw new Error(getErrorDetail(companyQuery.error) || t('loading'));
@@ -232,6 +269,9 @@ export function CarrierFleetPage() {
         throw new Error(t('fleet.rwcRequiredError'));
       }
       await uploadVehicleRwc(companyId, created.id, rwcFile);
+      if (hasDgForm && dgFile) {
+        await uploadVehicleDgDoc(companyId, created.id, dgFile);
+      }
       return onboarding;
     },
     onSuccess: async () => {
@@ -243,6 +283,8 @@ export function CarrierFleetPage() {
         gvmKg: suggestedGvmKgForClass('RIGID_1_2T'),
       });
       setRwcFile(null);
+      setHasDgForm(false);
+      setDgFile(null);
       setRwcFormError(null);
       setShowForm(false);
       toast.success(t('fleet.addSuccess'));
@@ -266,6 +308,29 @@ export function CarrierFleetPage() {
     },
     onError: (error) => {
       setUploadingVehicleId(null);
+      setActionError(getErrorDetail(error));
+    },
+  });
+
+  const dgUploadMutation = useMutation({
+    mutationFn: async ({ vehicleId, file }: { vehicleId: string; file: File }) => {
+      if (!companyId) {
+        throw new Error(getErrorDetail(companyQuery.error) || t('loading'));
+      }
+      setUploadingDgVehicleId(vehicleId);
+      await uploadVehicleDgDoc(companyId, vehicleId, file);
+    },
+    onSuccess: async () => {
+      setUploadingDgVehicleId(null);
+      toast.success(
+        t('fleet.dgUploadSuccess', {
+          defaultValue: 'Vehicle Dangerous Goods (DG) document uploaded.',
+        }),
+      );
+      await invalidate();
+    },
+    onError: (error) => {
+      setUploadingDgVehicleId(null);
       setActionError(getErrorDetail(error));
     },
   });
@@ -330,7 +395,8 @@ export function CarrierFleetPage() {
     reasonMutation.isPending ||
     reactivateMutation.isPending ||
     deleteMutation.isPending ||
-    rwcUploadMutation.isPending;
+    rwcUploadMutation.isPending ||
+    dgUploadMutation.isPending;
 
   function statusLabel(status: string) {
     return t(`fleet.statuses.${status}`, { defaultValue: status });
@@ -491,12 +557,61 @@ export function CarrierFleetPage() {
     );
   }
 
+  function renderDgView(row: CarrierVehicleListItem) {
+    const documentId = row.dgDocumentId;
+    if (!documentId) return null;
+    return (
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        disabled={busy || openingDocId === documentId}
+        onClick={() => void viewRwc(documentId)}
+      >
+        {openingDocId === documentId
+          ? t('loading')
+          : t('fleet.dgView', { defaultValue: 'View DG Doc' })}
+      </Button>
+    );
+  }
+
+  function renderDgUpload(row: CarrierVehicleListItem) {
+    if (row.status === 'SUSPENDED' || row.status === 'RETIRED') return null;
+    const inputId = `dg-upload-${row.id}`;
+    return (
+      <label
+        htmlFor={inputId}
+        className="clox-btn clox-btn-secondary inline-flex cursor-pointer items-center text-sm"
+      >
+        {uploadingDgVehicleId === row.id
+          ? t('saving')
+          : row.dgDocumentId
+            ? t('fleet.dgUpdate', { defaultValue: 'Update DG Doc' })
+            : t('fleet.dgUpload', { defaultValue: 'Add DG Doc' })}
+        <input
+          id={inputId}
+          type="file"
+          accept=".pdf,image/jpeg,image/png,image/webp"
+          className="sr-only"
+          disabled={busy || !companyId}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (file) dgUploadMutation.mutate({ vehicleId: row.id, file });
+          }}
+        />
+      </label>
+    );
+  }
+
   function renderActions(row: CarrierVehicleListItem) {
     const isParked = row.status === 'SUSPENDED' || row.status === 'RETIRED';
     return (
       <div className="inline-flex max-w-full flex-wrap items-center gap-1.5 sm:flex-nowrap sm:whitespace-nowrap">
         {renderRwcView(row)}
         {renderRwcUpload(row)}
+        {renderDgView(row)}
+        {renderDgUpload(row)}
         {isParked ? (
           <Button
             type="button"
@@ -607,6 +722,14 @@ export function CarrierFleetPage() {
               setRwcFormError(t('fleet.rwcRequiredError'));
               return;
             }
+            if (hasDgForm && !dgFile) {
+              setRwcFormError(
+                t('fleet.dgDocRequiredError', {
+                  defaultValue: 'Please upload the Dangerous Goods (DG) document for this vehicle.',
+                }),
+              );
+              return;
+            }
             setRwcFormError(null);
             addMutation.mutate(values);
           })}
@@ -634,9 +757,12 @@ export function CarrierFleetPage() {
                 value={form.watch('vehicleClass')}
                 {...form.register('vehicleClass')}
               >
-                {VEHICLE_CLASSES.map((vehicleClass) => (
-                  <option key={vehicleClass} value={vehicleClass}>
-                    {vehicleClass}
+                {(
+                  vehicleClassesQuery.data?.classes ??
+                  VEHICLE_CLASSES.map((c) => ({ code: c, name: c }))
+                ).map((cls) => (
+                  <option key={cls.code} value={cls.code}>
+                    {cls.name || cls.code}
                   </option>
                 ))}
               </Select>
@@ -665,6 +791,38 @@ export function CarrierFleetPage() {
                   setRwcFormError(null);
                 }}
               />
+              <div className="sm:col-span-2 lg:col-span-3">
+                <ChoiceCheck
+                  checked={hasDgForm}
+                  onChange={(e) => {
+                    setHasDgForm(e.target.checked);
+                    if (!e.target.checked) setDgFile(null);
+                    setRwcFormError(null);
+                  }}
+                >
+                  {t('fleet.vehicleHasDg', {
+                    defaultValue: 'This vehicle is licensed for Dangerous Goods (DG)',
+                  })}
+                </ChoiceCheck>
+                {hasDgForm ? (
+                  <FileInput
+                    className="mt-2 mb-0"
+                    label={t('fleet.dgDocLabel', {
+                      defaultValue: 'Vehicle Dangerous Goods (DG) Licence Document',
+                    })}
+                    hint={t('fleet.dgDocHint', {
+                      defaultValue:
+                        'Required to bid this vehicle on Dangerous Goods jobs (document or image).',
+                    })}
+                    accept=".pdf,image/jpeg,image/png,image/webp"
+                    fileName={dgFile?.name ?? null}
+                    onChange={(event) => {
+                      setDgFile(event.target.files?.[0] ?? null);
+                      setRwcFormError(null);
+                    }}
+                  />
+                ) : null}
+              </div>
             </div>
             {rwcFormError || addMutation.isError ? (
               <Notice tone="error" className="mt-4">
@@ -709,9 +867,12 @@ export function CarrierFleetPage() {
                     <div className={dataCardClassName}>
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="truncate font-medium text-clox-ink">
-                            {row.registration ?? t('dash')}
-                          </p>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <p className="truncate font-medium text-clox-ink">
+                              {row.registration ?? t('dash')}
+                            </p>
+                            {row.hasDg ? <StatusPill tone="warn">DG</StatusPill> : null}
+                          </div>
                           <p className="mt-0.5 truncate text-xs text-clox-faint">
                             {row.label ?? t('dash')} · {row.vehicleClass ?? t('dash')}
                           </p>
@@ -759,7 +920,10 @@ export function CarrierFleetPage() {
                       className="border-t border-clox-border-soft hover:bg-clox-surface-alt/60"
                     >
                       <td className="px-4 py-3 align-top font-mono text-sm text-clox-ink">
-                        {row.registration ?? t('dash')}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span>{row.registration ?? t('dash')}</span>
+                          {row.hasDg ? <StatusPill tone="warn">DG</StatusPill> : null}
+                        </div>
                       </td>
                       <td className="px-4 py-3 align-top text-clox-mute">
                         {row.label ?? t('dash')}

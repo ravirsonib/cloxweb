@@ -12,6 +12,7 @@ import {
   createUploadIntent,
   getCarrierOnboarding,
   getErrorDetail,
+  getVehicleClassesMeta,
   inviteCarrierDriver,
   openDocumentContent,
   resendCarrierDriverInvite,
@@ -824,7 +825,7 @@ function ConnectStep({
 type VehicleForm = {
   label: string;
   registration: string;
-  vehicleClass: (typeof VEHICLE_CLASSES)[number];
+  vehicleClass: string;
   tareKg: number;
   gvmKg: number;
 };
@@ -846,9 +847,7 @@ function VehiclesStep({
     .object({
       label: z.string().trim().min(1, t('validation.vehicleLabelRequired')),
       registration: z.string().trim().min(1, t('validation.registrationRequired')),
-      vehicleClass: z.enum(VEHICLE_CLASSES, {
-        message: t('validation.vehicleClassRequired'),
-      }),
+      vehicleClass: z.string().min(1, t('validation.vehicleClassRequired')),
       tareKg: z
         .number({ message: t('validation.tareKgRequired') })
         .int()
@@ -869,6 +868,12 @@ function VehiclesStep({
         });
       }
     });
+
+  const vehicleClassesQuery = useQuery({
+    queryKey: ['jobs', 'meta', 'vehicle-classes'],
+    queryFn: () => getVehicleClassesMeta(),
+  });
+
   const form = useForm<VehicleForm>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -882,9 +887,16 @@ function VehiclesStep({
   const watchedClass = form.watch('vehicleClass');
   const setValue = form.setValue;
   useEffect(() => {
-    setValue('gvmKg', suggestedGvmKgForClass(watchedClass));
-    setValue('tareKg', suggestedTareKgForClass(watchedClass));
-  }, [watchedClass, setValue]);
+    if (!watchedClass) return;
+    const gvm =
+      vehicleClassesQuery.data?.suggestedGvmKg?.[watchedClass] ??
+      suggestedGvmKgForClass(watchedClass);
+    const tare =
+      vehicleClassesQuery.data?.suggestedTareKg?.[watchedClass] ??
+      suggestedTareKgForClass(watchedClass);
+    setValue('gvmKg', gvm);
+    setValue('tareKg', tare);
+  }, [watchedClass, setValue, vehicleClassesQuery.data]);
 
   async function uploadRwcForVehicle(vehicleId: string, file: File) {
     const mime = resolveUploadMime(file);
@@ -1050,9 +1062,12 @@ function VehiclesStep({
           value={form.watch('vehicleClass')}
           {...form.register('vehicleClass')}
         >
-          {VEHICLE_CLASSES.map((vehicleClass) => (
-            <option key={vehicleClass} value={vehicleClass}>
-              {vehicleClass}
+          {(
+            vehicleClassesQuery.data?.classes ??
+            VEHICLE_CLASSES.map((c) => ({ code: c, name: c }))
+          ).map((cls) => (
+            <option key={cls.code} value={cls.code}>
+              {cls.name || cls.code}
             </option>
           ))}
         </Select>

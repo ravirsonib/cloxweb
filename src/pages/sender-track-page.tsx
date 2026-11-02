@@ -11,6 +11,7 @@ import {
 import type { TripDocumentKind } from '@/lib/api/trips';
 import { LoadingBlock } from '@/components/status-blocks';
 import { Button, Notice, useToast } from '@/components/ui';
+import { formatDollars } from '@/lib/currency';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -160,8 +161,8 @@ export function SenderTrackPage() {
               .filter((s) => s.status === 'PENDING_PAYMENT')
               .map((s) => (
                 <li key={s.id}>
-                  {s.kind === 'WAITING' ? t('surcharges.kindWaiting') : t('surcharges.kindMass')} — $
-                  {(s.amountIncGstCents / 100).toFixed(2)} inc GST
+                  {s.kind === 'WAITING' ? t('surcharges.kindWaiting') : t('surcharges.kindMass')} —{' '}
+                  {formatDollars(s.amountIncGstCents)} inc GST
                 </li>
               ))}
           </ul>

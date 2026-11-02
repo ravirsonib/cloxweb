@@ -32,6 +32,7 @@ import {
 import type { SurchargeRow } from '@/lib/api/surcharges';
 import type { TripDocumentKind } from '@/lib/api/trips';
 import { cn } from '@/lib/cn';
+import { formatDollars } from '@/lib/currency';
 import {
   carrierDriverSelectLabel,
   carrierVehicleSelectLabel,
@@ -100,7 +101,7 @@ function ExceptionBadge({ exc }: { exc: SurchargeRow }) {
   const isPending = exc.status === 'PENDING_PAYMENT';
   return (
     <StatusPill tone={isPending ? 'warn' : 'neutral'}>
-      {label} ${(exc.amountIncGstCents / 100).toFixed(2)}
+      {label} {formatDollars(exc.amountIncGstCents)}
     </StatusPill>
   );
 }
@@ -445,7 +446,7 @@ export function CarrierAssignmentsPage() {
                           {a.paidAndConfirmed
                             ? ` · ${t('assignments.paidAndConfirmed')}`
                             : ` · ${t('assignments.awaitingPayment')}`}
-                          {' · '}${(a.amountIncGstCents / 100).toFixed(2)}
+                          {' · '}{formatDollars(a.amountIncGstCents)}
                           {a.tripBlockedUntilPaid
                             ? ` · ${t('assignments.tripBlocked')}`
                             : ` · ${t('assignments.tripGateOpen')}`}
@@ -512,7 +513,7 @@ export function CarrierAssignmentsPage() {
                     {exc.kind === 'WAITING' ? t('surcharges.kindWaiting') : t('surcharges.kindMass')}
                   </span>
                   <span className="ml-2 break-all font-mono text-xs text-clox-mute">
-                    ${(exc.amountIncGstCents / 100).toFixed(2)} · {exc.status}
+                    {formatDollars(exc.amountIncGstCents)} · {exc.status}
                   </span>
                 </div>
                 <span className="text-xs text-clox-faint">

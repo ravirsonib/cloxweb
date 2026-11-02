@@ -35,6 +35,7 @@ import {
   type AdminJobListItem,
 } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { formatDollars } from '@/lib/currency';
 import { formatDateTime } from '@/lib/leads';
 import {
   assignmentStatusTone,
@@ -57,10 +58,7 @@ const JOB_STATUSES = [
 
 function estimateLabel(cents: number | null | undefined, dash: string) {
   if (cents == null) return dash;
-  return `$${(cents / 100).toLocaleString('en-AU', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  return formatDollars(cents);
 }
 
 export function AdminJobsPage() {

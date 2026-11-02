@@ -11,11 +11,12 @@ import {
 } from '@/lib/api';
 import { Button, Field, Notice, useToast } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
+import { RevenueSplitBar } from '@/components/revenue-split-bar';
 import { AdminRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
-function poolSum(superP: number, stateP: number, localP: number) {
-  return superP + stateP + localP;
+function poolSum(carrierP: number, superP: number, stateP: number, localP: number) {
+  return carrierP + superP + stateP + localP;
 }
 
 export function RevenueSplitSettingsPage() {
@@ -35,6 +36,7 @@ export function RevenueSplitSettingsPage() {
     enabled: role === AdminRole.SUPER_ADMIN,
   });
 
+  const [carrierP, setCarrierP] = useState('70');
   const [superP, setSuperP] = useState('15');
   const [stateP, setStateP] = useState('10');
   const [localP, setLocalP] = useState('5');
@@ -43,14 +45,21 @@ export function RevenueSplitSettingsPage() {
   useEffect(() => {
     const p = settings.data?.effective.percents;
     if (!p) return;
+    setCarrierP(String(p.carrierPercent ?? 70));
     setSuperP(String(p.superPercent));
     setStateP(String(p.statePercent));
     setLocalP(String(p.localPercent));
   }, [settings.data]);
 
   const nationalSum = useMemo(
-    () => poolSum(Number(superP) || 0, Number(stateP) || 0, Number(localP) || 0),
-    [superP, stateP, localP],
+    () =>
+      poolSum(
+        Number(carrierP) || 0,
+        Number(superP) || 0,
+        Number(stateP) || 0,
+        Number(localP) || 0,
+      ),
+    [carrierP, superP, stateP, localP],
   );
 
   const invalidate = async () => {
@@ -63,6 +72,7 @@ export function RevenueSplitSettingsPage() {
   const draftMut = useMutation({
     mutationFn: () =>
       draftRevenueSplit({
+        carrierPercent: Math.round(Number(carrierP)),
         superPercent: Math.round(Number(superP)),
         statePercent: Math.round(Number(stateP)),
         localPercent: Math.round(Number(localP)),
@@ -79,6 +89,7 @@ export function RevenueSplitSettingsPage() {
     mutationFn: () =>
       publishRevenueSplit({
         draftId: settings.data?.draft?.id,
+        carrierPercent: Math.round(Number(carrierP)),
         superPercent: Math.round(Number(superP)),
         statePercent: Math.round(Number(stateP)),
         localPercent: Math.round(Number(localP)),
@@ -121,32 +132,73 @@ export function RevenueSplitSettingsPage() {
         <Notice tone="error">{getErrorDetail(settings.error)}</Notice>
       ) : null}
 
+      {/* ─── Effective National Policy Card with 100% Bar ─── */}
       {effective ? (
-        <div className="clox-card p-4 text-sm text-clox-mute">
-          <p className="font-semibold text-clox-ink">{t('revenueSplit.effectiveTitle')}</p>
-          <p className="mt-2 font-mono text-xs">
-            {t('revenueSplit.effectiveLine', {
-              carrier: effective.carrierPercent,
-              super: effective.superPercent,
-              state: effective.statePercent,
-              local: effective.localPercent,
-              version: settings.data?.effective.version ?? t('dash'),
-            })}
-          </p>
-        </div>
+        <section className="clox-card space-y-4 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-clox-border pb-3">
+            <div>
+              <h2 className="font-display text-base font-semibold text-clox-ink">
+                {t('revenueSplit.effectiveTitle')}
+              </h2>
+              <p className="text-xs text-clox-mute">
+                {t('revenueSplit.effectiveSubtitle', {
+                  defaultValue: 'Live 100% revenue distribution applied to new shipments upon settlement.',
+                })}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
+                v{settings.data?.effective.version ?? 1} · {t('revenueSplit.active', { defaultValue: 'Live Policy' })}
+              </span>
+            </div>
+          </div>
+
+          <RevenueSplitBar
+            carrier={effective.carrierPercent}
+            superAdmin={effective.superPercent}
+            stateMaster={effective.statePercent}
+            localBde={effective.localPercent}
+          />
+        </section>
       ) : null}
 
       <form
-        className="clox-card space-y-4 p-4"
+        className="clox-card space-y-4 p-5"
         onSubmit={(e) => {
           e.preventDefault();
           publishMut.mutate();
         }}
         noValidate
       >
-        <h2 className="font-display text-lg font-semibold">{t('revenueSplit.nationalTitle')}</h2>
-        <p className="text-xs text-clox-faint">{t('revenueSplit.carrierLocked')}</p>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-clox-border pb-3">
+          <div>
+            <h2 className="font-display text-base font-semibold text-clox-ink">
+              {t('revenueSplit.nationalTitle')}
+            </h2>
+            <p className="text-xs text-clox-faint">{t('revenueSplit.carrierDynamicHint')}</p>
+          </div>
+          <span className="text-xs text-clox-mute">
+            {t('revenueSplit.livePreview', { defaultValue: 'Live Edit Preview' })}
+          </span>
+        </div>
+
+        {/* Live preview bar as user adjusts numbers */}
+        <RevenueSplitBar
+          carrier={Number(carrierP) || 0}
+          superAdmin={Number(superP) || 0}
+          stateMaster={Number(stateP) || 0}
+          localBde={Number(localP) || 0}
+          showCards={false}
+        />
+
+        <div className="grid gap-3 sm:grid-cols-4 pt-2">
+          <Field
+            label={t('revenueSplit.carrierPercent', { defaultValue: 'Carrier %' })}
+            value={carrierP}
+            onChange={(e) => setCarrierP(e.target.value)}
+            inputMode="numeric"
+            required
+          />
           <Field
             label={t('revenueSplit.superPercent')}
             value={superP}
@@ -176,7 +228,9 @@ export function RevenueSplitSettingsPage() {
         />
         <p
           className={
-            nationalSum === 30 ? 'text-xs text-clox-mute' : 'text-xs text-[var(--status-danger)]'
+            nationalSum === 100
+              ? 'text-xs font-medium text-emerald-600 dark:text-emerald-400'
+              : 'text-xs font-semibold text-[var(--status-danger)]'
           }
         >
           {t('revenueSplit.poolSum', { sum: nationalSum })}
@@ -185,12 +239,16 @@ export function RevenueSplitSettingsPage() {
           <Button
             type="button"
             variant="secondary"
-            disabled={draftMut.isPending || nationalSum !== 30}
+            disabled={draftMut.isPending || nationalSum !== 100}
             onClick={() => draftMut.mutate()}
           >
             {draftMut.isPending ? t('saving') : t('revenueSplit.saveDraft')}
           </Button>
-          <Button type="submit" variant="cta" disabled={publishMut.isPending || nationalSum !== 30}>
+          <Button
+            type="submit"
+            variant="cta"
+            disabled={publishMut.isPending || nationalSum !== 100}
+          >
             {publishMut.isPending ? t('saving') : t('revenueSplit.publish')}
           </Button>
         </div>
@@ -201,6 +259,7 @@ export function RevenueSplitSettingsPage() {
         <ul className="mt-3 space-y-2 text-xs text-clox-mute">
           {(versions.data?.items ?? []).map((v) => {
             const payload = v.payload as {
+              carrierPercent?: number;
               superPercent?: number;
               statePercent?: number;
               localPercent?: number;
@@ -213,7 +272,7 @@ export function RevenueSplitSettingsPage() {
               >
                 v{v.version}
                 {v.publishedAt ? ` · ${t('revenueSplit.published')}` : ` · ${t('revenueSplit.draft')}`}
-                {` · S${payload.superPercent}/St${payload.statePercent}/L${payload.localPercent}`}
+                {` · C${payload.carrierPercent ?? 70}/S${payload.superPercent}/St${payload.statePercent}/L${payload.localPercent}`}
                 {payload.notes ? ` · ${payload.notes}` : ''}
               </li>
             );

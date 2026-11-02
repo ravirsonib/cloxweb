@@ -492,6 +492,17 @@ export const adminDashboardQuerySchema = z.object({
 
 export type AdminDashboardQuery = z.infer<typeof adminDashboardQuerySchema>;
 
+export const financeQuerySchema = z.object({
+  period: z.enum(['today', 'week', 'month', '30d', 'quarter', 'year', 'all']).optional(),
+  from: z.string().trim().optional(),
+  to: z.string().trim().optional(),
+  regionCode: z.string().trim().optional(),
+  companyId: z.string().uuid().optional(),
+  status: z.string().trim().optional(),
+});
+
+export type FinanceQuery = z.infer<typeof financeQuerySchema>;
+
 export const adminCompanyListQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),

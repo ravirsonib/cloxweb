@@ -35,6 +35,7 @@ import { getDashboardStats, getErrorDetail } from '@/lib/api';
 import { formatAuditAction } from '@/lib/audit-format';
 import { formatDateTime, formatLeadStatus, formatLeadType } from '@/lib/leads';
 import { cn } from '@/lib/cn';
+import { CURRENCY_SYMBOL, formatDollars } from '@/lib/currency';
 import type { AdminDashboardQuery } from '@/shared/types';
 
 export function DashboardPage() {
@@ -442,7 +443,7 @@ export function DashboardPage() {
                 <div className="font-display text-3xl font-extrabold text-clox-ink">
                   <AnimatedNumber
                     value={Math.round(analytics.jobs.totalEstimateCents / 100)}
-                    prefix="$"
+                    prefix={CURRENCY_SYMBOL}
                   />
                 </div>
                 <div className="mt-2 flex items-center gap-2 text-xs text-clox-mute">
@@ -604,7 +605,7 @@ export function DashboardPage() {
                       </div>
                       <div className="text-right shrink-0">
                         <div className="font-bold text-clox-ink">
-                          ${(job.estimateIncGstCents / 100).toFixed(2)}
+                          {formatDollars(job.estimateIncGstCents)}
                         </div>
                         <span className="mt-0.5 inline-block rounded bg-clox-surface px-1.5 py-0.5 font-mono text-[10px] text-clox-mute border border-clox-border">
                           {job.status}

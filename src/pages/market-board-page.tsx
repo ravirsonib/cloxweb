@@ -30,6 +30,7 @@ import {
 } from '@/components/ui';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import { cn } from '@/lib/cn';
+import { formatDollars, formatDollarsAmount } from '@/lib/currency';
 import {
   carrierDriverSelectLabel,
   carrierVehicleSelectLabel,
@@ -411,13 +412,13 @@ export function MarketBoardPage() {
                           ? ` ${t('market.fatigueSuffix', { minutes: j.routeFatigueBreakMinutes })}`
                           : ''}
                         {j.estimateNetToCarrierCents != null
-                          ? ` ${t('market.netApprox', { amount: (j.estimateNetToCarrierCents / 100).toFixed(2) })}`
+                          ? ` ${t('market.netApprox', { amount: formatDollars(j.estimateNetToCarrierCents) })}`
                           : ''}
                         {j.rescueDiscountPercent != null && j.rescueDiscountPercent > 0
                           ? ` · ${t('market.rescueDiscount', { percent: j.rescueDiscountPercent })}`
                           : ''}
                         {j.minBidIncGstCents != null
-                          ? ` · ${t('market.minBidHint', { amount: (j.minBidIncGstCents / 100).toFixed(2) })}`
+                          ? ` · ${t('market.minBidHint', { amount: formatDollars(j.minBidIncGstCents) })}`
                           : ''}
                       </p>
                       {j.requiresDg && j.dgDocumentId ? (
@@ -642,7 +643,10 @@ export function MarketBoardPage() {
             {...form.register('etaMinutes', { valueAsNumber: true })}
           />
           <p className="mb-4 text-xs text-clox-mute">
-            {t('market.yourNetApprox', { amount: ((Number(amountWatch) || 0) * 0.7).toFixed(2) })}
+            {t('market.yourNetApprox', {
+              amount: formatDollarsAmount((Number(amountWatch) || 0) * 0.7),
+              percent: 70,
+            })}
           </p>
           <Button
             type="submit"

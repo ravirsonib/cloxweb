@@ -43,6 +43,10 @@ import { SenderRegisterPage } from '@/pages/sender-register-page';
 import { SenderOnboardingPage } from '@/pages/sender-onboarding-page';
 import { SurchargesPage } from '@/pages/surcharges-page';
 import { PlatformSettingsPage } from '@/pages/platform-settings-page';
+import { FinancePage } from '@/pages/finance-page';
+import { CarrierEarningsPage } from '@/pages/carrier-earnings-page';
+import { SenderSpendPage } from '@/pages/sender-spend-page';
+import { PartnerCommissionsPage } from '@/pages/partner-commissions-page';
 import { AdminVehicleClassesPage } from '@/pages/admin-vehicle-classes-page';
 import { RevenueSplitSettingsPage } from '@/pages/revenue-split-settings-page';
 import { PartnerPerformancePage } from '@/pages/partner-performance-page';
@@ -164,6 +168,14 @@ export function AppRouter() {
           }
         />
         <Route
+          path="/finance"
+          element={
+            <SuperOnly>
+              <FinancePage />
+            </SuperOnly>
+          }
+        />
+        <Route
           path="/ops/partners"
           element={
             <SuperOnly>
@@ -180,9 +192,18 @@ export function AppRouter() {
           }
         />
         <Route
+          path="/ops/commissions"
+          element={
+            <RequireRoles roles={[AdminRole.LOCAL_BDE, AdminRole.STATE_MASTER, AdminRole.SUPER_ADMIN]}>
+              <PartnerCommissionsPage />
+            </RequireRoles>
+          }
+        />
+        <Route path="/partner/commissions" element={<Navigate to="/ops/commissions" replace />} />
+        <Route
           path="/ops/growth/invite"
           element={
-            <RequireRoles roles={[AdminRole.LOCAL_BDE]}>
+            <RequireRoles roles={[AdminRole.LOCAL_BDE, AdminRole.SUPER_ADMIN]}>
               <GrowthInvitePage />
             </RequireRoles>
           }
@@ -190,7 +211,7 @@ export function AppRouter() {
         <Route
           path="/ops/my-senders"
           element={
-            <RequireRoles roles={[AdminRole.LOCAL_BDE]}>
+            <RequireRoles roles={[AdminRole.LOCAL_BDE, AdminRole.SUPER_ADMIN]}>
               <MySendersPage />
             </RequireRoles>
           }
@@ -198,7 +219,7 @@ export function AppRouter() {
         <Route
           path="/ops/my-carriers"
           element={
-            <RequireRoles roles={[AdminRole.LOCAL_BDE]}>
+            <RequireRoles roles={[AdminRole.LOCAL_BDE, AdminRole.SUPER_ADMIN]}>
               <MyCarriersPage />
             </RequireRoles>
           }
@@ -287,6 +308,15 @@ export function AppRouter() {
         <Route path="/jobs/:id/edit" element={<JobEditPage />} />
         <Route path="/jobs/:id" element={<JobDetailPage />} />
         <Route
+          path="/spend"
+          element={
+            <RequireRoles roles={[AppRole.SENDER, AdminRole.SUPER_ADMIN]}>
+              <SenderSpendPage />
+            </RequireRoles>
+          }
+        />
+        <Route path="/sender/spend" element={<Navigate to="/spend" replace />} />
+        <Route
           path="/market"
           element={
             <RequireRoles roles={[AppRole.TRANSPORT_COMPANY]}>
@@ -315,6 +345,14 @@ export function AppRouter() {
           element={
             <RequireRoles roles={[AppRole.TRANSPORT_COMPANY]}>
               <CarrierExceptionDetailPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/carrier/earnings"
+          element={
+            <RequireRoles roles={[AppRole.TRANSPORT_COMPANY, AdminRole.SUPER_ADMIN]}>
+              <CarrierEarningsPage />
             </RequireRoles>
           }
         />

@@ -23,7 +23,9 @@ import {
   StatusPill,
   useToast,
 } from '@/components/ui';
+import { RevenueSplitBar } from '@/components/revenue-split-bar';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
+import { formatDollars } from '@/lib/currency';
 import { adminPartnerStatusTone } from '@/lib/status-tone';
 import { AdminRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
@@ -40,7 +42,7 @@ const STATUS_OPTIONS = [
 ] as const;
 
 function money(cents: number) {
-  return `$${(cents / 100).toFixed(2)}`;
+  return formatDollars(cents);
 }
 
 function hintTone(hint: PartnerPerformanceItem['hint']): 'ok' | 'warn' | 'neutral' {
@@ -108,8 +110,15 @@ export function PartnerPerformancePage() {
     enabled: role === AdminRole.SUPER_ADMIN,
   });
 
+  const nationalCarrier =
+    adjustTarget?.split.national.carrierPercent ??
+    perf.data?.national.carrierPercent ??
+    70;
+  const targetPool = 100 - nationalCarrier;
+
   const poolSum =
     (Number(superP) || 0) + (Number(stateP) || 0) + (Number(localP) || 0);
+  const isPoolValid = poolSum === targetPool;
 
   function updateFilter(key: string, value: string) {
     const next = new URLSearchParams(searchParams);
@@ -203,8 +212,23 @@ export function PartnerPerformancePage() {
                 </Button>
               </div>
               <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-                <p className="text-xs text-clox-faint">{t('partnerPerformance.adjustHint')}</p>
-                <div className="grid gap-3 sm:grid-cols-3">
+                <p className="text-xs text-clox-faint">
+                  {t('partnerPerformance.adjustHint', {
+                    carrier: nationalCarrier,
+                    target: targetPool,
+                  })}
+                </p>
+
+                {/* Live Revenue Split Bar for proposed personal package */}
+                <RevenueSplitBar
+                  carrier={nationalCarrier}
+                  superAdmin={Number(superP) || 0}
+                  stateMaster={Number(stateP) || 0}
+                  localBde={Number(localP) || 0}
+                  showCards={false}
+                />
+
+                <div className="grid gap-3 sm:grid-cols-3 pt-1">
                   <Field
                     label={t('revenueSplit.superPercent')}
                     value={superP}
@@ -231,12 +255,17 @@ export function PartnerPerformancePage() {
                 />
                 <p
                   className={
-                    poolSum === 30
-                      ? 'text-xs text-clox-mute'
-                      : 'text-xs text-[var(--status-danger)]'
+                    isPoolValid
+                      ? 'text-xs font-medium text-emerald-600 dark:text-emerald-400'
+                      : 'text-xs font-semibold text-[var(--status-danger)]'
                   }
                 >
-                  {t('revenueSplit.poolSum', { sum: poolSum })}
+                  {t('revenueSplit.poolSumAdmin', {
+                    sum: poolSum,
+                    target: targetPool,
+                    carrier: nationalCarrier,
+                    defaultValue: `Admin pool sum: ${poolSum} / ${targetPool}% (National Carrier: ${nationalCarrier}%)`,
+                  })}
                 </p>
               </div>
               <div className="border-t border-clox-border px-4 py-4">
@@ -244,7 +273,7 @@ export function PartnerPerformancePage() {
                   type="button"
                   variant="cta"
                   className="w-full"
-                  disabled={publishMut.isPending || poolSum !== 30}
+                  disabled={publishMut.isPending || !isPoolValid}
                   onClick={() => publishMut.mutate()}
                 >
                   {publishMut.isPending

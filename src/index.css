@@ -819,6 +819,8 @@
   }
 
   .cab-header {
+    position: sticky;
+    top: 0;
     z-index: 30;
     display: flex;
     height: 3.5rem;

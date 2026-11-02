@@ -52,6 +52,7 @@ import {
 } from '@/components/ui';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import { cn } from '@/lib/cn';
+import { formatDollars } from '@/lib/currency';
 import { resolveUploadMime } from '@/lib/upload-mime';
 import {
   countByBucket,
@@ -224,7 +225,7 @@ export function JobsListPage() {
         </div>
         <p className="mt-2 text-sm text-clox-mute">
           {j.estimate.incGstCents != null
-            ? `$${(j.estimate.incGstCents / 100).toFixed(2)}`
+            ? formatDollars(j.estimate.incGstCents)
             : t('dash')}
         </p>
         <div className="mt-2 space-y-0.5 text-[11px] text-clox-faint">
@@ -354,7 +355,7 @@ export function JobsListPage() {
                       </td>
                       <td className="px-4 py-3 text-clox-mute">
                         {j.estimate.incGstCents != null
-                          ? `$${(j.estimate.incGstCents / 100).toFixed(2)}`
+                          ? formatDollars(j.estimate.incGstCents)
                           : t('dash')}
                       </td>
                       <td className="px-4 py-3">
@@ -2526,7 +2527,7 @@ export function JobDetailPage() {
                 t('jobs.view.estimate'),
                 j.estimate.incGstCents != null
                   ? t('jobs.estimateIncGst', {
-                      amount: (j.estimate.incGstCents / 100).toFixed(2),
+                      amount: formatDollars(j.estimate.incGstCents),
                     })
                   : t('dash'),
               )}
@@ -2684,7 +2685,7 @@ export function JobDetailPage() {
                         ) : null}
                         <p className="text-sm text-clox-mute">
                           {t('jobs.view.bidAmount', {
-                            amount: (p.amountIncGstCents / 100).toFixed(2),
+                            amount: formatDollars(p.amountIncGstCents),
                           })}
                           {p.etaMinutes != null
                             ? ` · ${t('jobs.view.etaMinutes', { minutes: p.etaMinutes })}`

@@ -5,6 +5,7 @@ import type {
   AdminLeadExportQuery,
   AdminLeadListQuery,
   CreateLeadNoteInput,
+  FinanceQuery,
   UpdateLeadInput,
   VehicleClassCreateInput,
   VehicleClassDto,
@@ -189,6 +190,7 @@ export function getDashboardStats(
     .then((res) => res.data);
 }
 
+
 export function listLeads(
   query: Partial<AdminLeadListQuery> = {},
   options?: { signal?: AbortSignal },
@@ -231,6 +233,7 @@ export type PlatformSettings = {
   marketplaceRelistSlaMs: number;
   driverUnavailableScoreDelta: number;
   carrierMarketplaceReleaseScoreDelta: number;
+  carrierClearingDays: number;
   updatedAt: string;
 };
 
@@ -239,6 +242,7 @@ export type PlatformSettingsPatch = {
   marketplaceRelistSlaMs?: number;
   driverUnavailableScoreDelta?: number;
   carrierMarketplaceReleaseScoreDelta?: number;
+  carrierClearingDays?: number;
 };
 
 export function getPlatformSettings(options?: { signal?: AbortSignal }) {
@@ -541,7 +545,9 @@ export type RevenueSplitPercents = {
 
 export type RevenueSplitSettings = {
   carrierPercentFixed: number;
+  carrierPercent?: number;
   platformPercentFixed: number;
+  platformPercent?: number;
   effective: {
     policyVersionId: string | null;
     percents: RevenueSplitPercents;
@@ -624,7 +630,13 @@ export function listRevenueSplitScopes(options?: { signal?: AbortSignal }) {
 }
 
 export function draftRevenueSplit(
-  input: { superPercent: number; statePercent: number; localPercent: number; notes?: string },
+  input: {
+    carrierPercent?: number;
+    superPercent: number;
+    statePercent: number;
+    localPercent: number;
+    notes?: string;
+  },
   options?: { signal?: AbortSignal },
 ) {
   return http
@@ -635,6 +647,7 @@ export function draftRevenueSplit(
 export function publishRevenueSplit(
   input: {
     draftId?: string;
+    carrierPercent?: number;
     superPercent?: number;
     statePercent?: number;
     localPercent?: number;
@@ -788,3 +801,215 @@ export function getPartnerPerformance(
     })
     .then((res) => res.data);
 }
+
+export type SuperFinanceOverview = {
+  summary: {
+    gmvCents: number;
+    platformRevenueCents: number;
+    hqShareCents: number;
+    hqHoldingCents: number;
+    carrierPayoutsCents: number;
+    carrierPaidCents: number;
+    carrierPendingCents: number;
+    partnerCommissionsCents: number;
+    stateCommissionsCents: number;
+    localCommissionsCents: number;
+    netMarginPercent: number;
+    activeJobsCount: number;
+    completedJobsCount: number;
+  };
+  surcharges: {
+    totalCount: number;
+    totalAmountCents: number;
+    paidCount: number;
+    paidAmountCents: number;
+    pendingCount: number;
+    pendingAmountCents: number;
+    waivedCount: number;
+    waivedAmountCents: number;
+    byKind: {
+      mass: { count: number; amountCents: number; paidCents: number };
+      waiting: { count: number; amountCents: number; paidCents: number };
+    };
+  };
+  cashflowPipeline: {
+    escrowCents: number;
+    clearingCents: number;
+    disbursedCents: number;
+    refundedCents: number;
+  };
+  companies: {
+    topSenders: Array<{
+      id: string;
+      name: string;
+      spendCents: number;
+      jobsCount: number;
+      surchargesCents: number;
+    }>;
+    topCarriers: Array<{
+      id: string;
+      name: string;
+      tripsCount: number;
+      earningsCents: number;
+      paidCents: number;
+      clearingCents: number;
+    }>;
+  };
+  regionalBreakdown: Array<{
+    regionCode: string;
+    regionName: string;
+    gmvCents: number;
+    platformRevenueCents: number;
+    stateShareCents: number;
+    localShareCents: number;
+    jobsCount: number;
+  }>;
+  timeline: Array<{
+    date: string;
+    label: string;
+    gmvCents: number;
+    platformRevenueCents: number;
+    carrierPayoutsCents: number;
+    partnerCommissionsCents: number;
+  }>;
+};
+
+export function getSuperFinance(
+  query?: FinanceQuery,
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .get<SuperFinanceOverview>('/settlements/finance/super', {
+      params: query,
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export type CarrierFinanceOverview = {
+  companyName: string;
+  payoutsEnabled: boolean;
+  carrierPercent?: number;
+  clearingDays?: number;
+  summary: {
+    totalEarnedCents: number;
+    clearingCents: number;
+    paidOutCents: number;
+    inProgressCents: number;
+    surchargesEarnedCents: number;
+    completedTripsCount: number;
+    activeTripsCount: number;
+  };
+  recentTransfers: Array<{
+    id: string;
+    amountCents: number;
+    status: string;
+    stripeTransferId: string | null;
+    createdAt: string;
+  }>;
+  tripLedger: Array<{
+    tripId: string;
+    jobId: string;
+    jobTitle: string;
+    completedAt: string | null;
+    grossFareCents: number;
+    carrierNetCents: number;
+    surchargesCents: number;
+    status: 'PAID' | 'ACCRUED';
+  }>;
+};
+
+export function getCarrierFinance(
+  query?: FinanceQuery,
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .get<CarrierFinanceOverview>('/settlements/finance/carrier', {
+      params: query,
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export type SenderFinanceOverview = {
+  companyName: string;
+  summary: {
+    totalSpendIncGstCents: number;
+    totalSpendExGstCents: number;
+    totalGstCents: number;
+    surchargesSpendCents: number;
+    inEscrowCents: number;
+    completedJobsCount: number;
+    activeJobsCount: number;
+  };
+  surchargesBreakdown: {
+    massCents: number;
+    waitingCents: number;
+    pendingCents: number;
+  };
+  jobSpendHistory: Array<{
+    jobId: string;
+    jobTitle: string;
+    createdAt: string;
+    status: string;
+    baseFareIncGstCents: number;
+    surchargesIncGstCents: number;
+    totalPaidCents: number;
+    paymentStatus: string;
+  }>;
+};
+
+export function getSenderFinance(
+  query?: FinanceQuery,
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .get<SenderFinanceOverview>('/settlements/finance/sender', {
+      params: query,
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export type PartnerFinanceOverview = {
+  role: 'STATE_MASTER' | 'LOCAL_BDE';
+  adminName: string;
+  adminEmail: string;
+  scopeLabel: string;
+  summary: {
+    attributedGmvCents: number;
+    grossCommissionCents: number;
+    accruedCents: number;
+    settledCents: number;
+    activeJobsCount: number;
+    completedJobsCount: number;
+  };
+  bookOfBusiness: {
+    sendersCount: number;
+    carriersCount: number;
+    referredSpendCents: number;
+  };
+  recentSettlements: Array<{
+    id: string;
+    jobId: string;
+    jobTitle: string;
+    amountCents: number;
+    sharePercent: number;
+    status: string;
+    createdAt: string;
+    paidAt: string | null;
+  }>;
+};
+
+export function getPartnerFinance(
+  query?: FinanceQuery,
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .get<PartnerFinanceOverview>('/settlements/finance/partner', {
+      params: query,
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+

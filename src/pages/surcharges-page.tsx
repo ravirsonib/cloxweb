@@ -18,6 +18,7 @@ import {
   useToast,
 } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
+import { formatDollars } from '@/lib/currency';
 import type { SurchargeRow } from '@/lib/api/surcharges';
 import { AdminRole, AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
@@ -108,7 +109,7 @@ export function SurchargesPage() {
                       </div>
                       <p className="mt-1 font-mono text-xs text-clox-mute">
                         {t('surcharges.amount', {
-                          amount: (row.amountIncGstCents / 100).toFixed(2),
+                          amount: formatDollars(row.amountIncGstCents),
                         })}
                       </p>
                       {row.job ? (

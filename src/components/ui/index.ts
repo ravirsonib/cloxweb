@@ -40,6 +40,15 @@ export { ToastProvider, useToast, type ToastInput, type ToastTone } from './toas
 export { RoleBadge } from './role-badge';
 export { StatusFilterChips } from './status-filter-chips';
 export { StatusPill } from './status-pill';
+export {
+  Tooltip,
+  IconButton,
+  IconButtonLink,
+  type TooltipProps,
+  type TooltipPosition,
+  type IconButtonProps,
+  type IconButtonLinkProps,
+} from './tooltip';
 export { Timeline, type TimelineItem, type TimelineItemTone } from './timeline';
 export {
   InteractiveChart,
@@ -48,3 +57,29 @@ export {
   type ChartDataItem,
   type ChartVisualType,
 } from './interactive-chart';
+export { ActionGroup, type ActionGroupProps } from './action-group';
+export {
+  Money,
+  Currency,
+  type MoneyProps,
+  formatCurrency,
+  formatDollarsAmount,
+  formatCompactCurrency,
+  CURRENCY_SYMBOL,
+  CURRENCY_CODE,
+  getCurrencyCode,
+  getCurrencySymbol,
+  setCurrencyConfig,
+} from './currency';
+export {
+  PhoneLink,
+  EmailLink,
+  type PhoneLinkProps,
+  type EmailLinkProps,
+} from './contact-links';
+export {
+  DetailRow,
+  DescriptionList,
+  type DetailRowProps,
+  type DescriptionListProps,
+} from './detail-row';

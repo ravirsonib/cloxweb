@@ -4,6 +4,8 @@ import type {
   AdminDashboardQuery,
   AdminLeadExportQuery,
   AdminLeadListQuery,
+  CompanyStatus,
+  CompanyType,
   CreateLeadNoteInput,
   FinanceQuery,
   UpdateLeadInput,
@@ -338,6 +340,113 @@ export function reactivateCompany(id: string, options?: { signal?: AbortSignal }
 export function deleteCompany(id: string, options?: { signal?: AbortSignal }) {
   return http
     .delete<{ ok: true; id: string }>(`/admin/companies/${id}`, {
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export type CompanyComplianceDoc = {
+  id: string;
+  docType: string;
+  status: string;
+  originalFilename: string | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  expiresAt: string | null;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  createdAt: string;
+};
+
+export type CompanyDetailVehicle = {
+  id: string;
+  label: string | null;
+  registration: string;
+  vehicleClass: string;
+  tareKg: number;
+  gvmKg: number;
+  gcmKg: number | null;
+  status: string;
+  disabledAt: string | null;
+  disabledReason: string | null;
+  disabledNote: string | null;
+  createdAt: string;
+  documents: CompanyComplianceDoc[];
+};
+
+export type CompanyDetailDriver = {
+  id: string;
+  status: string;
+  licenceNo: string | null;
+  licenceClass: string | null;
+  licenceExpiry: string | null;
+  reliabilityScore: number;
+  disabledAt: string | null;
+  disabledReason: string | null;
+  disabledNote: string | null;
+  createdAt: string;
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    phone: string | null;
+    status: string;
+  };
+  documents: CompanyComplianceDoc[];
+};
+
+export type CompanyDetail = {
+  company: {
+    id: string;
+    type: CompanyType;
+    status: CompanyStatus;
+    legalName: string;
+    tradingName: string | null;
+    abn: string | null;
+    acn: string | null;
+    email: string | null;
+    phone: string | null;
+    address: string | null;
+    homeRegion: { code: string; name: string } | null;
+    serviceRegionCodes: string[];
+    capabilities: string[];
+    stripeConnectAccountId: string | null;
+    stripeConnectPayoutsEnabled: boolean;
+    reliabilityScore: number;
+    suspendedAt: string | null;
+    suspendedReason: string | null;
+    suspendedNote: string | null;
+    statusBeforeSuspend: CompanyStatus | null;
+    referredAt: string | null;
+    referredByAdminUser: { id: string; name: string | null; email: string; role: string } | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+  documents: CompanyComplianceDoc[];
+  vehicles: CompanyDetailVehicle[];
+  drivers: CompanyDetailDriver[];
+  users: Array<{
+    id: string;
+    email: string;
+    name: string | null;
+    phone: string | null;
+    role: string;
+    status: string;
+    createdAt: string;
+  }>;
+  complianceCases: Array<{
+    id: string;
+    caseType: string;
+    status: string;
+    decisionNote: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+};
+
+export function getCompany(id: string, options?: { signal?: AbortSignal }) {
+  return http
+    .get<CompanyDetail>(`/admin/companies/${id}`, {
       signal: options?.signal,
     })
     .then((res) => res.data);

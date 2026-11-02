@@ -17,6 +17,7 @@ export type GrowthCompany = {
   phone: string | null;
   abn: string | null;
   referredAt: string | null;
+  reliabilityScore?: number;
   createdAt: string;
   homeRegion: { code: string; name: string } | null;
 };

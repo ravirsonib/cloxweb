@@ -17,6 +17,7 @@ import {
   DataTable,
   Field,
   Notice,
+  PaginationBar,
   ResponsiveDataView,
   RoleBadge,
   Select,
@@ -539,25 +540,13 @@ export function PartnerPerformancePage() {
       )}
 
       {items.length > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-clox-mute">
-          <Button
-            variant="secondary"
-            disabled={page <= 1 || perf.isFetching}
-            onClick={() => updateFilter('page', String(page - 1))}
-          >
-            {t('previous')}
-          </Button>
-          <span className="order-first w-full text-center sm:order-none sm:w-auto">
-            {t('pageOf', { page, totalPages })}
-          </span>
-          <Button
-            variant="secondary"
-            disabled={page >= totalPages || perf.isFetching}
-            onClick={() => updateFilter('page', String(page + 1))}
-          >
-            {t('next')}
-          </Button>
-        </div>
+        <PaginationBar
+          page={page}
+          totalPages={totalPages}
+          totalCount={total}
+          disabled={perf.isFetching}
+          onPageChange={(p) => updateFilter('page', String(p))}
+        />
       ) : null}
 
       {adjustPanel}

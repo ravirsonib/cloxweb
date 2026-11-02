@@ -9,6 +9,7 @@ import { AuditPage } from '@/pages/audit-page';
 import { LeadDetailPage } from '@/pages/lead-detail-page';
 import { AdminJobDetailPage, AdminJobsPage } from '@/pages/admin-jobs-page';
 import { CompaniesPage } from '@/pages/companies-page';
+import { CompanyDetailPage } from '@/pages/company-detail-page';
 import { LeadsPage } from '@/pages/leads-page';
 import { LoginPage } from '@/pages/login-page';
 import { ComplianceCasePage, ComplianceQueuePage } from '@/pages/compliance-pages';
@@ -149,6 +150,14 @@ export function AppRouter() {
             <SuperOnly>
               <CompaniesPage />
             </SuperOnly>
+          }
+        />
+        <Route
+          path="/companies/:id"
+          element={
+            <OpsOnly>
+              <CompanyDetailPage />
+            </OpsOnly>
           }
         />
         <Route

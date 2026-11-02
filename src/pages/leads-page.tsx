@@ -4,16 +4,24 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import {
+  ActionGroup,
   Button,
   DataCardList,
   DataTable,
+  EmailLink,
+  IconButton,
   Notice,
+  PaginationBar,
+  PhoneLink,
   ResponsiveDataView,
   Select,
-  useConfirm,
-  useToast,
+  ViewModeToggle,
   dataCardClassName,
+  useConfirm,
+  useDataViewMode,
+  useToast,
 } from '@/components/ui';
+import { Trash2 } from 'lucide-react';
 import { deleteLead, exportLeadsCsv, getErrorDetail, listLeads, updateLead } from '@/lib/api';
 import {
   LEAD_STATUS_KEYS,
@@ -38,6 +46,7 @@ export function LeadsPage() {
   const type = (searchParams.get('type') || '') as LeadType | '';
   const status = (searchParams.get('status') || '') as LeadStatus | '';
 
+  const [viewMode, setViewMode] = useDataViewMode('leads', 'list');
   const [searchDraft, setSearchDraft] = useState(q);
 
   const query = useMemo(
@@ -165,8 +174,11 @@ export function LeadsPage() {
 
   function deleteButton(lead: LeadListItem) {
     return (
-      <Button
+      <IconButton
         type="button"
+        icon={Trash2}
+        label={t('admin.deleteLead')}
+        tooltip={t('admin.deleteLead')}
         variant="destructive"
         size="sm"
         disabled={busy}
@@ -175,9 +187,44 @@ export function LeadsPage() {
           stopRowNav(event);
           void onDelete(lead);
         }}
-      >
-        {t('admin.deleteLead')}
-      </Button>
+      />
+    );
+  }
+
+  function renderLeadCard(lead: LeadListItem) {
+    return (
+      <div className={`${dataCardClassName} h-full flex flex-col justify-between`}>
+        <div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <Link
+                to={`/leads/${lead.id}`}
+                className="truncate font-medium text-clox-ink hover:text-clox-orange block"
+              >
+                {lead.companyName || lead.email}
+                {lead.priority ? (
+                  <span className="ml-2 text-xs text-clox-orange">★</span>
+                ) : null}
+              </Link>
+              <div className="mt-1 flex flex-col gap-0.5">
+                <EmailLink email={lead.email} maxWidthClassName="max-w-[200px]" />
+                {lead.phone ? <PhoneLink phone={lead.phone} /> : null}
+              </div>
+            </div>
+            {statusSelect(lead)}
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-clox-border-soft pt-3">
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-clox-mute">
+            <span>{formatLeadType(lead.type)}</span>
+            <span>
+              {[lead.state, lead.territory].filter(Boolean).join(' · ') || t('dash')}
+            </span>
+            <span>{formatDateTime(lead.createdAt)}</span>
+          </div>
+          <ActionGroup>{deleteButton(lead)}</ActionGroup>
+        </div>
+      </div>
     );
   }
 
@@ -190,9 +237,14 @@ export function LeadsPage() {
           </h1>
           <p className="mt-2 text-sm text-clox-mute">{t('totalCount', { count: total })}</p>
         </div>
-        <Button variant="secondary" onClick={() => void onExport()} disabled={exporting}>
-          {exporting ? t('loading') : t('admin.exportCsv')}
-        </Button>
+        <div className="flex items-center gap-2">
+          {items.length > 0 ? (
+            <ViewModeToggle value={viewMode} onChange={setViewMode} />
+          ) : null}
+          <Button variant="secondary" onClick={() => void onExport()} disabled={exporting}>
+            {exporting ? t('loading') : t('admin.exportCsv')}
+          </Button>
+        </div>
       </div>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:items-end">
@@ -259,6 +311,14 @@ export function LeadsPage() {
             <div className="mt-6">
               <EmptyBlock title={t('admin.noLeads')} description={t('admin.noLeadsHint')} />
             </div>
+          ) : viewMode === 'grid' ? (
+            <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {items.map((lead) => (
+                <div key={lead.id} className="min-w-0 h-full">
+                  {renderLeadCard(lead)}
+                </div>
+              ))}
+            </div>
           ) : (
             <ResponsiveDataView
               className="mt-6"
@@ -266,38 +326,7 @@ export function LeadsPage() {
                 <DataCardList
                   items={items}
                   getKey={(lead) => lead.id}
-                  renderItem={(lead) => (
-                    <div className={dataCardClassName}>
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0">
-                          <Link
-                            to={`/leads/${lead.id}`}
-                            className="truncate font-medium text-clox-ink hover:text-clox-orange"
-                          >
-                            {lead.companyName || lead.email}
-                            {lead.priority ? (
-                              <span className="ml-2 text-xs text-clox-orange">★</span>
-                            ) : null}
-                          </Link>
-                          <p className="mt-0.5 truncate text-xs text-clox-faint">{lead.email}</p>
-                          {lead.phone ? (
-                            <p className="truncate text-xs text-clox-faint">{lead.phone}</p>
-                          ) : null}
-                        </div>
-                        {statusSelect(lead)}
-                      </div>
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-clox-mute">
-                          <span>{formatLeadType(lead.type)}</span>
-                          <span>
-                            {[lead.state, lead.territory].filter(Boolean).join(' · ') || t('dash')}
-                          </span>
-                          <span>{formatDateTime(lead.createdAt)}</span>
-                        </div>
-                        {deleteButton(lead)}
-                      </div>
-                    </div>
-                  )}
+                  renderItem={renderLeadCard}
                 />
               }
               table={
@@ -311,6 +340,14 @@ export function LeadsPage() {
                     t('admin.colCreated'),
                     t('admin.colActions'),
                   ]}
+                  headerClassNames={[
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    'text-right',
+                  ]}
                 >
                   {items.map((lead) => (
                     <tr
@@ -320,17 +357,17 @@ export function LeadsPage() {
                       <td className="px-4 py-3">
                         <Link
                           to={`/leads/${lead.id}`}
-                          className="font-medium text-clox-ink hover:text-clox-orange"
+                          className="font-medium text-clox-ink hover:text-clox-orange block"
                         >
                           {lead.companyName || lead.email}
                           {lead.priority ? (
                             <span className="ml-2 text-xs text-clox-orange">★</span>
                           ) : null}
                         </Link>
-                        <div className="text-xs text-clox-faint">{lead.email}</div>
-                        {lead.phone ? (
-                          <div className="text-xs text-clox-faint">{lead.phone}</div>
-                        ) : null}
+                        <div className="mt-0.5 flex flex-col gap-0.5">
+                          <EmailLink email={lead.email} maxWidthClassName="max-w-[200px]" />
+                          {lead.phone ? <PhoneLink phone={lead.phone} /> : null}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-clox-mute">{formatLeadType(lead.type)}</td>
                       <td className="px-4 py-3">{statusSelect(lead)}</td>
@@ -340,7 +377,9 @@ export function LeadsPage() {
                       <td className="whitespace-nowrap px-4 py-3 text-clox-mute">
                         {formatDateTime(lead.createdAt)}
                       </td>
-                      <td className="px-4 py-3">{deleteButton(lead)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <ActionGroup>{deleteButton(lead)}</ActionGroup>
+                      </td>
                     </tr>
                   ))}
                 </DataTable>
@@ -351,25 +390,13 @@ export function LeadsPage() {
       ) : null}
 
       {items.length > 0 ? (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-clox-mute">
-          <Button
-            variant="secondary"
-            disabled={page <= 1}
-            onClick={() => updateFilter('page', String(page - 1))}
-          >
-            {t('previous')}
-          </Button>
-          <span className="order-first w-full text-center sm:order-none sm:w-auto">
-            {t('pageOf', { page, totalPages })}
-          </span>
-          <Button
-            variant="secondary"
-            disabled={page >= totalPages}
-            onClick={() => updateFilter('page', String(page + 1))}
-          >
-            {t('next')}
-          </Button>
-        </div>
+        <PaginationBar
+          page={page}
+          totalPages={totalPages}
+          totalCount={total}
+          disabled={busy}
+          onPageChange={(p) => updateFilter('page', String(p))}
+        />
       ) : null}
     </div>
   );

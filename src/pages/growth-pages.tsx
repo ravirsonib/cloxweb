@@ -802,12 +802,24 @@ function MyCompaniesPage({ type }: { type: 'SENDER' | 'CARRIER' }) {
       <div className={dataCardClassName}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="truncate font-medium text-clox-ink">{row.legalName}</p>
+            <Link
+              to={`/companies/${row.id}`}
+              className="truncate font-medium text-clox-ink hover:text-clox-orange hover:underline block"
+            >
+              {row.legalName}
+            </Link>
             <p className="mt-0.5 truncate text-xs text-clox-faint">{row.email ?? t('dash')}</p>
           </div>
-          <StatusPill tone={companyStatusTone(row.status)}>
-            {t(`companyStatuses.${row.status}`, { defaultValue: row.status })}
-          </StatusPill>
+          <div className="flex flex-col items-end gap-1">
+            <StatusPill tone={companyStatusTone(row.status)}>
+              {t(`companyStatuses.${row.status}`, { defaultValue: row.status })}
+            </StatusPill>
+            {type === 'CARRIER' && typeof row.reliabilityScore === 'number' ? (
+              <StatusPill tone="info">
+                {t('companies.reliabilityScore', { score: row.reliabilityScore })}
+              </StatusPill>
+            ) : null}
+          </div>
         </div>
         <p className="mt-3 text-xs text-clox-mute">
           {t('growth.referredAt')}:{' '}
@@ -1034,11 +1046,25 @@ function MyCompaniesPage({ type }: { type: 'SENDER' | 'CARRIER' }) {
                     key={r.id}
                     className="border-t border-clox-border-soft hover:bg-clox-surface-alt/60"
                   >
-                    <td className="px-4 py-3 font-medium text-clox-ink">{r.legalName}</td>
                     <td className="px-4 py-3">
-                      <StatusPill tone={companyStatusTone(r.status)}>
-                        {t(`companyStatuses.${r.status}`, { defaultValue: r.status })}
-                      </StatusPill>
+                      <Link
+                        to={`/companies/${r.id}`}
+                        className="font-medium text-clox-ink hover:text-clox-orange hover:underline block"
+                      >
+                        {r.legalName}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col items-start gap-1">
+                        <StatusPill tone={companyStatusTone(r.status)}>
+                          {t(`companyStatuses.${r.status}`, { defaultValue: r.status })}
+                        </StatusPill>
+                        {type === 'CARRIER' && typeof r.reliabilityScore === 'number' ? (
+                          <StatusPill tone="info">
+                            {t('companies.reliabilityScore', { score: r.reliabilityScore })}
+                          </StatusPill>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-clox-mute">{r.email ?? t('dash')}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-clox-mute">

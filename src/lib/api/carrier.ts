@@ -25,6 +25,7 @@ export type CarrierOnboarding = {
     stripeConnectPayoutsEnabled: boolean;
     capabilities: string[];
     serviceRegionCodes: string[];
+    reliabilityScore?: number;
   };
   vehicles: Array<{
     id: string;

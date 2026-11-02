@@ -6,7 +6,10 @@ import { LoadingBlock } from '@/components/status-blocks';
 import { KeyValueList } from '@/components/identity-summary';
 import {
   Button,
+  DetailRow,
+  EmailLink,
   Notice,
+  PhoneLink,
   SearchableSelect,
   Select,
   TextArea,
@@ -236,36 +239,33 @@ export function LeadDetailPage() {
               <h1 className="mt-2 break-words font-display text-2xl font-bold text-clox-ink sm:text-3xl">
                 {lead.companyName || lead.email}
               </h1>
-              <p className="mt-1 break-all text-clox-mute">{lead.email}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <EmailLink email={lead.email} badge />
+                {lead.phone ? <PhoneLink phone={lead.phone} badge /> : null}
+              </div>
               <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
-                <div>
-                  <dt className="text-clox-faint">{t('admin.phone')}</dt>
-                  <dd className="text-clox-ink">{lead.phone || t('dash')}</dd>
-                </div>
-                <div>
-                  <dt className="text-clox-faint">{t('admin.abnAcn')}</dt>
-                  <dd className="text-clox-ink">
+                <DetailRow label={t('admin.phone')} layout="stacked">
+                  <PhoneLink phone={lead.phone} />
+                </DetailRow>
+                <DetailRow label={t('admin.abnAcn')} layout="stacked">
+                  <span className="font-mono">
                     {[lead.abn, lead.acn].filter(Boolean).join(' / ') || t('dash')}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-clox-faint">{t('admin.location')}</dt>
-                  <dd className="text-clox-ink">
+                  </span>
+                </DetailRow>
+                <DetailRow label={t('admin.location')} layout="stacked">
+                  <span>
                     {[lead.state, lead.territory].filter(Boolean).join(' · ') || t('dash')}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-clox-faint">{t('admin.source')}</dt>
-                  <dd className="text-clox-ink">{lead.source || t('dash')}</dd>
-                </div>
-                <div>
-                  <dt className="text-clox-faint">{t('admin.created')}</dt>
-                  <dd className="text-clox-ink">{formatDateTime(lead.createdAt)}</dd>
-                </div>
-                <div>
-                  <dt className="text-clox-faint">{t('admin.updated')}</dt>
-                  <dd className="text-clox-ink">{formatDateTime(lead.updatedAt)}</dd>
-                </div>
+                  </span>
+                </DetailRow>
+                <DetailRow label={t('admin.source')} layout="stacked">
+                  <span>{lead.source || t('dash')}</span>
+                </DetailRow>
+                <DetailRow label={t('admin.created')} layout="stacked">
+                  <span>{formatDateTime(lead.createdAt)}</span>
+                </DetailRow>
+                <DetailRow label={t('admin.updated')} layout="stacked">
+                  <span>{formatDateTime(lead.updatedAt)}</span>
+                </DetailRow>
               </dl>
             </section>
 

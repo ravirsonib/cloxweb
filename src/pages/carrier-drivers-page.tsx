@@ -7,9 +7,11 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import {
+  ActionGroup,
   Button,
   DataCardList,
   DataTable,
+  EmailLink,
   Field,
   Notice,
   PaginationBar,
@@ -315,7 +317,7 @@ export function CarrierDriversPage() {
   function renderActions(row: CarrierDriverListItem) {
     const isSuspended = row.status === 'SUSPENDED' || row.status === 'DISABLED';
     return (
-      <div className="inline-flex max-w-full flex-wrap items-center gap-1.5 sm:flex-nowrap sm:whitespace-nowrap">
+      <ActionGroup className="max-w-full flex-wrap sm:flex-nowrap">
         <Button
           type="button"
           variant="secondary"
@@ -372,7 +374,7 @@ export function CarrierDriversPage() {
         >
           {t('drivers.delete')}
         </Button>
-      </div>
+      </ActionGroup>
     );
   }
 
@@ -396,9 +398,18 @@ export function CarrierDriversPage() {
           <h1 className="font-display text-2xl font-bold text-clox-ink sm:text-3xl">
             {t('drivers.title')}
           </h1>
-          <p className="mt-2 text-sm text-clox-mute">
-            {t('drivers.subtitle')} · {t('totalCount', { count: items.length })}
-          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-clox-mute">
+            <span>
+              {t('drivers.subtitle')} · {t('totalCount', { count: items.length })}
+            </span>
+            {typeof meQuery.data?.company?.reliabilityScore === 'number' ? (
+              <StatusPill tone="info">
+                {t('companies.reliabilityScore', {
+                  score: meQuery.data.company.reliabilityScore,
+                })}
+              </StatusPill>
+            ) : null}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           {busy ? (
@@ -532,7 +543,7 @@ export function CarrierDriversPage() {
                           <p className="truncate font-medium text-clox-ink">
                             {row.user.name ?? t('dash')}
                           </p>
-                          <p className="mt-0.5 truncate text-xs text-clox-faint">{row.user.email}</p>
+                          <EmailLink email={row.user.email} maxWidthClassName="max-w-[200px]" />
                         </div>
                         <div className="shrink-0">{renderLicenceExpiry(row)}</div>
                       </div>
@@ -577,7 +588,9 @@ export function CarrierDriversPage() {
                       <td className="px-4 py-3 align-top text-clox-ink">
                         {row.user.name ?? t('dash')}
                       </td>
-                      <td className="px-4 py-3 align-top text-clox-mute">{row.user.email}</td>
+                      <td className="px-4 py-3 align-top text-clox-mute">
+                        <EmailLink email={row.user.email} />
+                      </td>
                       <td className="px-4 py-3 align-top font-mono text-xs text-clox-mute">
                         {row.licenceNo ?? t('dash')}
                         {row.licenceClass ? ` · ${row.licenceClass}` : ''}

@@ -4,17 +4,26 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import {
+  ActionGroup,
   Button,
   DataCardList,
   DataTable,
+  EmailLink,
+  IconButton,
+  IconButtonLink,
   Notice,
+  PaginationBar,
+  PhoneLink,
   ResponsiveDataView,
   Select,
   StatusPill,
+  ViewModeToggle,
   dataCardClassName,
   useConfirm,
+  useDataViewMode,
   useToast,
 } from '@/components/ui';
+import { Ban, Eye, RotateCcw, Trash2, UserCheck } from 'lucide-react';
 import {
   deleteCompany,
   disableCompany,
@@ -61,6 +70,7 @@ export function CompaniesPage() {
   const [reassignTarget, setReassignTarget] = useState<CompanyListItem | null>(null);
   const [reassignLocalId, setReassignLocalId] = useState<string>('');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useDataViewMode('companies', 'list');
 
   const page = Number(searchParams.get('page') || '1') || 1;
   const q = searchParams.get('q') || '';
@@ -204,78 +214,160 @@ export function CompaniesPage() {
   }
 
   function renderActions(row: CompanyListItem) {
-    const reassignBtn = (
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        disabled={busy}
-        onClick={() => {
-          setActionError(null);
-          setReassignLocalId('');
-          setReassignTarget(row);
-        }}
-      >
-        {t('growth.reassignConfirm')}
-      </Button>
-    );
-    if (row.status === CompanyStatus.DRAFT) {
-      return (
-        <div className="flex flex-wrap justify-end gap-2">
-          {reassignBtn}
-          <Button
-            type="button"
+    const isDraft = row.status === CompanyStatus.DRAFT;
+    const isSuspended = row.status === CompanyStatus.SUSPENDED;
+
+    return (
+      <ActionGroup>
+        <IconButtonLink
+          to={`/companies/${row.id}`}
+          icon={Eye}
+          label={t('companies.viewDetails')}
+          tooltip={t('companies.viewDetails')}
+          variant="secondary"
+          size="sm"
+        />
+        <IconButton
+          icon={UserCheck}
+          label={t('growth.reassignConfirm')}
+          tooltip={t('growth.reassignConfirm')}
+          variant="secondary"
+          size="sm"
+          disabled={busy}
+          onClick={() => {
+            setActionError(null);
+            setReassignLocalId('');
+            setReassignTarget(row);
+          }}
+        />
+        {isDraft ? (
+          <IconButton
+            icon={Trash2}
+            label={t('companies.delete')}
+            tooltip={t('companies.delete')}
             variant="destructive"
             size="sm"
             disabled={busy}
             onClick={() => void onDelete(row)}
-          >
-            {t('companies.delete')}
-          </Button>
-        </div>
-      );
-    }
-    if (row.status === CompanyStatus.SUSPENDED) {
-      return (
-        <div className="flex flex-wrap justify-end gap-2">
-          {reassignBtn}
-          <Button
-            type="button"
-            variant="secondary"
+          />
+        ) : isSuspended ? (
+          <IconButton
+            icon={RotateCcw}
+            label={t('companies.reactivate')}
+            tooltip={t('companies.reactivate')}
+            variant="success"
             size="sm"
             disabled={busy}
             onClick={() => void onReactivate(row)}
-          >
-            {t('companies.reactivate')}
-          </Button>
-        </div>
-      );
-    }
+          />
+        ) : (
+          <IconButton
+            icon={Ban}
+            label={t('companies.disable')}
+            tooltip={t('companies.disable')}
+            variant="destructive"
+            size="sm"
+            disabled={busy}
+            onClick={() => void onDisable(row)}
+          />
+        )}
+      </ActionGroup>
+    );
+  }
+
+  function renderCompanyCard(row: CompanyListItem) {
     return (
-      <div className="flex flex-wrap justify-end gap-2">
-        {reassignBtn}
-        <Button
-          type="button"
-          variant="destructive"
-          size="sm"
-          disabled={busy}
-          onClick={() => void onDisable(row)}
-        >
-          {t('companies.disable')}
-        </Button>
+      <div className={`${dataCardClassName} h-full flex flex-col justify-between`}>
+        <div>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <Link
+                to={`/companies/${row.id}`}
+                className="truncate font-medium text-clox-ink hover:text-clox-orange hover:underline block"
+              >
+                {row.legalName}
+              </Link>
+              {row.tradingName ? (
+                <p className="truncate text-xs text-clox-faint">{row.tradingName}</p>
+              ) : null}
+              <div className="mt-1.5 flex flex-col gap-1">
+                {row.phone ? <PhoneLink phone={row.phone} /> : null}
+                {row.email ? <EmailLink email={row.email} /> : null}
+              </div>
+            </div>
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              <StatusPill tone={companyStatusTone(row.status)}>
+                {t(`companyStatuses.${row.status}`, { defaultValue: row.status })}
+              </StatusPill>
+              {row.type === 'CARRIER' && typeof row.reliabilityScore === 'number' ? (
+                <StatusPill tone="info">
+                  {t('companies.reliabilityScore', { score: row.reliabilityScore })}
+                </StatusPill>
+              ) : null}
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-clox-mute">
+            <span className="font-medium text-clox-ink">
+              {row.type === 'CARRIER'
+                ? t('companies.typeCarrier')
+                : t('companies.typeSender')}
+            </span>
+            {row.homeRegion?.code ? (
+              <span className="rounded bg-clox-surface-alt px-1.5 py-0.5 font-mono font-medium text-clox-ink">
+                {row.homeRegion.code}
+              </span>
+            ) : null}
+            {row.abn ? <span className="font-mono">ABN {row.abn}</span> : null}
+            <span>
+              {row.type === 'CARRIER'
+                ? t('companies.fleetCounts', {
+                    vehicles: row.counts.vehicles,
+                    drivers: row.counts.drivers,
+                  })
+                : t('companies.fleetCountsSender', {
+                    users: row.counts.users,
+                  })}
+            </span>
+            <span>{formatDateTime(row.createdAt)}</span>
+          </div>
+          {row.status === CompanyStatus.SUSPENDED && row.suspendedReason ? (
+            <p className="mt-2 text-xs text-clox-mute bg-clox-surface-alt/70 p-2 rounded border border-clox-border-soft">
+              <strong className="text-clox-danger">{t('companies.suspendedReasonLabel')}:</strong> {row.suspendedReason}
+            </p>
+          ) : null}
+          {row.openCase ? (
+            <Link
+              to={`/compliance/${row.openCase.id}`}
+              className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-clox-orange hover:underline"
+            >
+              <StatusPill tone={complianceCaseStatusTone(row.openCase.status)}>
+                Case {row.openCase.status}
+              </StatusPill>
+            </Link>
+          ) : null}
+        </div>
+        <div className="mt-4 flex items-center justify-between border-t border-clox-border-soft pt-3">
+          <span className="text-xs text-clox-mute">{t('companies.colActions')}:</span>
+          {renderActions(row)}
+        </div>
       </div>
     );
   }
 
   return (
     <div>
-      <div>
-        <h1 className="font-display text-2xl font-bold text-clox-ink sm:text-3xl">
-          {t('companies.title')}
-        </h1>
-        <p className="mt-2 text-sm text-clox-mute">
-          {t('companies.subtitle')} · {t('totalCount', { count: total })}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-clox-ink sm:text-3xl">
+            {t('companies.title')}
+          </h1>
+          <p className="mt-2 text-sm text-clox-mute">
+            {t('companies.subtitle')} · {t('totalCount', { count: total })}
+          </p>
+        </div>
+        {items.length > 0 ? (
+          <ViewModeToggle value={viewMode} onChange={setViewMode} />
+        ) : null}
       </div>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 sm:items-end">
@@ -361,6 +453,14 @@ export function CompaniesPage() {
                 description={t('companies.emptyHint')}
               />
             </div>
+          ) : viewMode === 'grid' ? (
+            <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {items.map((row) => (
+                <div key={row.id} className="min-w-0 h-full">
+                  {renderCompanyCard(row)}
+                </div>
+              ))}
+            </div>
           ) : (
             <ResponsiveDataView
               className="mt-6"
@@ -368,82 +468,36 @@ export function CompaniesPage() {
                 <DataCardList
                   items={items}
                   getKey={(row) => row.id}
-                  renderItem={(row) => (
-                    <div className={dataCardClassName}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate font-medium text-clox-ink">{row.legalName}</p>
-                          {row.tradingName ? (
-                            <p className="truncate text-xs text-clox-faint">{row.tradingName}</p>
-                          ) : null}
-                          <p className="mt-0.5 truncate text-xs text-clox-faint">
-                            {row.email ?? t('dash')}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 flex-col items-end gap-1">
-                          <StatusPill tone={companyStatusTone(row.status)}>
-                            {t(`companyStatuses.${row.status}`, { defaultValue: row.status })}
-                          </StatusPill>
-                          {typeof row.reliabilityScore === 'number' ? (
-                            <StatusPill tone="info">
-                              {t('companies.reliabilityScore', { score: row.reliabilityScore })}
-                            </StatusPill>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-clox-mute">
-                        <span>
-                          {row.type === 'CARRIER'
-                            ? t('companies.typeCarrier')
-                            : t('companies.typeSender')}
-                        </span>
-                        <span>{row.homeRegion?.code ?? t('dash')}</span>
-                        <span>{row.abn ? `ABN ${row.abn}` : t('dash')}</span>
-                        <span>
-                          {row.type === 'CARRIER'
-                            ? t('companies.fleetCounts', {
-                                vehicles: row.counts.vehicles,
-                                drivers: row.counts.drivers,
-                              })
-                            : t('companies.fleetCountsSender', {
-                                users: row.counts.users,
-                              })}
-                        </span>
-                        <span>{formatDateTime(row.createdAt)}</span>
-                      </div>
-                      {row.status === CompanyStatus.SUSPENDED && row.suspendedReason ? (
-                        <p className="mt-2 text-xs text-clox-mute">
-                          {t('companies.suspendedReasonLabel')}: {row.suspendedReason}
-                        </p>
-                      ) : null}
-                      {row.openCase ? (
-                        <Link
-                          to={`/compliance/${row.openCase.id}`}
-                          className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-clox-orange hover:underline"
-                        >
-                          <StatusPill tone={complianceCaseStatusTone(row.openCase.status)}>
-                            {row.openCase.status}
-                          </StatusPill>
-                        </Link>
-                      ) : null}
-                      <div className="mt-3">{renderActions(row)}</div>
-                    </div>
-                  )}
+                  mode="list"
+                  renderItem={renderCompanyCard}
                 />
               }
               table={
                 <DataTable
-                  minWidthClassName="min-w-[64rem]"
+                  minWidthClassName="min-w-[72rem]"
                   headers={[
                     t('companies.colCompany'),
                     t('companies.colType'),
                     t('companies.colStatus'),
+                    t('companies.colReliability'),
                     t('companies.colRegion'),
                     t('companies.colAbn'),
                     t('companies.colFleet'),
                     t('companies.colCreated'),
                     t('companies.colCase'),
                     t('companies.colActions'),
+                  ]}
+                  headerClassNames={[
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    'text-right',
                   ]}
                 >
                   {items.map((row) => (
@@ -452,11 +506,21 @@ export function CompaniesPage() {
                       className="border-t border-clox-border-soft hover:bg-clox-surface-alt/60"
                     >
                       <td className="px-4 py-3">
-                        <p className="font-medium text-clox-ink">{row.legalName}</p>
-                        <div className="text-xs text-clox-faint">{row.email ?? t('dash')}</div>
-                        {row.phone ? (
-                          <div className="text-xs text-clox-faint">{row.phone}</div>
+                        <Link
+                          to={`/companies/${row.id}`}
+                          className="font-medium text-clox-ink hover:text-clox-orange hover:underline block"
+                        >
+                          {row.legalName}
+                        </Link>
+                        {row.tradingName ? (
+                          <div className="text-xs text-clox-faint">{row.tradingName}</div>
                         ) : null}
+                        <div className="mt-0.5 flex flex-col gap-0.5">
+                          {row.phone ? <PhoneLink phone={row.phone} /> : null}
+                          {row.email ? <EmailLink email={row.email} maxWidthClassName="max-w-[200px]" /> : (
+                            <span className="text-xs text-clox-faint">{t('dash')}</span>
+                          )}
+                        </div>
                         {row.status === CompanyStatus.SUSPENDED && row.suspendedReason ? (
                           <div className="mt-1 text-xs text-clox-mute">
                             {t('companies.suspendedReasonLabel')}: {row.suspendedReason}
@@ -472,6 +536,15 @@ export function CompaniesPage() {
                         <StatusPill tone={companyStatusTone(row.status)}>
                           {t(`companyStatuses.${row.status}`, { defaultValue: row.status })}
                         </StatusPill>
+                      </td>
+                      <td className="px-4 py-3">
+                        {row.type === 'CARRIER' && typeof row.reliabilityScore === 'number' ? (
+                          <StatusPill tone="info">
+                            {t('companies.reliabilityScore', { score: row.reliabilityScore })}
+                          </StatusPill>
+                        ) : (
+                          <span className="text-sm text-clox-faint">{t('dash')}</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-clox-mute">
                         {row.homeRegion?.code ?? t('dash')}
@@ -506,7 +579,7 @@ export function CompaniesPage() {
                           <span className="text-clox-faint">{t('dash')}</span>
                         )}
                       </td>
-                      <td className="px-4 py-3">{renderActions(row)}</td>
+                      <td className="px-4 py-3 text-right">{renderActions(row)}</td>
                     </tr>
                   ))}
                 </DataTable>
@@ -517,25 +590,13 @@ export function CompaniesPage() {
       ) : null}
 
       {items.length > 0 ? (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-clox-mute">
-          <Button
-            variant="secondary"
-            disabled={page <= 1}
-            onClick={() => updateFilter('page', String(page - 1))}
-          >
-            {t('previous')}
-          </Button>
-          <span className="order-first w-full text-center sm:order-none sm:w-auto">
-            {t('pageOf', { page, totalPages })}
-          </span>
-          <Button
-            variant="secondary"
-            disabled={page >= totalPages}
-            onClick={() => updateFilter('page', String(page + 1))}
-          >
-            {t('next')}
-          </Button>
-        </div>
+        <PaginationBar
+          page={page}
+          totalPages={totalPages}
+          totalCount={total}
+          disabled={busy}
+          onPageChange={(p) => updateFilter('page', String(p))}
+        />
       ) : null}
 
       {disableTarget ? (

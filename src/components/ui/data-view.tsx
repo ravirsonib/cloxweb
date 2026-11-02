@@ -203,16 +203,24 @@ export function PaginationBar({
   onPageChange,
   disabled = false,
   className,
+  totalCount,
+  hideOnSinglePage = false,
 }: {
   page: number;
   totalPages: number;
   onPageChange: (nextPage: number) => void;
   disabled?: boolean;
   className?: string;
+  totalCount?: number;
+  hideOnSinglePage?: boolean;
 }) {
   const { t } = useTranslation('common');
   const safeTotalPages = Math.max(1, totalPages);
   const safePage = Math.min(Math.max(1, page), safeTotalPages);
+
+  if (hideOnSinglePage && safeTotalPages <= 1) {
+    return null;
+  }
 
   return (
     <div
@@ -229,8 +237,9 @@ export function PaginationBar({
       >
         {t('previous')}
       </Button>
-      <span className="order-first w-full text-center sm:order-none sm:w-auto">
+      <span className="order-first w-full text-center sm:order-none sm:w-auto font-medium">
         {t('pageOf', { page: safePage, totalPages: safeTotalPages })}
+        {typeof totalCount === 'number' ? ` (${t('totalCount', { count: totalCount })})` : ''}
       </span>
       <Button
         type="button"

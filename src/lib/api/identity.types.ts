@@ -19,5 +19,11 @@ export type IdentityMe = {
     type: string;
     legalName: string | null;
     status: string;
+    reliabilityScore?: number;
+  } | null;
+  driver?: {
+    id: string;
+    status: string;
+    reliabilityScore?: number;
   } | null;
 };

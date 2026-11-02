@@ -8,6 +8,7 @@ import {
   DataCardList,
   DataTable,
   Notice,
+  PaginationBar,
   ResponsiveDataView,
   Select,
   dataCardClassName,
@@ -269,27 +270,12 @@ export function AuditPage() {
       ) : null}
 
       {items.length > 0 ? (
-        <div className="mt-4 flex items-center justify-between gap-2 text-sm text-clox-mute">
-          <Button
-            variant="secondary"
-            className="px-3 py-2"
-            disabled={page <= 1}
-            onClick={() => updateFilter('page', String(page - 1))}
-          >
-            {t('previous')}
-          </Button>
-          <span className="shrink-0 text-center text-xs sm:text-sm">
-            {t('pageOf', { page, totalPages })}
-          </span>
-          <Button
-            variant="secondary"
-            className="px-3 py-2"
-            disabled={page >= totalPages}
-            onClick={() => updateFilter('page', String(page + 1))}
-          >
-            {t('next')}
-          </Button>
-        </div>
+        <PaginationBar
+          page={page}
+          totalPages={totalPages}
+          totalCount={total}
+          onPageChange={(p) => updateFilter('page', String(p))}
+        />
       ) : null}
     </div>
   );

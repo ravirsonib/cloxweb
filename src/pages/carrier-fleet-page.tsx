@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import {
+  ActionGroup,
   Button,
   ChoiceCheck,
   DataCardList,
@@ -607,7 +608,7 @@ export function CarrierFleetPage() {
   function renderActions(row: CarrierVehicleListItem) {
     const isParked = row.status === 'SUSPENDED' || row.status === 'RETIRED';
     return (
-      <div className="inline-flex max-w-full flex-wrap items-center gap-1.5 sm:flex-nowrap sm:whitespace-nowrap">
+      <ActionGroup align="end" wrap>
         {renderRwcView(row)}
         {renderRwcUpload(row)}
         {renderDgView(row)}
@@ -653,7 +654,7 @@ export function CarrierFleetPage() {
         >
           {t('fleet.delete')}
         </Button>
-      </div>
+      </ActionGroup>
     );
   }
 
@@ -664,9 +665,18 @@ export function CarrierFleetPage() {
           <h1 className="font-display text-2xl font-bold text-clox-ink sm:text-3xl">
             {t('fleet.title')}
           </h1>
-          <p className="mt-2 text-sm text-clox-mute">
-            {t('fleet.subtitle')} · {t('totalCount', { count: items.length })}
-          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-clox-mute">
+            <span>
+              {t('fleet.subtitle')} · {t('totalCount', { count: items.length })}
+            </span>
+            {typeof companyQuery.data?.company?.reliabilityScore === 'number' ? (
+              <StatusPill tone="info">
+                {t('companies.reliabilityScore', {
+                  score: companyQuery.data.company.reliabilityScore,
+                })}
+              </StatusPill>
+            ) : null}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           {busy ? (

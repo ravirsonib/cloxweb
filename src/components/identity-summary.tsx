@@ -75,7 +75,20 @@ export function IdentitySummary({
                 })
               }
             />
+            {typeof me.company.reliabilityScore === 'number' &&
+            me.role === AppRole.TRANSPORT_COMPANY ? (
+              <Row
+                label={t('identity.reliabilityScore', { defaultValue: 'Reliability score' })}
+                value={`${me.company.reliabilityScore} / 100`}
+              />
+            ) : null}
           </>
+        ) : null}
+        {me.driver && typeof me.driver.reliabilityScore === 'number' ? (
+          <Row
+            label={t('identity.reliabilityScore', { defaultValue: 'Reliability score' })}
+            value={`${me.driver.reliabilityScore} / 100`}
+          />
         ) : null}
         {scopeText ? <Row label={t('identity.scope')} value={scopeText} /> : null}
       </dl>

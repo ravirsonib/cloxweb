@@ -18,7 +18,9 @@ import {
   CardCollection,
   DataCard,
   DataTable,
+  Money,
   Notice,
+  PaginationBar,
   Select,
   StatusPill,
   ViewModeToggle,
@@ -570,35 +572,15 @@ export function AdminJobsPage() {
 
       {/* Pagination Controls */}
       {items.length > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-clox-border-soft pt-4">
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={page <= 1}
-            onClick={() => {
-              const next = new URLSearchParams(searchParams);
-              next.set('page', String(page - 1));
-              setSearchParams(next);
-            }}
-          >
-            {t('prev', { defaultValue: 'Prev' })}
-          </Button>
-          <span className="order-first w-full text-center text-sm font-medium text-clox-mute sm:order-none sm:w-auto">
-            {page} / {totalPages}
-          </span>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={page >= totalPages}
-            onClick={() => {
-              const next = new URLSearchParams(searchParams);
-              next.set('page', String(page + 1));
-              setSearchParams(next);
-            }}
-          >
-            {t('next', { defaultValue: 'Next' })}
-          </Button>
-        </div>
+        <PaginationBar
+          page={page}
+          totalPages={totalPages}
+          onPageChange={(nextPage) => {
+            const next = new URLSearchParams(searchParams);
+            next.set('page', String(nextPage));
+            setSearchParams(next);
+          }}
+        />
       ) : null}
     </div>
   );
@@ -967,7 +949,7 @@ export function AdminJobDetailPage() {
                       </span>
                     </td>
                     <td className="py-2.5 font-bold text-clox-ink">
-                      ${(proposal.amountIncGstCents / 100).toFixed(2)}
+                      <Money cents={proposal.amountIncGstCents} />
                     </td>
                     <td className="py-2.5 text-xs text-clox-mute">
                       {proposal.etaMinutes ? `${proposal.etaMinutes} mins` : t('dash')}
@@ -1018,7 +1000,7 @@ export function AdminJobDetailPage() {
                       </span>
                     </td>
                     <td className="py-2.5 font-bold text-clox-ink">
-                      ${(evt.amountIncGstCents / 100).toFixed(2)}
+                      <Money cents={evt.amountIncGstCents} />
                     </td>
                     <td className="py-2.5 font-mono text-xs text-clox-mute">
                       {evt.stripePaymentIntentId || t('dash')}

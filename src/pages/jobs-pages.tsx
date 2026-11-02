@@ -1634,7 +1634,7 @@ function JobDraftForm({
                   {routeEstimate?.billableHours != null ? (
                     <span className="mt-1 block font-semibold">
                       {t('jobs.hourlyLiveEstimate', {
-                        defaultValue: `Estimated from stops: ${routeEstimate.billableHours} billable hrs (~${routeEstimate.distanceKm} km, ${routeEstimate.durationMinutes} min) · Est. $${((routeEstimate.estimateIncGstCents ?? Math.max(20_000, routeEstimate.billableHours * 8_000)) / 100).toFixed(2)} inc GST`,
+                        defaultValue: `Estimated from stops: ${routeEstimate.billableHours} billable hrs (~${routeEstimate.distanceKm} km, ${routeEstimate.durationMinutes} min) · Est. ${formatDollars(routeEstimate.estimateIncGstCents ?? Math.max(20_000, routeEstimate.billableHours * 8_000))} inc GST`,
                         hours: routeEstimate.billableHours,
                         km: routeEstimate.distanceKm,
                         mins: routeEstimate.durationMinutes,
@@ -2129,7 +2129,7 @@ function JobDraftForm({
                         {t('jobs.hourlyMinSummaryLine', {
                           defaultValue: `Minimum hourly base charge: $320.00 inc GST (4 hrs @ $80.00/hr)${
                             routeEstimate?.estimateIncGstCents != null
-                              ? ` · Est. $${(routeEstimate.estimateIncGstCents / 100).toFixed(2)} inc GST`
+                              ? ` · Est. ${formatDollars(routeEstimate.estimateIncGstCents)} inc GST`
                               : ''
                           }`,
                         })}

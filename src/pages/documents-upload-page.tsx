@@ -16,6 +16,7 @@ import {
 import { Button, FileInput, Notice, Select, StatusPill, useConfirm, useToast } from '@/components/ui';
 import type { ComplianceDocumentListItem } from '@/lib/api';
 import { resolveUploadMime } from '@/lib/upload-mime';
+import { formatDate, formatDateTime } from '@/lib/datetime';
 import { complianceDocStatusTone } from '@/lib/status-tone';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
@@ -297,11 +298,11 @@ export function DocumentsUploadPage() {
         <div className="mt-3 flex items-center justify-between border-t border-clox-border-soft/70 pt-2.5 text-[11px] text-clox-faint">
           <div className="min-w-0 max-w-[65%]" title={d.originalFilename ?? undefined}>
             <span className="truncate block font-mono text-clox-mute">
-              {d.originalFilename || (d.createdAt ? new Date(d.createdAt).toLocaleDateString() : t('dash'))}
+              {d.originalFilename || (d.createdAt ? formatDate(d.createdAt) : t('dash'))}
             </span>
             {d.createdAt ? (
               <span className="text-[10px] text-clox-faint">
-                {new Date(d.createdAt).toLocaleDateString()}
+                {formatDate(d.createdAt)}
               </span>
             ) : null}
           </div>
@@ -344,7 +345,7 @@ export function DocumentsUploadPage() {
           <p className="mt-0.5 truncate text-[11px] text-clox-faint">
             {d.originalFilename ? `${d.originalFilename} · ` : ''}
             {d.status}
-            {d.createdAt ? ` · ${new Date(d.createdAt).toLocaleString()}` : ''}
+            {d.createdAt ? ` · ${formatDateTime(d.createdAt)}` : ''}
           </p>
         </div>
         <Button

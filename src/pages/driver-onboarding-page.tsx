@@ -25,6 +25,7 @@ import {
   useToast,
 } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
+import { formatCalendarDate } from '@/lib/datetime';
 import { resolveUploadMime } from '@/lib/upload-mime';
 import {
   AU_STATES,
@@ -153,7 +154,7 @@ export function DriverOnboardingPage() {
                       })
                     : t('dash'),
                   licenceNo: data.driver.licenceNo,
-                  expiry: data.driver.licenceExpiry?.slice(0, 10),
+                  expiry: formatCalendarDate(data.driver.licenceExpiry),
                 })}
               </li>
               <li>
@@ -647,7 +648,7 @@ function LicenceStep({
                   licenceClass: t(`driverOnboarding.licenceClasses.${form.watch('licenceClass')}`, {
                     defaultValue: form.watch('licenceClass'),
                   }),
-                  expiry: form.watch('licenceExpiry') || t('dash'),
+                  expiry: formatCalendarDate(form.watch('licenceExpiry')),
                 })}
               </p>
             </div>

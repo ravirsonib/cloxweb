@@ -23,6 +23,7 @@ import {
 import { getCarrierFinance, getErrorDetail } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { CURRENCY_SYMBOL, formatDollars } from '@/lib/currency';
+import { formatDate } from '@/lib/datetime';
 import type { FinanceQuery } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -441,7 +442,7 @@ export function CarrierEarningsPage() {
                       <div className="text-[10px] font-normal text-clox-mute">ID: {row.jobId}</div>
                     </td>
                     <td className="py-3.5 pr-4 text-clox-mute">
-                      {row.completedAt ? new Date(row.completedAt).toLocaleDateString() : t('common.active', { defaultValue: 'Active' })}
+                      {row.completedAt ? formatDate(row.completedAt) : t('common.active', { defaultValue: 'Active' })}
                     </td>
                     <td className="py-3.5 pr-4 text-right text-clox-ink">
                       {formatDollars(row.grossFareCents)}
@@ -502,7 +503,7 @@ export function CarrierEarningsPage() {
                 {data.recentTransfers.map((tx) => (
                   <tr key={tx.id} className="transition hover:bg-clox-surface-alt/40">
                     <td className="py-3 pr-4 text-clox-mute">
-                      {new Date(tx.createdAt).toLocaleDateString()}
+                      {formatDate(tx.createdAt)}
                     </td>
                     <td className="py-3 pr-4 font-mono text-[11px] text-clox-ink">{tx.id}</td>
                     <td className="py-3 pr-4 font-mono text-[11px] text-clox-mute">

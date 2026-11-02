@@ -26,6 +26,7 @@ import {
   type CompanyDetailVehicle,
 } from '@/lib/api';
 import { formatDateTime } from '@/lib/leads';
+import { formatCalendarDate } from '@/lib/datetime';
 import { companyStatusTone, complianceCaseStatusTone } from '@/lib/status-tone';
 import { CompanyStatus, CompanyType } from '@/shared/types';
 
@@ -550,7 +551,7 @@ export function CompanyDetailPage() {
                     <td className="px-4 py-3 text-xs">
                       {doc.expiresAt ? (
                         <StatusPill tone={expiryTone(doc.expiresAt)}>
-                          {new Date(doc.expiresAt).toLocaleDateString()}
+                          {formatCalendarDate(doc.expiresAt)}
                         </StatusPill>
                       ) : (
                         <span className="text-clox-mute">{t('dash')}</span>
@@ -915,7 +916,7 @@ function VehicleCard({
                   <td className="px-3 py-2 text-xs">
                     {doc.expiresAt ? (
                       <StatusPill tone={expiryTone(doc.expiresAt)}>
-                        {new Date(doc.expiresAt).toLocaleDateString()}
+                        {formatCalendarDate(doc.expiresAt)}
                       </StatusPill>
                     ) : (
                       <span className="text-clox-mute">{t('dash')}</span>
@@ -990,7 +991,7 @@ function DriverCard({
               <span>
                 <strong>{t('companies.expires')}:</strong>{' '}
                 <StatusPill tone={expiryTone(driver.licenceExpiry)}>
-                  {new Date(driver.licenceExpiry).toLocaleDateString()}
+                  {formatCalendarDate(driver.licenceExpiry)}
                 </StatusPill>
               </span>
             ) : null}
@@ -1036,7 +1037,7 @@ function DriverCard({
                   <td className="px-3 py-2 text-xs">
                     {doc.expiresAt ? (
                       <StatusPill tone={expiryTone(doc.expiresAt)}>
-                        {new Date(doc.expiresAt).toLocaleDateString()}
+                        {formatCalendarDate(doc.expiresAt)}
                       </StatusPill>
                     ) : (
                       <span className="text-clox-mute">{t('dash')}</span>

@@ -149,6 +149,7 @@ export {
   resendAdminPartnerInvite,
   listAdminPartners,
   listOpsGeography,
+  updateRegionEnabled,
   getPartnerOnboarding,
   updatePartnerOnboarding,
   submitPartnerOnboarding,

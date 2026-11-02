@@ -6,8 +6,10 @@ import {
   getErrorDetail,
   getPlatformSettings,
   getRevenueSplitSettings,
+  listOpsGeography,
   patchPlatformSettings,
   publishRevenueSplit,
+  updateRegionEnabled,
 } from '@/lib/api';
 import { Button, Field, Notice, useToast } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
@@ -31,6 +33,30 @@ export function PlatformSettingsPage() {
     queryKey: ['admin', 'revenue-split'],
     queryFn: ({ signal }) => getRevenueSplitSettings({ signal }),
     enabled: role === AdminRole.SUPER_ADMIN,
+  });
+
+  const geography = useQuery({
+    queryKey: ['ops', 'geography'],
+    queryFn: () => listOpsGeography(),
+    enabled: role === AdminRole.SUPER_ADMIN,
+  });
+
+  const toggleRegionMut = useMutation({
+    mutationFn: ({ code, enabled }: { code: string; enabled: boolean }) =>
+      updateRegionEnabled(code, enabled),
+    onSuccess: async (data) => {
+      toast.success(
+        t('platformSettings.regionToggleSuccess', {
+          code: data.code,
+          status: data.enabled
+            ? t('platformSettings.regionActive', { defaultValue: 'Active' })
+            : t('platformSettings.regionInactive', { defaultValue: 'Inactive' }),
+          defaultValue: `Region ${data.code} is now ${data.enabled ? 'Active' : 'Inactive'}.`,
+        }),
+      );
+      await qc.invalidateQueries({ queryKey: ['ops', 'geography'] });
+    },
+    onError: (err) => toast.error(getErrorDetail(err)),
   });
 
   const [discount, setDiscount] = useState('10');
@@ -285,6 +311,91 @@ export function PlatformSettingsPage() {
           {save.isPending ? t('loading') : t('platformSettings.save')}
         </Button>
       </form>
+
+      {/* ─── 3. Service Regions & Coverage Card ─── */}
+      <section className="clox-card space-y-4 p-5">
+        <div className="border-b border-clox-border pb-3">
+          <h2 className="font-display text-base font-semibold text-clox-ink">
+            {t('platformSettings.regionsTitle', {
+              defaultValue: 'Service Regions & Coverage (Australia)',
+            })}
+          </h2>
+          <p className="text-xs text-clox-mute">
+            {t('platformSettings.regionsSubtitle', {
+              defaultValue:
+                'Enable or disable Australian states and territories for marketplace operations, carrier coverage, and job matching.',
+            })}
+          </p>
+        </div>
+
+        {geography.isLoading ? (
+          <LoadingBlock label={t('loading')} />
+        ) : geography.isError ? (
+          <Notice tone="error">{getErrorDetail(geography.error)}</Notice>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {(geography.data?.regions ?? []).map((r) => {
+              const isMutating =
+                toggleRegionMut.isPending &&
+                toggleRegionMut.variables?.code === r.code;
+              return (
+                <div
+                  key={r.code}
+                  className="flex items-center justify-between rounded-clox-md border border-clox-border/80 bg-clox-canvas/50 p-3 transition hover:border-clox-border"
+                >
+                  <div className="min-w-0 pr-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm font-bold text-clox-ink">
+                        {r.code}
+                      </span>
+                      <span className="truncate text-xs text-clox-mute">
+                        {r.name}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <span
+                        className={`inline-block h-2 w-2 rounded-full ${
+                          r.enabled ? 'bg-emerald-500' : 'bg-clox-faint/60'
+                        }`}
+                      />
+                      <span
+                        className={`text-[11px] font-medium ${
+                          r.enabled
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-clox-mute'
+                        }`}
+                      >
+                        {r.enabled
+                          ? t('platformSettings.regionActive', { defaultValue: 'Active' })
+                          : t('platformSettings.regionInactive', { defaultValue: 'Inactive' })}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isMutating}
+                    onClick={() =>
+                      toggleRegionMut.mutate({ code: r.code, enabled: !r.enabled })
+                    }
+                    className={`rounded-clox-md px-3 py-1.5 text-xs font-semibold transition shadow-sm ${
+                      r.enabled
+                        ? 'border border-clox-border bg-clox-surface text-clox-ink hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 dark:hover:bg-rose-950/40'
+                        : 'border border-clox-orange bg-clox-orange text-white hover:bg-clox-orange/90'
+                    }`}
+                  >
+                    {isMutating
+                      ? t('loading')
+                      : r.enabled
+                      ? t('platformSettings.disable', { defaultValue: 'Disable' })
+                      : t('platformSettings.enable', { defaultValue: 'Enable' })}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

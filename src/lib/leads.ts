@@ -78,16 +78,9 @@ export const LEAD_STATUS_KEYS = [
   'PROVISIONED',
 ] as const satisfies readonly LeadStatus[];
 
-export function formatDateTime(value: string | Date | null | undefined): string {
-  if (!value) return i18n.t('dash');
-  const date = typeof value === 'string' ? new Date(value) : value;
-  if (Number.isNaN(date.getTime())) return i18n.t('dash');
-  const locale = i18n.language?.startsWith('hi') ? 'hi-IN' : 'en-AU';
-  return new Intl.DateTimeFormat(locale, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date);
-}
+import { formatDateTime } from '@/lib/datetime';
+
+export { formatDateTime };
 
 export function formatLeadType(type: string): string {
   return i18n.t(`leadTypes.${type}`, { defaultValue: type });

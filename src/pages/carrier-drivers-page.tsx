@@ -35,6 +35,7 @@ import {
   resendCarrierDriverInvite,
   type CarrierDriverListItem,
 } from '@/lib/api';
+import { formatCalendarDate, formatDateTime } from '@/lib/datetime';
 
 type InviteForm = {
   name: string;
@@ -292,7 +293,7 @@ export function CarrierDriversPage() {
     if (!row.licenceExpiry) {
       return <StatusPill tone="warn">{t('drivers.licenceMissing')}</StatusPill>;
     }
-    const date = new Date(row.licenceExpiry).toLocaleDateString();
+    const date = formatCalendarDate(row.licenceExpiry);
     const tone = licenceExpiryTone(row.licenceExpiry);
     const key =
       tone === 'danger'
@@ -734,7 +735,7 @@ export function CarrierDriversPage() {
                       <p className="mt-0.5 font-mono text-[11px] text-clox-faint">
                         {doc.status}
                         {doc.createdAt
-                          ? ` · ${new Date(doc.createdAt).toLocaleString()}`
+                          ? ` · ${formatDateTime(doc.createdAt)}`
                           : ''}
                       </p>
                     </div>

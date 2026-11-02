@@ -26,6 +26,7 @@ import {
 import { getErrorDetail, getSenderFinance } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { CURRENCY_SYMBOL, formatDollars } from '@/lib/currency';
+import { formatDate } from '@/lib/datetime';
 import type { FinanceQuery } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -406,7 +407,7 @@ export function SenderSpendPage() {
                       <div className="text-[10px] font-normal text-clox-mute">ID: {row.jobId}</div>
                     </td>
                     <td className="py-3.5 pr-4 text-clox-mute">
-                      {new Date(row.createdAt).toLocaleDateString()}
+                      {formatDate(row.createdAt)}
                     </td>
                     <td className="py-3.5 pr-4 text-right text-clox-ink">
                       {formatDollars(row.baseFareIncGstCents)}

@@ -981,7 +981,14 @@
     "saveSplit": "Publish Split Policy",
     "saveSplitSuccess": "Revenue split policy published successfully.",
     "splitSumError": "Total shares must equal 100% (currently {{sum}}%).",
-    "viewAuditHistory": "View Full Split Version History"
+    "viewAuditHistory": "View Full Split Version History",
+    "regionsTitle": "Service Regions & Coverage (Australia)",
+    "regionsSubtitle": "Enable or disable Australian states and territories for marketplace operations, carrier coverage, and job matching.",
+    "regionActive": "Active",
+    "regionInactive": "Inactive",
+    "enable": "Enable",
+    "disable": "Disable",
+    "regionToggleSuccess": "Region {{code}} is now {{status}}."
   },
   "revenueSplit": {
     "title": "Revenue split",

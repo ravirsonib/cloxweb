@@ -140,6 +140,15 @@ export function listOpsGeography() {
     .then((r) => r.data);
 }
 
+export function updateRegionEnabled(code: string, enabled: boolean) {
+  return http
+    .patch<{ id: string; code: string; name: string; enabled: boolean }>(
+      `/ops/geography/regions/${encodeURIComponent(code)}`,
+      { enabled },
+    )
+    .then((r) => r.data);
+}
+
 export function getPartnerOnboarding() {
   return http.get<PartnerOnboarding>('/ops/partner/onboarding').then((r) => r.data);
 }

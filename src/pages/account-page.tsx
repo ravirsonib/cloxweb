@@ -249,8 +249,8 @@ function CompanyProfileSection({
                     title={on ? t('account.regionActive') : t('account.regionInactive')}
                     className={
                       on
-                        ? 'rounded-clox-md border border-clox-orange bg-clox-orange/10 px-2.5 py-1 text-xs font-semibold text-clox-ink shadow-sm'
-                        : 'rounded-clox-md border border-clox-border/60 bg-clox-canvas/40 px-2.5 py-1 text-xs text-clox-faint opacity-45 blur-[1.5px] transition hover:opacity-70 hover:blur-[0.5px]'
+                        ? 'rounded-clox-md border border-clox-orange bg-clox-orange/10 px-3 py-1.5 text-xs font-semibold text-clox-orange shadow-sm transition'
+                        : 'rounded-clox-md border border-clox-border bg-clox-canvas px-3 py-1.5 text-xs font-medium text-clox-mute hover:border-clox-ink hover:text-clox-ink transition'
                     }
                     onClick={() => toggleRegion(code)}
                   >

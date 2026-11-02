@@ -40,6 +40,7 @@ import {
   getVehicleClassesMeta,
   type CarrierVehicleListItem,
 } from '@/lib/api';
+import { formatCalendarDate } from '@/lib/datetime';
 import { resolveUploadMime } from '@/lib/upload-mime';
 import {
   suggestedGvmKgForClass,
@@ -476,7 +477,7 @@ export function CarrierFleetPage() {
     }
     const expiry =
       rwc.expiresAt != null
-        ? new Date(rwc.expiresAt).toLocaleDateString()
+        ? formatCalendarDate(rwc.expiresAt)
         : null;
     const approved = rwc.documentStatus === 'APPROVED';
     let label: string;

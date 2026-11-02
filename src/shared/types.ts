@@ -168,6 +168,7 @@ export const AuditAction = {
   SURCHARGE_PAID: 'surcharge.paid',
   SURCHARGE_WAIVED: 'surcharge.waived',
   PUSH_STUB: 'notify.push_stub',
+  GEOGRAPHY_REGION_UPDATED: 'geography.region_updated',
 } as const;
 
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
@@ -581,3 +582,9 @@ export type VehicleClassDto = {
   createdAt: string;
   updatedAt: string;
 };
+
+export const updateRegionEnabledSchema = z.object({
+  enabled: z.boolean(),
+});
+export type UpdateRegionEnabledInput = z.infer<typeof updateRegionEnabledSchema>;
+

@@ -16,6 +16,7 @@ import {
   MapPinned,
   Navigation,
   Package,
+  Scale,
   Send,
   Settings,
   ShieldCheck,
@@ -63,6 +64,8 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   '/ops/my-carriers': Truck,
   '/compliance': ShieldCheck,
   '/ops/exceptions': AlertTriangle,
+  '/ops/disputes': Scale,
+  '/ops/team': UserCog,
   '/documents/upload': FileUp,
   '/account': UserCircle,
 };

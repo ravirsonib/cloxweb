@@ -252,6 +252,22 @@ export function publishJob(id: string) {
   return http.post<JobSummary>(`/jobs/${id}/publish`, {}).then((r) => r.data);
 }
 
+export function cancelJob(id: string) {
+  return http.post<{ id: string; status: string }>(`/jobs/${id}/cancel`, {}).then((r) => r.data);
+}
+
+export function withdrawProposal(proposalId: string) {
+  return http
+    .post<{ id: string; jobId: string; status: string }>(`/matching/proposals/${proposalId}/withdraw`, {})
+    .then((r) => r.data);
+}
+
+export function withdrawProposalByJobId(jobId: string) {
+  return http
+    .post<{ id: string; jobId: string; status: string }>(`/matching/jobs/${jobId}/withdraw`, {})
+    .then((r) => r.data);
+}
+
 export function acceptProposal(jobId: string, proposalId: string) {
   return http
     .post<AcceptProposalResult>(`/jobs/${jobId}/proposals/${proposalId}/accept`, {})

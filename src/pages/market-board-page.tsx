@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { FileText } from 'lucide-react';
 import { z } from 'zod';
 import {
   getErrorDetail,
@@ -12,6 +13,7 @@ import {
   listCarrierVehicles,
   openDocumentContent,
   submitBid,
+  withdrawProposalByJobId,
   type MarketBoardJob,
 } from '@/lib/api';
 import {
@@ -25,6 +27,7 @@ import {
   StatusPill,
   ViewModeToggle,
   useClientPagination,
+  useConfirm,
   useDataViewMode,
   useToast,
 } from '@/components/ui';
@@ -85,6 +88,7 @@ export function MarketBoardPage() {
   const { t } = useTranslation('common');
   const role = useAuthStore((s) => s.role);
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const board = useQuery({
     queryKey: ['matching', 'board'],
     queryFn: () => getMarketBoard(),
@@ -293,6 +297,36 @@ export function MarketBoardPage() {
     onError: (err) => toast.error(getErrorDetail(err)),
   });
 
+  const withdraw = useMutation({
+    mutationFn: (targetJobId: string) => withdrawProposalByJobId(targetJobId),
+    onSuccess: async () => {
+      toast.success(
+        t('market.bidWithdrawnSuccess', {
+          defaultValue: 'Bid withdrawn successfully. Vehicle and driver have been released.',
+        }),
+      );
+      if (jobId) setJobId(null);
+      await qc.invalidateQueries({ queryKey: ['matching', 'board'] });
+      await qc.invalidateQueries({ queryKey: ['carrier', 'vehicles'] });
+      await qc.invalidateQueries({ queryKey: ['carrier', 'drivers'] });
+    },
+    onError: (err) => toast.error(getErrorDetail(err)),
+  });
+
+  const handleWithdrawBid = (targetJobId: string) => {
+    void (async () => {
+      const ok = await confirm({
+        title: t('confirm.withdrawBidTitle', { defaultValue: 'Withdraw Bid' }),
+        description: t('confirm.withdrawBidBody', {
+          defaultValue:
+            'Are you sure you want to withdraw this bid? Your vehicle and driver reservation will be released immediately so they can be assigned to other jobs.',
+        }),
+        confirmLabel: t('market.withdrawBid', { defaultValue: 'Withdraw bid' }),
+      });
+      if (ok) withdraw.mutate(targetJobId);
+    })();
+  };
+
   if (role !== AppRole.TRANSPORT_COMPANY) return <Navigate to="/" replace />;
   if (board.isLoading || vehiclesQuery.isLoading || driversQuery.isLoading) {
     return <LoadingBlock label={t('market.loading')} />;
@@ -422,11 +456,24 @@ export function MarketBoardPage() {
                           : ''}
                       </p>
                       {j.requiresDg && j.dgDocumentId ? (
-                        <div className="mt-2">
+                        <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-clox-border bg-clox-surface p-2 text-xs">
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            <FileText className="h-3.5 w-3.5 shrink-0 text-clox-orange" />
+                            <span
+                              className="truncate font-medium text-clox-ink"
+                              title={j.dgDocumentFilename || undefined}
+                            >
+                              {j.dgDocumentFilename ||
+                                t('market.senderDgDocLabel', {
+                                  defaultValue: 'Sender DG Document',
+                                })}
+                            </span>
+                          </div>
                           <Button
                             type="button"
-                            variant="secondary"
-                            className="text-xs"
+                            variant="ghost"
+                            size="sm"
+                            className="shrink-0 px-2 py-0.5 text-xs font-semibold"
                             onClick={(e) => {
                               e.stopPropagation();
                               void openDocumentContent(j.dgDocumentId!).catch((err) =>
@@ -434,10 +481,29 @@ export function MarketBoardPage() {
                               );
                             }}
                           >
-                            {t('market.viewSenderDgDoc', {
-                              defaultValue: 'View Sender DG Document',
-                            })}
-                            {j.dgDocumentFilename ? ` (${j.dgDocumentFilename})` : ''}
+                            {t('market.viewDoc', { defaultValue: 'View' })}
+                          </Button>
+                        </div>
+                      ) : null}
+                      {j.alreadyBid ? (
+                        <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-clox-border/60 pt-2 text-xs">
+                          <span className="font-medium text-[var(--status-ok)]">
+                            ✓ {t('market.bidPlaced', { defaultValue: 'Bid submitted' })}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            className="text-xs text-clox-error border-clox-error/40 hover:bg-clox-error/5"
+                            disabled={withdraw.isPending}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleWithdrawBid(j.id);
+                            }}
+                          >
+                            {withdraw.isPending
+                              ? t('loading')
+                              : t('market.withdrawBid', { defaultValue: 'Withdraw bid' })}
                           </Button>
                         </div>
                       ) : null}
@@ -452,6 +518,47 @@ export function MarketBoardPage() {
       )}
 
       {jobId && selectedJob ? (
+        selectedJob.alreadyBid ? (
+          <div className="clox-card mt-8 max-w-md p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-display font-semibold text-clox-ink">
+                {t('market.bidStatusTitle', { defaultValue: 'Submitted Bid' })}
+              </h2>
+              <StatusPill tone="ok">
+                {t('market.bidSubmittedPill', { defaultValue: 'SUBMITTED' })}
+              </StatusPill>
+            </div>
+            <p className="text-sm font-medium text-clox-ink">
+              {selectedJob.title ?? selectedJob.id.slice(0, 8)}
+            </p>
+            <Notice tone="info">
+              {t('market.alreadyBidNotice', {
+                defaultValue:
+                  'You have an active bid on this job. Your assigned vehicle and driver are reserved pending sender award.',
+              })}
+            </Notice>
+            <div className="border-t border-clox-border pt-3">
+              <p className="mb-2 text-xs text-clox-mute">
+                {t('market.withdrawExplanation', {
+                  defaultValue:
+                    'Need to assign this vehicle or driver to another job? You can withdraw your bid at any time before the sender accepts.',
+                })}
+              </p>
+              <Button
+                type="button"
+                variant="secondary"
+                size="block"
+                className="text-clox-error border-clox-error/40 hover:bg-clox-error/5"
+                disabled={withdraw.isPending}
+                onClick={() => handleWithdrawBid(selectedJob.id)}
+              >
+                {withdraw.isPending
+                  ? t('loading')
+                  : t('market.withdrawBid', { defaultValue: 'Withdraw bid' })}
+              </Button>
+            </div>
+          </div>
+        ) : (
         <form
           id="market-bid-form"
           className="clox-card mt-8 max-w-md scroll-mt-24 p-4"
@@ -478,17 +585,21 @@ export function MarketBoardPage() {
 
           {selectedJob.requiresDg && selectedJob.dgDocumentId ? (
             <div className="mb-3 rounded-clox-sm border border-clox-border bg-clox-surface-alt p-2.5 text-xs">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-medium text-clox-ink">
-                  {t('market.senderDgDocLabel', {
-                    defaultValue: 'Sender DG Document:',
-                  })}{' '}
-                  {selectedJob.dgDocumentFilename || 'DG Declaration'}
-                </span>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium text-clox-ink" title={selectedJob.dgDocumentFilename || undefined}>
+                    <span className="text-clox-mute">
+                      {t('market.senderDgDocLabel', {
+                        defaultValue: 'Sender DG Document:',
+                      })}
+                    </span>{' '}
+                    {selectedJob.dgDocumentFilename || 'DG Declaration'}
+                  </p>
+                </div>
                 <Button
                   type="button"
                   variant="ghost"
-                  className="text-xs"
+                  className="shrink-0 text-xs px-2 py-1"
                   onClick={() =>
                     void openDocumentContent(selectedJob.dgDocumentId!).catch((err) =>
                       toast.error(getErrorDetail(err)),
@@ -542,25 +653,32 @@ export function MarketBoardPage() {
 
           {selectedJob.requiresDg && selectedVehicle?.dgDocumentId ? (
             <div className="mb-3 rounded-clox-sm border border-clox-border bg-clox-surface-alt p-2.5 text-xs">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-medium text-[var(--status-ok)]">
-                  ✓{' '}
-                  {t('market.autoAttachedVehicleDgDoc', {
-                    defaultValue: 'Auto-attached Vehicle DG Document:',
-                  })}{' '}
-                  {selectedVehicle.dgDocumentFilename || 'DG Licence'}
-                </span>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                  <FileText className="h-3.5 w-3.5 shrink-0 text-clox-orange" />
+                  <span
+                    className="truncate font-medium text-[var(--status-ok)]"
+                    title={selectedVehicle.dgDocumentFilename || undefined}
+                  >
+                    ✓{' '}
+                    {t('market.autoAttachedVehicleDgDoc', {
+                      defaultValue: 'Vehicle DG Document:',
+                    })}{' '}
+                    {selectedVehicle.dgDocumentFilename || 'DG Licence'}
+                  </span>
+                </div>
                 <Button
                   type="button"
                   variant="ghost"
-                  className="text-xs"
+                  size="sm"
+                  className="shrink-0 px-2 py-0.5 text-xs font-semibold"
                   onClick={() =>
                     void openDocumentContent(selectedVehicle.dgDocumentId!).catch((err) =>
                       toast.error(getErrorDetail(err)),
                     )
                   }
                 >
-                  {t('market.viewVehicleDgDoc', { defaultValue: 'View DG Doc' })}
+                  {t('market.viewDoc', { defaultValue: 'View' })}
                 </Button>
               </div>
             </div>
@@ -664,6 +782,7 @@ export function MarketBoardPage() {
             {bid.isPending ? t('submitting') : t('market.submitProposal')}
           </Button>
         </form>
+        )
       ) : null}
     </div>
   );

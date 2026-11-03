@@ -4,10 +4,12 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { FileText } from 'lucide-react';
 import { z } from 'zod';
 import {
   acceptProposal,
   approveTripExceptionReplacement,
+  cancelJob,
   confirmDocument,
   createJob,
   createUploadIntent,
@@ -2027,14 +2029,17 @@ function JobDraftForm({
                   <p className="mt-1 text-xs text-clox-mute">{t('uploading', { defaultValue: 'Uploading…' })}</p>
                 ) : null}
                 {dgDocumentId ? (
-                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-clox-sm border border-clox-border bg-clox-surface px-3 py-2 text-xs">
-                    <span className="font-medium text-[var(--status-ok)]">
-                      ✓ {dgDocFilename || t('jobs.dgDocAttached', { defaultValue: 'DG document attached' })}
-                    </span>
+                  <div className="mt-2 flex items-center justify-between gap-2 rounded-clox-sm border border-clox-border bg-clox-surface p-2.5 text-xs">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <FileText className="h-4 w-4 shrink-0 text-clox-orange" />
+                      <p className="truncate font-medium text-[var(--status-ok)]" title={dgDocFilename || undefined}>
+                        ✓ {dgDocFilename || t('jobs.dgDocAttached', { defaultValue: 'DG document attached' })}
+                      </p>
+                    </div>
                     <Button
                       type="button"
                       variant="ghost"
-                      className="text-xs"
+                      className="shrink-0 px-2 py-1 text-xs"
                       onClick={() =>
                         void openDocumentContent(dgDocumentId).catch((err) =>
                           toast.error(getErrorDetail(err)),
@@ -2339,6 +2344,22 @@ export function JobDetailPage() {
     },
   });
 
+  const cancel = useMutation({
+    mutationFn: () => cancelJob(id),
+    onSuccess: () => {
+      toast.success(
+        t('jobs.cancelSuccess', {
+          defaultValue: 'Job cancelled successfully. Any open bids have been closed.',
+        }),
+      );
+      void qc.invalidateQueries({ queryKey: ['jobs', id] });
+      void qc.invalidateQueries({ queryKey: ['jobs'] });
+    },
+    onError: (err) => {
+      toast.error(getErrorDetail(err));
+    },
+  });
+
   if (role !== AppRole.SENDER) return <Navigate to="/" replace />;
   if (job.isLoading) return <LoadingBlock label={t('jobs.loadingDetail')} />;
   if (job.isError || !job.data) {
@@ -2362,6 +2383,26 @@ export function JobDetailPage() {
         confirmLabel: t('jobs.publish'),
       });
       if (ok) publish.mutate();
+    })();
+  };
+
+  const canCancel =
+    Boolean(j) &&
+    j.status !== 'CANCELLED' &&
+    j.status !== 'COMPLETED' &&
+    (!j.assignment || j.assignment.status === 'CANCELLED');
+
+  const cancelJobAction = () => {
+    void (async () => {
+      const ok = await confirm({
+        title: t('confirm.cancelJobTitle', { defaultValue: 'Cancel Job' }),
+        description: t('confirm.cancelJobBody', {
+          defaultValue:
+            'Are you sure you want to cancel this job? All pending carrier proposals will be closed and vehicles/drivers will be released.',
+        }),
+        confirmLabel: t('jobs.cancelJob', { defaultValue: 'Cancel Job' }),
+      });
+      if (ok) cancel.mutate();
     })();
   };
 
@@ -2604,7 +2645,7 @@ export function JobDetailPage() {
             </section>
           )}
 
-          {(canEdit || showPublish) && (
+          {(canEdit || showPublish || canCancel) && (
             <div className="flex flex-wrap items-center gap-2">
               {canEdit ? (
                 <Link
@@ -2625,8 +2666,26 @@ export function JobDetailPage() {
                   {publish.isPending ? t('loading') : t('jobs.publish')}
                 </Button>
               ) : null}
+              {canCancel ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="text-clox-error border-clox-error/40 hover:bg-clox-error/5"
+                  disabled={cancel.isPending}
+                  onClick={cancelJobAction}
+                >
+                  {cancel.isPending ? t('loading') : t('jobs.cancelJob', { defaultValue: 'Cancel job' })}
+                </Button>
+              ) : null}
             </div>
           )}
+          {j.status === 'CANCELLED' ? (
+            <Notice tone="warn">
+              {t('jobs.jobCancelledNotice', {
+                defaultValue: 'This job has been cancelled. No bids can be accepted.',
+              })}
+            </Notice>
+          ) : null}
           {j.editability?.mode === 'RECEIVER' ? (
             <p className="text-xs text-clox-mute">{t('jobs.editReceiverHint')}</p>
           ) : null}
@@ -2713,21 +2772,31 @@ export function JobDetailPage() {
                           </p>
                         ) : null}
                         {p.dgDocumentId ? (
-                          <div className="pt-1">
+                          <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-clox-border bg-clox-surface p-2 text-xs">
+                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                              <FileText className="h-3.5 w-3.5 shrink-0 text-clox-orange" />
+                              <span
+                                className="truncate font-medium text-clox-ink"
+                                title={p.dgDocumentFilename || undefined}
+                              >
+                                {p.dgDocumentFilename ||
+                                  t('jobs.viewCarrierDgDoc', {
+                                    defaultValue: 'Carrier DG Document',
+                                  })}
+                              </span>
+                            </div>
                             <Button
                               type="button"
-                              variant="secondary"
-                              className="text-xs"
+                              variant="ghost"
+                              size="sm"
+                              className="shrink-0 px-2 py-0.5 text-xs font-semibold"
                               onClick={() =>
                                 void openDocumentContent(p.dgDocumentId!).catch((err) =>
                                   toast.error(getErrorDetail(err)),
                                 )
                               }
                             >
-                              {t('jobs.viewCarrierDgDoc', {
-                                defaultValue: 'View Carrier DG Document',
-                              })}
-                              {p.dgDocumentFilename ? ` (${p.dgDocumentFilename})` : ''}
+                              {t('jobs.viewDoc', { defaultValue: 'View' })}
                             </Button>
                           </div>
                         ) : null}
@@ -2744,7 +2813,7 @@ export function JobDetailPage() {
                         {p.status}
                       </StatusPill>
                     </div>
-                    {p.status === 'SUBMITTED' && !j.assignment ? (
+                    {p.status === 'SUBMITTED' && (!j.assignment || j.assignment.status === 'CANCELLED') ? (
                       <Button
                         variant="cta"
                         className="mt-3"
@@ -2769,7 +2838,7 @@ export function JobDetailPage() {
             )}
           </section>
 
-          {openProposals.length === 0 && j.assignment?.paidAndConfirmed ? (
+          {openProposals.length === 0 && j.assignment?.paidAndConfirmed && j.assignment.status !== 'CANCELLED' ? (
             <div className="space-y-2">
               <Notice tone="success">{t('jobs.jobPaidLocked')}</Notice>
               <Link
@@ -2830,19 +2899,42 @@ export function JobDetailPage() {
             </dl>
             {j.requiresDg && j.dgDocumentId ? (
               <div className="mt-3 border-t border-clox-border pt-3">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="w-full text-xs"
-                  onClick={() =>
-                    void openDocumentContent(j.dgDocumentId!).catch((err) =>
-                      toast.error(getErrorDetail(err)),
-                    )
-                  }
-                >
-                  {t('jobs.viewDgDoc', { defaultValue: 'View Sender DG Document' })}
-                  {j.dgDocumentFilename ? ` (${j.dgDocumentFilename})` : ''}
-                </Button>
+                <div className="rounded-lg border border-clox-border bg-clox-surface p-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-clox-orange/10 text-clox-orange">
+                      <FileText className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-clox-mute">
+                        {t('jobs.dgDocSectionTitle', { defaultValue: 'DG Declaration' })}
+                      </p>
+                      <p
+                        className="truncate text-xs font-semibold text-clox-ink"
+                        title={j.dgDocumentFilename || 'DG Declaration / SDS'}
+                      >
+                        {j.dgDocumentFilename || 'DG Declaration / SDS'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-clox-border/60 pt-2 text-[11px]">
+                    <span className="font-medium text-[var(--status-ok)]">
+                      ✓ {t('jobs.dgDocVerifiedAttached', { defaultValue: 'Attached' })}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="shrink-0 px-2.5 py-1 text-xs font-semibold"
+                      onClick={() =>
+                        void openDocumentContent(j.dgDocumentId!).catch((err) =>
+                          toast.error(getErrorDetail(err)),
+                        )
+                      }
+                    >
+                      {t('jobs.viewDgDoc', { defaultValue: 'View Document' })}
+                    </Button>
+                  </div>
+                </div>
               </div>
             ) : null}
           </section>

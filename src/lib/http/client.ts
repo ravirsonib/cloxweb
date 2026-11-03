@@ -62,14 +62,14 @@ export function getErrorDetail(error: unknown): string {
     }
     if (typeof data?.title === 'string') return humanizeApiMessage(data.title);
     if (error.code === 'ECONNABORTED' || /timeout/i.test(error.message)) {
-      return i18n.t('errors.uploadTimeout', {
-        defaultValue: 'Upload timed out. Try a smaller photo or check your connection.',
+      return i18n.t('errors.requestTimeout', {
+        defaultValue: 'Request timed out. Please check your connection and try again.',
       });
     }
     if (!error.response && /Network Error/i.test(error.message)) {
-      return i18n.t('errors.networkOrTooLarge', {
+      return i18n.t('errors.networkError', {
         defaultValue:
-          'Upload failed (network or file too large). Use a JPEG/PNG under 10 MB.',
+          'Network connection error. Please check your internet connection and try again.',
       });
     }
     return humanizeApiMessage(error.message);

@@ -153,6 +153,7 @@ export {
   getPartnerOnboarding,
   updatePartnerOnboarding,
   submitPartnerOnboarding,
+  getOpsDashboardStats,
   type AdminPartnerInvitePeek,
   type PartnerOnboarding,
   type InviteAdminInput,
@@ -185,6 +186,9 @@ export {
   updateJob,
   updateJobReceiver,
   publishJob,
+  cancelJob,
+  withdrawProposal,
+  withdrawProposalByJobId,
   acceptProposal,
   syncJobPayment,
   recommendVehicle,
@@ -259,3 +263,24 @@ export {
   listCarrierExceptions,
   type SurchargeRow,
 } from '@/lib/api/surcharges';
+export {
+  createDispute,
+  listDisputes,
+  getDispute,
+  triageDispute,
+  escalateDispute,
+  assignDispute,
+  resolveDispute,
+  closeLocalDispute,
+  type DisputeSummaryRow,
+  type DisputeDetail,
+  type ListDisputesResponse,
+} from '@/lib/api/disputes';
+export {
+  listBdeTeam,
+  getBdeTeamMember,
+  addBdeCoachingNote,
+  type BdeTeamListResponse,
+  type BdeTeamMemberDetail,
+  type BdeTeamMemberSummary,
+} from '@/lib/api/ops-team';

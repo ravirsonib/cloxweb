@@ -64,6 +64,7 @@ export function PlatformSettingsPage() {
   const [driverDelta, setDriverDelta] = useState('5');
   const [carrierDelta, setCarrierDelta] = useState('10');
   const [clearingDays, setClearingDays] = useState('7');
+  const [gstRate, setGstRate] = useState('10');
 
   // Dynamic revenue split fields
   const [carrierShare, setCarrierShare] = useState('70');
@@ -78,6 +79,7 @@ export function PlatformSettingsPage() {
     setDriverDelta(String(settings.data.driverUnavailableScoreDelta));
     setCarrierDelta(String(settings.data.carrierMarketplaceReleaseScoreDelta));
     setClearingDays(String(settings.data.carrierClearingDays ?? 7));
+    setGstRate(String(settings.data.gstPercent ?? 10));
   }, [settings.data]);
 
   useEffect(() => {
@@ -105,13 +107,17 @@ export function PlatformSettingsPage() {
       const driverUnavailableScoreDelta = Number(driverDelta);
       const carrierMarketplaceReleaseScoreDelta = Number(carrierDelta);
       const carrierClearing = Number(clearingDays);
+      const gst = Number(gstRate);
       if (
         !Number.isFinite(rescueDiscountPercent) ||
         !Number.isFinite(slaMin) ||
         !Number.isFinite(driverUnavailableScoreDelta) ||
         !Number.isFinite(carrierMarketplaceReleaseScoreDelta) ||
         !Number.isFinite(carrierClearing) ||
-        carrierClearing < 0
+        carrierClearing < 0 ||
+        !Number.isFinite(gst) ||
+        gst < 0 ||
+        gst > 100
       ) {
         throw new Error(t('platformSettings.invalid'));
       }
@@ -121,6 +127,7 @@ export function PlatformSettingsPage() {
         driverUnavailableScoreDelta: Math.round(driverUnavailableScoreDelta),
         carrierMarketplaceReleaseScoreDelta: Math.round(carrierMarketplaceReleaseScoreDelta),
         carrierClearingDays: Math.round(carrierClearing),
+        gstPercent: gst,
       });
     },
     onSuccess: async () => {
@@ -304,6 +311,17 @@ export function PlatformSettingsPage() {
           value={clearingDays}
           onChange={(e) => setClearingDays(e.target.value)}
           inputMode="numeric"
+          required
+        />
+        <Field
+          label={t('platformSettings.gstLabel', { defaultValue: 'GST Rate %' })}
+          hint={t('platformSettings.gstHint', {
+            defaultValue:
+              'Applicable Goods & Services Tax percentage (default 10% in Australia). Used to calculate ex-GST base freight and tax line items.',
+          })}
+          value={gstRate}
+          onChange={(e) => setGstRate(e.target.value)}
+          inputMode="decimal"
           required
         />
         {save.isError ? <Notice tone="error">{getErrorDetail(save.error)}</Notice> : null}

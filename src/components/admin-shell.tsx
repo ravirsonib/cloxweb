@@ -182,7 +182,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           <SidebarSubMenu
             label={t('nav.menuOperations', { defaultValue: 'Operations' })}
             icon={Briefcase}
-            activePaths={['/admin-jobs', '/surcharges', '/leads', '/companies', '/ops/partners']}
+            activePaths={['/admin-jobs', '/surcharges', '/leads', '/companies', '/ops/partners', '/ops/team']}
           >
             <SidebarSubLink to="/admin-jobs" icon={navIconForPath('/admin-jobs')} onNavigate={onNavigate}>
               {t('nav.adminJobs')}
@@ -199,19 +199,25 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
             <SidebarSubLink to="/ops/partners" icon={navIconForPath('/ops/partners')} onNavigate={onNavigate}>
               {t('nav.opsPartners')}
             </SidebarSubLink>
+            <SidebarSubLink to="/ops/team" icon={navIconForPath('/ops/team')} onNavigate={onNavigate}>
+              {t('nav.bdeTeam', { defaultValue: 'Field Teams' })}
+            </SidebarSubLink>
           </SidebarSubMenu>
 
           {/* Compliance & Risk Sub-Menu */}
           <SidebarSubMenu
             label={t('nav.menuComplianceRisk', { defaultValue: 'Compliance & Risk' })}
             icon={ShieldCheck}
-            activePaths={['/compliance', '/ops/exceptions']}
+            activePaths={['/compliance', '/ops/exceptions', '/ops/disputes']}
           >
             <SidebarSubLink to="/compliance" icon={navIconForPath('/compliance')} onNavigate={onNavigate}>
               {t('nav.compliance')}
             </SidebarSubLink>
             <SidebarSubLink to="/ops/exceptions" icon={navIconForPath('/ops/exceptions')} onNavigate={onNavigate}>
               {t('nav.opsExceptions')}
+            </SidebarSubLink>
+            <SidebarSubLink to="/ops/disputes" icon={navIconForPath('/ops/disputes')} onNavigate={onNavigate}>
+              {t('nav.disputes', { defaultValue: 'Disputes' })}
             </SidebarSubLink>
           </SidebarSubMenu>
 
@@ -372,11 +378,16 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           <SidebarSubMenu
             label={t('nav.menuGrowth', { defaultValue: 'Growth & Network' })}
             icon={TrendingUp}
-            activePaths={['/ops/growth', '/ops/my-senders', '/ops/my-carriers']}
+            activePaths={['/ops/growth', '/ops/my-senders', '/ops/my-carriers', '/ops/team']}
           >
             <SidebarSubLink to="/ops/growth" icon={navIconForPath('/ops/growth')} onNavigate={onNavigate}>
               {t('nav.growth')}
             </SidebarSubLink>
+            {role === AdminRole.STATE_MASTER ? (
+              <SidebarSubLink to="/ops/team" icon={navIconForPath('/ops/team')} onNavigate={onNavigate}>
+                {t('nav.bdeTeam', { defaultValue: 'Local BDE Team' })}
+              </SidebarSubLink>
+            ) : null}
             {role === AdminRole.LOCAL_BDE ? (
               <>
                 <SidebarSubLink to="/ops/my-senders" icon={navIconForPath('/ops/my-senders')} onNavigate={onNavigate}>
@@ -404,7 +415,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           <SidebarSubMenu
             label={t('nav.menuComplianceRisk', { defaultValue: 'Compliance & Risk' })}
             icon={ShieldCheck}
-            activePaths={['/compliance', '/ops/exceptions']}
+            activePaths={['/compliance', '/ops/exceptions', '/ops/disputes']}
           >
             <SidebarSubLink to="/compliance" icon={navIconForPath('/compliance')} onNavigate={onNavigate}>
               {t('nav.compliance')}
@@ -414,6 +425,9 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
                 {t('nav.opsExceptions')}
               </SidebarSubLink>
             ) : null}
+            <SidebarSubLink to="/ops/disputes" icon={navIconForPath('/ops/disputes')} onNavigate={onNavigate}>
+              {t('nav.disputes', { defaultValue: 'Disputes' })}
+            </SidebarSubLink>
           </SidebarSubMenu>
 
           {showPartnerOnboarding ? (

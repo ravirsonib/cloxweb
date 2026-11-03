@@ -5,7 +5,7 @@ export type SurchargeRow = {
   jobId: string;
   tripId: string;
   kind: 'WAITING' | 'MASS';
-  status: 'PENDING_PAYMENT' | 'PAID' | 'WAIVED';
+  status: 'PENDING_PAYMENT' | 'PAID' | 'WAIVED' | 'DISPUTED';
   amountIncGstCents: number;
   paidAt?: string | null;
   waivedAt?: string | null;

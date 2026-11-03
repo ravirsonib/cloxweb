@@ -938,59 +938,90 @@ export function DriverTripDetailPage() {
 
       {!tripData.startedAt ? (
         <div className="mt-6 space-y-4">
-          <div>
-            <h2 className="font-display font-semibold text-clox-ink">
-              1. {t('trips.safetyChecklist')}
-            </h2>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="cta"
-                disabled={safety.isPending}
-                onClick={() => safety.mutate(true)}
-              >
-                {t('trips.passSafety')}
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={safety.isPending}
-                onClick={() => {
-                  void (async () => {
-                    const ok = await confirm({
-                      title: t('confirm.safetyFailTitle'),
-                      description: t('confirm.safetyFailBody'),
-                      confirmLabel: t('trips.failLockVehicle'),
-                      tone: 'destructive',
-                    });
-                    if (ok) safety.mutate(false);
-                  })();
-                }}
-              >
-                {t('trips.failLockVehicle')}
-              </Button>
+          <div className="rounded-lg border border-clox-border bg-clox-surface p-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="font-display font-semibold text-clox-ink">
+                1. {t('trips.safetyChecklist')}
+              </h2>
+              {tripData.gates.safetyOk ? (
+                <StatusPill tone="ok">✓ {t('trips.gateSafetyPassed', { defaultValue: 'Passed' })}</StatusPill>
+              ) : null}
             </div>
+            {!tripData.gates.safetyOk ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="cta"
+                  disabled={safety.isPending}
+                  onClick={() => safety.mutate(true)}
+                >
+                  {t('trips.passSafety')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={safety.isPending}
+                  onClick={() => {
+                    void (async () => {
+                      const ok = await confirm({
+                        title: t('confirm.safetyFailTitle'),
+                        description: t('confirm.safetyFailBody'),
+                        confirmLabel: t('trips.failLockVehicle'),
+                        tone: 'destructive',
+                      });
+                      if (ok) safety.mutate(false);
+                    })();
+                  }}
+                >
+                  {t('trips.failLockVehicle')}
+                </Button>
+              </div>
+            ) : (
+              <p className="mt-1 text-xs text-clox-mute">
+                ✓ {t('trips.safetyPassedHint', { defaultValue: 'Pre-trip safety checklist completed.' })}
+              </p>
+            )}
           </div>
 
-          <div>
-            <h2 className="font-display font-semibold text-clox-ink">2. {t('trips.massCheck')}</h2>
-            <Field
-              type="number"
-              label={t('trips.placeholderActualKg', { declared })}
-              value={massKg}
-              onChange={(e) => setMassKg(e.target.value)}
-            />
-            <Button
-              type="button"
-              variant="cta"
-              disabled={mass.isPending || !massKg}
-              onClick={() => mass.mutate()}
-            >
-              {t('trips.submitMass')}
-            </Button>
+          <div className="rounded-lg border border-clox-border bg-clox-surface p-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="font-display font-semibold text-clox-ink">
+                2. {t('trips.massCheck')}
+              </h2>
+              {tripData.gates.massOk ? (
+                <StatusPill tone="ok">✓ {t('trips.gateMassCleared', { defaultValue: 'Cleared' })}</StatusPill>
+              ) : null}
+            </div>
+            {tripData.gates.massOk ? (
+              <div className="mt-2">
+                <Notice tone="success" className="text-xs">
+                  {t('trips.massClearedNotice', {
+                    defaultValue: 'Mass check cleared ({{kg}} kg). Gate is clear — proceed to start trip.',
+                    kg: tripData.actualMassKg ?? declared,
+                  })}
+                </Notice>
+              </div>
+            ) : (
+              <div className="mt-2">
+                <Field
+                  type="number"
+                  label={t('trips.placeholderActualKg', { declared })}
+                  value={massKg}
+                  onChange={(e) => setMassKg(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="cta"
+                  disabled={mass.isPending || !massKg}
+                  onClick={() => mass.mutate()}
+                >
+                  {t('trips.submitMass')}
+                </Button>
+              </div>
+            )}
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-3 rounded-lg border border-clox-border bg-clox-surface p-3.5">
             <h2 className="mb-2 font-display font-semibold text-clox-ink">
               3. {t('trips.startTripHeading')}
             </h2>

@@ -38,6 +38,8 @@ import {
   CarrierExceptionsPage,
 } from '@/pages/carrier-exceptions-page';
 import { OpsExceptionsPage } from '@/pages/ops-exceptions-page';
+import { OpsDisputeDetailPage, OpsDisputesPage } from '@/pages/ops-disputes-page';
+import { OpsTeamDetailPage, OpsTeamPage } from '@/pages/ops-team-page';
 import { DriverTripsPage, DriverTripDetailPage } from '@/pages/driver-trips-page';
 import { SenderTrackPage } from '@/pages/sender-track-page';
 import { SenderRegisterPage } from '@/pages/sender-register-page';
@@ -370,6 +372,38 @@ export function AppRouter() {
           element={
             <RequireRoles roles={[AdminRole.SUPER_ADMIN, AdminRole.STATE_MASTER]}>
               <OpsExceptionsPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/ops/disputes"
+          element={
+            <RequireRoles roles={[AdminRole.SUPER_ADMIN, AdminRole.STATE_MASTER, AdminRole.LOCAL_BDE]}>
+              <OpsDisputesPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/ops/disputes/:id"
+          element={
+            <RequireRoles roles={[AdminRole.SUPER_ADMIN, AdminRole.STATE_MASTER, AdminRole.LOCAL_BDE]}>
+              <OpsDisputeDetailPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/ops/team"
+          element={
+            <RequireRoles roles={[AdminRole.SUPER_ADMIN, AdminRole.STATE_MASTER]}>
+              <OpsTeamPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/ops/team/:id"
+          element={
+            <RequireRoles roles={[AdminRole.SUPER_ADMIN, AdminRole.STATE_MASTER]}>
+              <OpsTeamDetailPage />
             </RequireRoles>
           }
         />

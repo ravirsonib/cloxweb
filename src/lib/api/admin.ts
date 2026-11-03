@@ -236,6 +236,7 @@ export type PlatformSettings = {
   driverUnavailableScoreDelta: number;
   carrierMarketplaceReleaseScoreDelta: number;
   carrierClearingDays: number;
+  gstPercent: number;
   updatedAt: string;
 };
 
@@ -245,6 +246,7 @@ export type PlatformSettingsPatch = {
   driverUnavailableScoreDelta?: number;
   carrierMarketplaceReleaseScoreDelta?: number;
   carrierClearingDays?: number;
+  gstPercent?: number;
 };
 
 export function getPlatformSettings(options?: { signal?: AbortSignal }) {

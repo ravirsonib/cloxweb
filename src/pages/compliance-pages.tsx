@@ -323,8 +323,16 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
   });
 
   const decide = useMutation({
-    mutationFn: (action: 'approve' | 'reject' | 'request-info' | 'escalate') =>
-      decideCompliance(caseId, action, note.trim() || undefined),
+    mutationFn: (vars: {
+      action: 'approve' | 'reject' | 'request-info' | 'escalate';
+      note?: string;
+      driverId?: string;
+      vehicleId?: string;
+    }) =>
+      decideCompliance(caseId, vars.action, (vars.note ?? note).trim() || undefined, {
+        driverId: vars.driverId,
+        vehicleId: vars.vehicleId,
+      }),
     onSuccess: async () => {
       setNoteError(null);
       toast.success(t('compliance.decisionApplied'));
@@ -356,21 +364,40 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
     }
     const prompts = {
       approve: {
-        title: t('confirm.approveTitle'),
-        description: t('confirm.approveBody'),
-        confirmLabel: t('compliance.approve'),
+        title: isAssetReview
+          ? t('confirm.approveAllTitle', { defaultValue: 'Approve all assets?' })
+          : t('confirm.approveTitle'),
+        description: isAssetReview
+          ? t('confirm.approveAllBody', {
+              defaultValue:
+                'This will approve all remaining unreviewed documents and activate all pending assets.',
+            })
+          : t('confirm.approveBody'),
+        confirmLabel: isAssetReview
+          ? t('compliance.approveAll', { defaultValue: 'Approve All' })
+          : t('compliance.approve'),
         tone: 'default' as const,
       },
       reject: {
-        title: t('confirm.rejectTitle'),
-        description: t('confirm.rejectBody'),
-        confirmLabel: t('compliance.reject'),
+        title: isAssetReview
+          ? t('confirm.rejectAllTitle', { defaultValue: 'Reject all assets?' })
+          : t('confirm.rejectTitle'),
+        description: isAssetReview
+          ? t('confirm.rejectAllBody', {
+              defaultValue: 'This will reject all unreviewed documents in this case.',
+            })
+          : t('confirm.rejectBody'),
+        confirmLabel: isAssetReview
+          ? t('compliance.rejectAll', { defaultValue: 'Reject All' })
+          : t('compliance.reject'),
         tone: 'destructive' as const,
       },
       'request-info': {
         title: t('confirm.requestInfoTitle'),
         description: t('confirm.requestInfoBody'),
-        confirmLabel: t('compliance.requestInfo'),
+        confirmLabel: isAssetReview
+          ? t('compliance.requestInfoAll', { defaultValue: 'Request Info All' })
+          : t('compliance.requestInfo'),
         tone: 'default' as const,
       },
       escalate: {
@@ -383,7 +410,71 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
     const ok = await confirm(prompts[action]);
     if (!ok) return;
     setNoteError(null);
-    decide.mutate(action);
+    decide.mutate({ action });
+  }
+
+  async function runItemDecision(
+    itemType: 'driver' | 'vehicle',
+    itemId: string,
+    action: 'approve' | 'reject' | 'request-info',
+    itemName: string,
+  ) {
+    const isReject = action === 'reject';
+    const isInfo = action === 'request-info';
+    let itemNote = note.trim();
+
+    if ((isReject || isInfo) && !itemNote) {
+      const promptLabel = isReject
+        ? t('confirm.rejectReasonPrompt', {
+            defaultValue: `Reason for rejecting ${itemType} (${itemName}):`,
+          })
+        : t('confirm.infoReasonPrompt', {
+            defaultValue: `Details requested for ${itemType} (${itemName}):`,
+          });
+      const res = window.prompt(promptLabel);
+      if (!res || !res.trim()) {
+        toast.error(
+          isReject
+            ? t('validation.noteRejectRequired')
+            : t('validation.noteInfoRequired'),
+        );
+        return;
+      }
+      itemNote = res.trim();
+    } else {
+      const itemTitle =
+        action === 'approve'
+          ? itemType === 'driver'
+            ? t('confirm.approveDriverTitle', { defaultValue: 'Approve Driver?' })
+            : t('confirm.approveVehicleTitle', { defaultValue: 'Approve Vehicle?' })
+          : action === 'reject'
+          ? itemType === 'driver'
+            ? t('confirm.rejectDriverTitle', { defaultValue: 'Reject Driver?' })
+            : t('confirm.rejectVehicleTitle', { defaultValue: 'Reject Vehicle?' })
+          : itemType === 'driver'
+          ? t('confirm.requestInfoDriverTitle', { defaultValue: 'Request Info for Driver?' })
+          : t('confirm.requestInfoVehicleTitle', { defaultValue: 'Request Info for Vehicle?' });
+
+      const ok = await confirm({
+        title: itemTitle,
+        description: `${action.toUpperCase()} — ${itemName}`,
+        confirmLabel:
+          action === 'approve'
+            ? t('compliance.approve')
+            : action === 'reject'
+            ? t('compliance.reject')
+            : t('compliance.requestInfo'),
+        tone: isReject ? 'destructive' : 'default',
+      });
+      if (!ok) return;
+    }
+
+    decide.mutate({
+      action,
+      note: itemNote || undefined,
+      driverId: itemType === 'driver' ? itemId : undefined,
+      vehicleId: itemType === 'vehicle' ? itemId : undefined,
+    });
   }
 
   async function viewDocument(documentId: string) {
@@ -493,12 +584,17 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
 
           const renderDoc = (d: ComplianceCaseDocument) => {
             const canView = d.status !== 'UPLOAD_PENDING';
+            const isDriverDoc = c.caseType === 'CARRIER_DRIVER_LICENCE' && Boolean(d.driverId);
+            const isVehicleDoc = c.caseType === 'CARRIER_FLEET_RWC' && Boolean(d.vehicleId);
+            const canItemDecide = canDecide && (isDriverDoc || isVehicleDoc);
+            const isPendingItem = d.status !== 'APPROVED' && d.status !== 'REJECTED';
+
             return (
               <li
                 key={d.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-clox-md border border-clox-border px-3 py-2 text-sm"
+                className="flex flex-col gap-3 rounded-clox-md border border-clox-border p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-xs text-clox-orange">{d.docType}</span>
                     <StatusPill tone={complianceDocStatusTone(d.status)}>{d.status}</StatusPill>
@@ -507,7 +603,7 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
                     ) : null}
                   </div>
                   {d.vehicleRegistration || d.vehicleLabel ? (
-                    <p className="mt-0.5 text-xs text-clox-ink">
+                    <p className="mt-0.5 text-xs font-medium text-clox-ink">
                       {t('compliance.docsVehicle', {
                         rego: d.vehicleRegistration ?? t('dash'),
                         label: d.vehicleLabel ?? t('dash'),
@@ -516,7 +612,7 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
                     </p>
                   ) : null}
                   {d.driverEmail || d.driverName ? (
-                    <p className="mt-0.5 text-xs text-clox-ink">
+                    <p className="mt-0.5 text-xs font-medium text-clox-ink">
                       {t('compliance.docsDriver', {
                         name: d.driverName ?? t('dash'),
                         email: d.driverEmail ?? t('dash'),
@@ -525,24 +621,97 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
                       {d.driverStatus ? ` · ${d.driverStatus}` : ''}
                     </p>
                   ) : null}
-                  <p className="mt-0.5 truncate text-clox-faint">{d.originalFilename}</p>
-                  <p className="mt-0.5 text-xs text-clox-mute">
+                  <p className="mt-0.5 truncate text-xs text-clox-faint">{d.originalFilename}</p>
+                  <p className="mt-0.5 text-[11px] text-clox-mute">
                     {t('compliance.docsUploadedAt', {
                       date: formatDateTime(d.createdAt),
                     })}
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="shrink-0"
-                  disabled={!canView || openingDocId === d.id}
-                  onClick={() => void viewDocument(d.id)}
-                >
-                  {openingDocId === d.id
-                    ? t('compliance.openingDocument')
-                    : t('compliance.viewDocument')}
-                </Button>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={!canView || openingDocId === d.id}
+                    onClick={() => void viewDocument(d.id)}
+                  >
+                    {openingDocId === d.id
+                      ? t('compliance.openingDocument')
+                      : t('compliance.viewDocument')}
+                  </Button>
+
+                  {canItemDecide ? (
+                    <div className="flex flex-wrap items-center gap-1.5 border-t border-clox-border pt-2 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-2">
+                      {d.status !== 'APPROVED' ? (
+                        <Button
+                          type="button"
+                          variant="primary"
+                          size="sm"
+                          disabled={decide.isPending}
+                          onClick={() =>
+                            void runItemDecision(
+                              isDriverDoc ? 'driver' : 'vehicle',
+                              (isDriverDoc ? d.driverId : d.vehicleId)!,
+                              'approve',
+                              (isDriverDoc
+                                ? d.driverName || d.driverEmail
+                                : d.vehicleRegistration || d.vehicleLabel) || 'item',
+                            )
+                          }
+                        >
+                          ✓ {isDriverDoc ? t('compliance.approveDriver', { defaultValue: 'Approve Driver' }) : t('compliance.approveVehicle', { defaultValue: 'Approve Vehicle' })}
+                        </Button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--status-ok)]">
+                          ✓ {t('compliance.statusApproved', { defaultValue: 'Approved' })}
+                        </span>
+                      )}
+
+                      {isPendingItem ? (
+                        <>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            disabled={decide.isPending}
+                            onClick={() =>
+                              void runItemDecision(
+                                isDriverDoc ? 'driver' : 'vehicle',
+                                (isDriverDoc ? d.driverId : d.vehicleId)!,
+                                'request-info',
+                                (isDriverDoc
+                                  ? d.driverName || d.driverEmail
+                                  : d.vehicleRegistration || d.vehicleLabel) || 'item',
+                              )
+                            }
+                          >
+                            ⚠ {t('compliance.requestInfoShort', { defaultValue: 'Info' })}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            disabled={decide.isPending}
+                            onClick={() =>
+                              void runItemDecision(
+                                isDriverDoc ? 'driver' : 'vehicle',
+                                (isDriverDoc ? d.driverId : d.vehicleId)!,
+                                'reject',
+                                (isDriverDoc
+                                  ? d.driverName || d.driverEmail
+                                  : d.vehicleRegistration || d.vehicleLabel) || 'item',
+                              )
+                            }
+                          >
+                            ✕ {t('compliance.rejectShort', { defaultValue: 'Reject' })}
+                          </Button>
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
               </li>
             );
           };
@@ -602,7 +771,9 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
                 disabled={decide.isPending}
                 onClick={() => void runDecision('approve')}
               >
-                {t('compliance.approve')}
+                {isAssetReview
+                  ? t('compliance.approveAll', { defaultValue: 'Approve All' })
+                  : t('compliance.approve')}
               </Button>
               <Button
                 type="button"
@@ -610,7 +781,9 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
                 disabled={decide.isPending}
                 onClick={() => void runDecision('request-info')}
               >
-                {t('compliance.requestInfo')}
+                {isAssetReview
+                  ? t('compliance.requestInfoAll', { defaultValue: 'Request Info All' })
+                  : t('compliance.requestInfo')}
               </Button>
               <Button
                 type="button"
@@ -618,7 +791,9 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
                 disabled={decide.isPending}
                 onClick={() => void runDecision('reject')}
               >
-                {t('compliance.reject')}
+                {isAssetReview
+                  ? t('compliance.rejectAll', { defaultValue: 'Reject All' })
+                  : t('compliance.reject')}
               </Button>
             </>
           ) : null}

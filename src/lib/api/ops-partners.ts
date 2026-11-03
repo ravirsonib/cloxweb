@@ -1,5 +1,6 @@
 import { createHttpClient, toApiError } from '@/lib/http/client';
 import { http } from '@/lib/http';
+import type { OpsDashboardStatsResponse } from '@/shared/types';
 
 const publicHttp = createHttpClient();
 publicHttp.interceptors.response.use(
@@ -178,4 +179,8 @@ export function submitPartnerOnboarding(payload: {
       payload,
     )
     .then((r) => r.data);
+}
+
+export function getOpsDashboardStats() {
+  return http.get<OpsDashboardStatsResponse>('/ops/dashboard/stats').then((r) => r.data);
 }

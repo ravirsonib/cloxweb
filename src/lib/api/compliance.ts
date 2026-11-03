@@ -96,9 +96,10 @@ export function decideCompliance(
   id: string,
   action: 'approve' | 'reject' | 'request-info' | 'escalate',
   note?: string,
+  options?: { driverId?: string; vehicleId?: string },
 ) {
   return http
-    .post(`/ops/compliance/cases/${id}/${action}`, { note })
+    .post(`/ops/compliance/cases/${id}/${action}`, { note, ...options })
     .then((r) => r.data);
 }
 

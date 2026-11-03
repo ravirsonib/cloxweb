@@ -11,6 +11,7 @@ import {
   getMarketBoard,
   listCarrierDrivers,
   listCarrierVehicles,
+  listTripExceptions,
   openDocumentContent,
   submitBid,
   withdrawProposalByJobId,
@@ -116,6 +117,20 @@ export function MarketBoardPage() {
     refetchOnWindowFocus: true,
     refetchInterval: 10_000,
   });
+  const exceptionsQuery = useQuery({
+    queryKey: ['exceptions', 'carrier'],
+    queryFn: ({ signal }) => listTripExceptions({ signal }),
+    enabled: role === AppRole.TRANSPORT_COMPANY,
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+  });
+  const openExceptionsCount = useMemo(
+    () =>
+      (exceptionsQuery.data?.items ?? []).filter(
+        (ex) => ex.status === 'AWAITING_CARRIER' || ex.status === 'OPEN',
+      ).length,
+    [exceptionsQuery.data?.items],
+  );
 
   const [jobId, setJobId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<MarketFilter>('available');
@@ -350,6 +365,23 @@ export function MarketBoardPage() {
       {board.isError ? (
         <Notice tone="error" className="mt-4">
           {getErrorDetail(board.error)}
+        </Notice>
+      ) : null}
+
+      {openExceptionsCount > 0 ? (
+        <Notice tone="warn" className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <span>
+            {t('market.openExceptionsNotice', {
+              count: openExceptionsCount,
+              defaultValue: `${openExceptionsCount} active trip issue(s) or breakdown(s) require your action.`,
+            })}
+          </span>
+          <Link
+            to="/carrier/exceptions"
+            className="font-semibold text-clox-orange hover:underline shrink-0 text-xs"
+          >
+            {t('exceptions.viewAll', { defaultValue: 'View Exceptions →' })}
+          </Link>
         </Notice>
       ) : null}
 

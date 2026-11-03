@@ -65,6 +65,7 @@ export function NotificationBell({ className }: { className?: string }) {
       void qc.invalidateQueries({ queryKey: ['jobs'] });
       void qc.invalidateQueries({ queryKey: ['compliance'] });
       void qc.invalidateQueries({ queryKey: ['leads'] });
+      void qc.invalidateQueries({ queryKey: ['exceptions'] });
     }
     prevCountRef.current = current;
   }, [unread.data?.count, qc]);

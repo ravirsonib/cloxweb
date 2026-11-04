@@ -57,6 +57,7 @@ export function DriverOnboardingPage() {
   const { t } = useTranslation();
   const role = useAuthStore((s) => s.role);
   const queryClient = useQueryClient();
+  const [isRenewing, setIsRenewing] = useState(false);
 
   const onboarding = useQuery({
     queryKey: ['driver', 'onboarding'],
@@ -178,16 +179,64 @@ export function DriverOnboardingPage() {
               ) : null}
             </ul>
           </div>
-          <Link to="/trips" className="clox-btn clox-btn-cta inline-flex">
-            {t('driverOnboarding.goToTrips')}
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link to="/trips" className="clox-btn clox-btn-cta inline-flex">
+              {t('driverOnboarding.goToTrips')}
+            </Link>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setIsRenewing(!isRenewing)}
+            >
+              {isRenewing
+                ? t('cancel', { defaultValue: 'Cancel' })
+                : t('driverOnboarding.renewLicenceBtn', { defaultValue: 'Update / Renew Licence' })}
+            </Button>
+          </div>
+          {isRenewing ? (
+            <div className="mt-6 rounded-xl border border-clox-border bg-clox-surface p-4">
+              <h3 className="font-display text-base font-semibold text-clox-ink mb-4">
+                {t('driverOnboarding.renewLicenceTitle', { defaultValue: 'Submit Renewed Licence' })}
+              </h3>
+              <LicenceStep
+                data={data}
+                onSaved={async () => {
+                  setIsRenewing(false);
+                  await refresh();
+                }}
+                companyId={data.company?.id ?? null}
+                driverId={data.driver.id}
+                isRenewal
+              />
+            </div>
+          ) : null}
         </div>
       ) : null}
 
       {step === 'suspended' ? (
-        <Notice tone="error" className="mt-8">
-          {t('driverOnboarding.suspended')}
-        </Notice>
+        <div className="mt-8 space-y-6">
+          <Notice
+            tone="error"
+            title={t('driverOnboarding.suspendedTitle', { defaultValue: 'Licence Expired & Account Suspended' })}
+          >
+            {t('driverOnboarding.suspendedDesc', {
+              defaultValue:
+                'Your driver licence has expired and your status is currently suspended from taking trips. Please upload your renewed licence document and update your expiry date below to submit for reactivation.',
+            })}
+          </Notice>
+          <div className="rounded-xl border border-clox-border bg-clox-surface p-4">
+            <h3 className="font-display text-base font-semibold text-clox-ink mb-4">
+              {t('driverOnboarding.renewLicenceTitle', { defaultValue: 'Submit Renewed Licence' })}
+            </h3>
+            <LicenceStep
+              data={data}
+              onSaved={refresh}
+              companyId={data.company?.id ?? null}
+              driverId={data.driver.id}
+              isRenewal
+            />
+          </div>
+        </div>
       ) : null}
     </div>
   );
@@ -238,17 +287,19 @@ function LicenceStep({
   onSaved,
   companyId,
   driverId,
+  isRenewal = false,
 }: {
   data: DriverOnboarding;
   onSaved: () => Promise<void>;
   companyId: string | null;
   driverId: string;
+  isRenewal?: boolean;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
   const formTopRef = useRef<HTMLFormElement>(null);
-  const [chip, setChip] = useState<ProfileChipId>('details');
-  const [farthestChipIdx, setFarthestChipIdx] = useState(0);
+  const [chip, setChip] = useState<ProfileChipId>(isRenewal ? 'licence' : 'details');
+  const [farthestChipIdx, setFarthestChipIdx] = useState(isRenewal ? 2 : 0);
   const [licenceFile, setLicenceFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const chipIdx = PROFILE_CHIPS.indexOf(chip);

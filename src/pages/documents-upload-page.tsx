@@ -407,6 +407,18 @@ export function DocumentsUploadPage() {
               </option>
             ))}
           </Select>
+
+          {isDriver && docType === 'DRIVER_LICENCE' ? (
+            <Notice tone="warn" className="mt-3">
+              {t('documentsUpload.driverLicenceRedirectHint', {
+                defaultValue:
+                  'Uploading a licence document here only saves the file in your document storage. To renew your licence, update your expiry date, and reactivate your profile to take trips, please submit your renewal through the Driver Licence & Profile page.',
+              })}{' '}
+              <Link to="/driver/onboarding" className="font-semibold text-clox-orange underline">
+                {t('documentsUpload.goToDriverProfile', { defaultValue: 'Go to Driver Licence Renewal →' })}
+              </Link>
+            </Notice>
+          ) : null}
           <FileInput
             label={t('documentsUpload.fileLabel')}
             accept=".pdf,image/jpeg,image/png,image/webp"

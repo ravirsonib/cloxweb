@@ -9,7 +9,7 @@ import {
   listAdminVehicleClasses,
   updateAdminVehicleClass,
 } from '@/lib/api';
-import { Button, ChoiceCheck, Field, Notice, Select, useConfirm, useToast } from '@/components/ui';
+import { Button, ChoiceCheck, Field, Notice, Select, StatusPill, useConfirm, useToast } from '@/components/ui';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import { X } from 'lucide-react';
 import { LICENCE_CLASSES } from '@/lib/validation';
@@ -148,30 +148,59 @@ export function AdminVehicleClassesPage() {
     setModalMode('EDIT');
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
     if (!formValues.name.trim()) {
-      setFormError('Display name is required');
+      setFormError(t('adminVehicleClasses.errNameRequired', { defaultValue: 'Display name is required.' }));
       return;
     }
 
     if (modalMode === 'CREATE') {
       const codeClean = formValues.code.trim().toUpperCase();
       if (!codeClean) {
-        setFormError('Class code is required');
+        setFormError(t('adminVehicleClasses.errCodeRequired', { defaultValue: 'Class code is required.' }));
         return;
       }
       if (!/^[A-Z0-9_]+$/.test(codeClean)) {
-        setFormError('Code must contain only uppercase letters, numbers, and underscores');
+        setFormError(
+          t('adminVehicleClasses.errCodeFormat', {
+            defaultValue: 'Code must contain only uppercase letters, numbers, and underscores.',
+          }),
+        );
         return;
       }
+      const ok = await confirm({
+        title: t('adminVehicleClasses.confirmCreateTitle', { defaultValue: 'Create New Vehicle Class?' }),
+        description: t('adminVehicleClasses.confirmCreateDesc', {
+          defaultValue: 'This will add the new vehicle class to the marketplace sizing hierarchy.',
+        }),
+        confirmLabel: t('save', { defaultValue: 'Save Vehicle Class' }),
+        cancelLabel: t('cancel', { defaultValue: 'Cancel' }),
+        tone: 'default',
+      });
+      if (!ok) return;
+
       createMutation.mutate({
         ...formValues,
         code: codeClean,
       });
     } else if (modalMode === 'EDIT' && selectedClass) {
+      const ok = await confirm({
+        title: t('adminVehicleClasses.confirmEditTitle', {
+          code: selectedClass.code,
+          defaultValue: `Save Changes to Vehicle Class "${selectedClass.code}"?`,
+        }),
+        description: t('adminVehicleClasses.confirmEditDesc', {
+          defaultValue: 'Updates to dimensions, payload, and rank will immediately affect auto-suggestion for new jobs.',
+        }),
+        confirmLabel: t('save', { defaultValue: 'Save Vehicle Class' }),
+        cancelLabel: t('cancel', { defaultValue: 'Cancel' }),
+        tone: 'default',
+      });
+      if (!ok) return;
+
       updateMutation.mutate({
         id: selectedClass.id,
         data: {
@@ -190,15 +219,54 @@ export function AdminVehicleClassesPage() {
     }
   };
 
+  const handleToggleActive = async (item: VehicleClassDto) => {
+    const actionLabel = item.isActive
+      ? t('adminVehicleClasses.deactivate', { defaultValue: 'Deactivate' })
+      : t('adminVehicleClasses.activate', { defaultValue: 'Activate' });
+    const ok = await confirm({
+      title: item.isActive
+        ? t('adminVehicleClasses.confirmDeactivateTitle', {
+            code: item.code,
+            name: item.name,
+            defaultValue: `Deactivate Vehicle Class "${item.name}" (${item.code})?`,
+          })
+        : t('adminVehicleClasses.confirmActivateTitle', {
+            code: item.code,
+            name: item.name,
+            defaultValue: `Activate Vehicle Class "${item.name}" (${item.code})?`,
+          }),
+      description: item.isActive
+        ? t('adminVehicleClasses.confirmDeactivateDesc', {
+            defaultValue:
+              'Deactivating this vehicle class will hide it from sender load auto-suggestion and prevent carriers from selecting it for new fleet vehicles.',
+          })
+        : t('adminVehicleClasses.confirmActivateDesc', {
+            defaultValue:
+              'Activating this vehicle class will make it immediately available for sender auto-suggestion and carrier fleet registration.',
+          }),
+      confirmLabel: actionLabel,
+      cancelLabel: t('cancel', { defaultValue: 'Cancel' }),
+      tone: item.isActive ? 'destructive' : 'default',
+    });
+    if (!ok) return;
+    toggleActiveMutation.mutate({
+      id: item.id,
+      isActive: !item.isActive,
+    });
+  };
+
   const handleDelete = async (item: VehicleClassDto) => {
     const ok = await confirm({
       title: t('adminVehicleClasses.deleteConfirmTitle', {
+        code: item.code,
         defaultValue: `Delete Vehicle Class "${item.code}"?`,
       }),
       description: t('adminVehicleClasses.deleteConfirmBody', {
         defaultValue:
           'If this vehicle class is referenced by existing vehicles or jobs, deletion will be blocked and you can deactivate it instead.',
       }),
+      confirmLabel: t('delete', { defaultValue: 'Delete' }),
+      cancelLabel: t('cancel', { defaultValue: 'Cancel' }),
       tone: 'destructive',
     });
     if (!ok) return;
@@ -226,17 +294,20 @@ export function AdminVehicleClassesPage() {
 
       <div className="flex flex-wrap items-center gap-4 rounded-clox-md border border-clox-border bg-clox-surface p-4 text-sm">
         <div>
-          <span className="text-clox-mute">Total Configured:</span>{' '}
+          <span className="text-clox-mute">{t('adminVehicleClasses.totalConfigured', { defaultValue: 'Total Configured:' })}</span>{' '}
           <span className="font-semibold text-clox-ink">{classes.length}</span>
         </div>
         <div className="h-4 w-px bg-clox-border" />
         <div>
-          <span className="text-clox-mute">Active in Marketplace:</span>{' '}
+          <span className="text-clox-mute">{t('adminVehicleClasses.activeInMarketplace', { defaultValue: 'Active in Marketplace:' })}</span>{' '}
           <span className="font-semibold text-[var(--status-ok)]">{activeCount}</span>
         </div>
         <div className="h-4 w-px bg-clox-border" />
         <div className="text-xs text-clox-faint">
-          Auto-suggestion evaluates active classes in order of <strong>Rank</strong>: selects the lowest rank where cargo weight and dimensions (L×W×H) both fit.
+          {t('adminVehicleClasses.hierarchyRuleHint', {
+            defaultValue:
+              'Auto-suggestion evaluates active classes in order of Rank: selects the lowest rank where cargo weight and dimensions (L×W×H) both fit.',
+          })}
         </div>
       </div>
 
@@ -258,15 +329,15 @@ export function AdminVehicleClassesPage() {
           <table className="w-full text-left text-sm">
             <thead className="border-b border-clox-border bg-clox-surface-alt text-xs font-semibold uppercase tracking-wider text-clox-mute">
               <tr>
-                <th className="px-4 py-3">Rank</th>
-                <th className="px-4 py-3">Code</th>
-                <th className="px-4 py-3">Display Name</th>
-                <th className="px-4 py-3">Max Payload</th>
-                <th className="px-4 py-3">Cargo Bay (L × W × H)</th>
-                <th className="px-4 py-3">Min Licence</th>
-                <th className="px-4 py-3">Suggested GVM / Tare</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className="px-4 py-3">{t('adminVehicleClasses.thRank', { defaultValue: 'Rank' })}</th>
+                <th className="px-4 py-3">{t('adminVehicleClasses.thCode', { defaultValue: 'Code' })}</th>
+                <th className="px-4 py-3">{t('adminVehicleClasses.thName', { defaultValue: 'Display Name' })}</th>
+                <th className="px-4 py-3">{t('adminVehicleClasses.thPayload', { defaultValue: 'Max Payload' })}</th>
+                <th className="px-4 py-3">{t('adminVehicleClasses.thCargoBay', { defaultValue: 'Cargo Bay (L × W × H)' })}</th>
+                <th className="px-4 py-3">{t('adminVehicleClasses.thLicence', { defaultValue: 'Min Licence' })}</th>
+                <th className="px-4 py-3">{t('adminVehicleClasses.thGvmTare', { defaultValue: 'Suggested GVM / Tare' })}</th>
+                <th className="px-4 py-3">{t('adminVehicleClasses.thStatus', { defaultValue: 'Status' })}</th>
+                <th className="px-4 py-3 text-right">{t('adminVehicleClasses.thActions', { defaultValue: 'Actions' })}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-clox-border">
@@ -298,15 +369,11 @@ export function AdminVehicleClassesPage() {
                     {cls.suggestedGvmKg.toLocaleString()} / {cls.suggestedTareKg.toLocaleString()} kg
                   </td>
                   <td className="px-4 py-3">
-                    {cls.isActive ? (
-                      <span className="inline-flex items-center rounded-full bg-[var(--status-ok-bg)] px-2.5 py-0.5 text-xs font-semibold text-[var(--status-ok)]">
-                        Active
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-clox-surface-alt px-2.5 py-0.5 text-xs font-semibold text-clox-mute">
-                        Inactive
-                      </span>
-                    )}
+                    <StatusPill tone={cls.isActive ? 'ok' : 'neutral'}>
+                      {cls.isActive
+                        ? t('adminVehicleClasses.statusActive', { defaultValue: 'Active' })
+                        : t('adminVehicleClasses.statusInactive', { defaultValue: 'Inactive' })}
+                    </StatusPill>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
@@ -322,14 +389,11 @@ export function AdminVehicleClassesPage() {
                         type="button"
                         variant="ghost"
                         className="text-xs"
-                        onClick={() =>
-                          toggleActiveMutation.mutate({
-                            id: cls.id,
-                            isActive: !cls.isActive,
-                          })
-                        }
+                        onClick={() => handleToggleActive(cls)}
                       >
-                        {cls.isActive ? 'Deactivate' : 'Activate'}
+                        {cls.isActive
+                          ? t('adminVehicleClasses.deactivate', { defaultValue: 'Deactivate' })
+                          : t('adminVehicleClasses.activate', { defaultValue: 'Activate' })}
                       </Button>
                       <Button
                         type="button"
@@ -356,10 +420,15 @@ export function AdminVehicleClassesPage() {
                 <h2 className="font-display text-xl font-bold text-clox-ink">
                   {modalMode === 'CREATE'
                     ? t('adminVehicleClasses.createTitle', { defaultValue: 'Add New Vehicle Class' })
-                    : t('adminVehicleClasses.editTitle', { defaultValue: `Edit Vehicle Class: ${selectedClass?.code}` })}
+                    : t('adminVehicleClasses.editTitle', {
+                        code: selectedClass?.code,
+                        defaultValue: `Edit Vehicle Class: ${selectedClass?.code}`,
+                      })}
                 </h2>
                 <p className="mt-1 text-xs text-clox-mute">
-                  Configure load thresholds and dimension limits for auto-suggestion.
+                  {t('adminVehicleClasses.modalSubtitle', {
+                    defaultValue: 'Configure load thresholds and dimension limits for auto-suggestion.',
+                  })}
                 </p>
               </div>
               <button
@@ -382,7 +451,15 @@ export function AdminVehicleClassesPage() {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field
                   label={t('adminVehicleClasses.codeLabel', { defaultValue: 'Class Code' })}
-                  hint={modalMode === 'CREATE' ? 'Unique uppercase identifier (e.g. RIGID_8T)' : 'Code cannot be changed once created'}
+                  hint={
+                    modalMode === 'CREATE'
+                      ? t('adminVehicleClasses.codeHintCreate', {
+                          defaultValue: 'Unique uppercase identifier (e.g. RIGID_8T)',
+                        })
+                      : t('adminVehicleClasses.codeHintEdit', {
+                          defaultValue: 'Code cannot be changed once created',
+                        })
+                  }
                   value={formValues.code}
                   disabled={modalMode === 'EDIT'}
                   required
@@ -395,7 +472,9 @@ export function AdminVehicleClassesPage() {
                 />
                 <Field
                   label={t('adminVehicleClasses.nameLabel', { defaultValue: 'Display Name' })}
-                  hint="Human-readable label (e.g. Rigid 8T (up to 8t))"
+                  hint={t('adminVehicleClasses.nameHint', {
+                    defaultValue: 'Human-readable label (e.g. Rigid 8T (up to 8t))',
+                  })}
                   value={formValues.name}
                   required
                   onChange={(e) =>
@@ -411,7 +490,9 @@ export function AdminVehicleClassesPage() {
                 <Field
                   type="number"
                   label={t('adminVehicleClasses.rankLabel', { defaultValue: 'Rank Hierarchy' })}
-                  hint="1 = smallest (e.g. Ute); larger can take smaller jobs"
+                  hint={t('adminVehicleClasses.rankHint', {
+                    defaultValue: '1 = smallest (e.g. Ute); larger can take smaller jobs',
+                  })}
                   value={formValues.rank}
                   required
                   min={1}
@@ -426,7 +507,7 @@ export function AdminVehicleClassesPage() {
                 <Field
                   type="number"
                   label={t('adminVehicleClasses.maxWeightLabel', { defaultValue: 'Max Payload (kg)' })}
-                  hint="Max chargeable weight"
+                  hint={t('adminVehicleClasses.maxWeightHint', { defaultValue: 'Max chargeable weight' })}
                   value={formValues.maxChargeableWeightKg}
                   required
                   min={1}
@@ -439,7 +520,7 @@ export function AdminVehicleClassesPage() {
                 />
                 <Select
                   label={t('adminVehicleClasses.minLicenceLabel', { defaultValue: 'Min Licence' })}
-                  hint="Required driver licence"
+                  hint={t('adminVehicleClasses.minLicenceHint', { defaultValue: 'Required driver licence' })}
                   value={formValues.minLicenceClass}
                   onChange={(e) =>
                     setFormValues((prev) => ({
@@ -458,15 +539,18 @@ export function AdminVehicleClassesPage() {
 
               <div className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-3">
                 <p className="text-xs font-bold text-clox-ink">
-                  Cargo Bay Dimensions (cm)
+                  {t('adminVehicleClasses.cargoBayTitle', { defaultValue: 'Cargo Bay Dimensions (cm)' })}
                 </p>
                 <p className="text-[11px] text-clox-mute">
-                  Used by auto-suggestion so large/bulky items trigger a vehicle class with sufficient cargo envelope.
+                  {t('adminVehicleClasses.cargoBayDesc', {
+                    defaultValue:
+                      'Used by auto-suggestion so large/bulky items trigger a vehicle class with sufficient cargo envelope.',
+                  })}
                 </p>
                 <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <Field
                     type="number"
-                    label="Max Length (cm)"
+                    label={t('adminVehicleClasses.lengthLabel', { defaultValue: 'Max Length (cm)' })}
                     value={formValues.maxLengthCm}
                     required
                     min={1}
@@ -479,7 +563,7 @@ export function AdminVehicleClassesPage() {
                   />
                   <Field
                     type="number"
-                    label="Max Width (cm)"
+                    label={t('adminVehicleClasses.widthLabel', { defaultValue: 'Max Width (cm)' })}
                     value={formValues.maxWidthCm}
                     required
                     min={1}
@@ -492,7 +576,7 @@ export function AdminVehicleClassesPage() {
                   />
                   <Field
                     type="number"
-                    label="Max Height (cm)"
+                    label={t('adminVehicleClasses.heightLabel', { defaultValue: 'Max Height (cm)' })}
                     value={formValues.maxHeightCm}
                     required
                     min={1}
@@ -510,7 +594,9 @@ export function AdminVehicleClassesPage() {
                 <Field
                   type="number"
                   label={t('adminVehicleClasses.gvmLabel', { defaultValue: 'Suggested GVM (kg)' })}
-                  hint="Default GVM when carrier selects this class"
+                  hint={t('adminVehicleClasses.gvmHint', {
+                    defaultValue: 'Default GVM when carrier selects this class',
+                  })}
                   value={formValues.suggestedGvmKg}
                   required
                   min={1}
@@ -524,7 +610,9 @@ export function AdminVehicleClassesPage() {
                 <Field
                   type="number"
                   label={t('adminVehicleClasses.tareLabel', { defaultValue: 'Suggested Tare (kg)' })}
-                  hint="Default Tare when carrier selects this class"
+                  hint={t('adminVehicleClasses.tareHint', {
+                    defaultValue: 'Default Tare when carrier selects this class',
+                  })}
                   value={formValues.suggestedTareKg}
                   required
                   min={1}

@@ -237,6 +237,13 @@ export type PlatformSettings = {
   carrierMarketplaceReleaseScoreDelta: number;
   carrierClearingDays: number;
   gstPercent: number;
+  perKmRateCents?: number;
+  perKmMinBaseCents?: number;
+  hourlyRateCents?: number;
+  hourlyMinFloorHours?: number;
+  hourlyMinBaseCents?: number;
+  settlementCycleCadenceDays?: number;
+  settlementCutoffHour?: number;
   updatedAt: string;
 };
 
@@ -247,6 +254,13 @@ export type PlatformSettingsPatch = {
   carrierMarketplaceReleaseScoreDelta?: number;
   carrierClearingDays?: number;
   gstPercent?: number;
+  perKmRateCents?: number;
+  perKmMinBaseCents?: number;
+  hourlyRateCents?: number;
+  hourlyMinFloorHours?: number;
+  hourlyMinBaseCents?: number;
+  settlementCycleCadenceDays?: number;
+  settlementCutoffHour?: number;
 };
 
 export function getPlatformSettings(options?: { signal?: AbortSignal }) {
@@ -1123,4 +1137,170 @@ export function getPartnerFinance(
     })
     .then((res) => res.data);
 }
+
+// ─── M12: Fortnightly Settlement Cycles & Reconciliation ────────────────────
+
+export type SettlementCycleStatus = 'OPEN' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+
+export interface SettlementCycleSummary {
+  id: string;
+  cycleNumber: string;
+  periodStart: string;
+  periodEnd: string;
+  scheduledDisburseAt: string;
+  status: SettlementCycleStatus;
+  disbursedAt: string | null;
+  totalAccruedCents: number;
+  totalDisbursedCents: number;
+  carrierPayoutCents: number;
+  adminPayoutCents: number;
+  hqHoldingCents: number;
+  lineCount: number;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface SettlementCycleDetail extends SettlementCycleSummary {
+  settlementLines: Array<{
+    id: string;
+    jobId: string;
+    recipientType: string;
+    recipientId: string | null;
+    grossFareCents: number;
+    amountCents: number;
+    sharePercent: number;
+    status: string;
+    createdAt: string;
+    paidAt: string | null;
+    job: {
+      id: string;
+      title: string;
+      assignment: {
+        carrierCompany: {
+          id: string;
+          legalName: string;
+          stripeConnectAccountId: string | null;
+        } | null;
+      } | null;
+    };
+    adminUser: {
+      id: string;
+      name: string;
+      email: string;
+      role: string;
+    } | null;
+  }>;
+}
+
+export interface RunDisbursementResult {
+  success: boolean;
+  dryRun?: boolean;
+  cycleId: string;
+  cycleNumber: string;
+  disbursedAt?: string;
+  lineCount: number;
+  totalAccruedCents: number;
+  totalDisbursedCents?: number;
+  carrierPayoutCents: number;
+  adminPayoutCents: number;
+  hqHoldingCents: number;
+  details?: {
+    carrierPayoutCents: number;
+    adminPayoutCents: number;
+    hqHoldingCents: number;
+  };
+}
+
+export interface DiscrepancyItem {
+  id: string;
+  kind:
+    | 'LEDGER_MISMATCH'
+    | 'UNTRANSFERRED_CLEARING'
+    | 'ORPHAN_CHARGE'
+    | 'SURCHARGE_SPIKE'
+    | 'UNMAPPED_DESTINATION';
+  severity: 'CRITICAL' | 'WARN' | 'INFO';
+  message: string;
+  expectedCents?: number;
+  actualCents?: number;
+  entityId: string;
+  entityType: 'Job' | 'PaymentEvent' | 'SettlementLine' | 'Company';
+  createdAt: string;
+}
+
+export interface ReconciliationReport {
+  status: 'HEALTHY' | 'MISMATCH_DETECTED' | 'WARNING';
+  generatedAt: string;
+  period: { from: string; to: string };
+  metrics: {
+    totalGmvCents: number;
+    totalCollectedCents: number;
+    totalDisbursedCents: number;
+    totalPendingClearingCents: number;
+    totalHqHoldingCents: number;
+    matchedTransactionsCount: number;
+    discrepancyCount: number;
+  };
+  discrepancies: DiscrepancyItem[];
+}
+
+export function listSettlementCycles(
+  query?: { page?: number; limit?: number },
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .get<{
+      items: SettlementCycleSummary[];
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+    }>('/settlements/cycles', {
+      params: query,
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export function getActiveSettlementCycle(options?: { signal?: AbortSignal }) {
+  return http
+    .get<SettlementCycleSummary>('/settlements/cycles/active', {
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export function getSettlementCycleDetail(
+  id: string,
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .get<SettlementCycleDetail>(`/settlements/cycles/${id}`, {
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export function runSettlementDisbursement(payload?: {
+  cycleId?: string;
+  dryRun?: boolean;
+  notes?: string;
+}) {
+  return http
+    .post<RunDisbursementResult>('/settlements/cycles/run', payload)
+    .then((res) => res.data);
+}
+
+export function getReconciliationReport(
+  query?: { from?: string; to?: string },
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .get<ReconciliationReport>('/settlements/reconcile', {
+      params: query,
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
 

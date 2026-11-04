@@ -257,7 +257,7 @@ export function PartnerPerformancePage() {
                 <p
                   className={
                     isPoolValid
-                      ? 'text-xs font-medium text-emerald-600 dark:text-emerald-400'
+                      ? 'text-xs font-semibold text-[var(--status-ok)]'
                       : 'text-xs font-semibold text-[var(--status-danger)]'
                   }
                 >

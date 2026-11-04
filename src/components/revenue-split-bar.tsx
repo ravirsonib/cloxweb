@@ -32,7 +32,7 @@ export function RevenueSplitBar({
       {/* ─── 100% Stacked Horizontal Bar ─── */}
       <div className="relative">
         <div
-          className="flex h-9 w-full overflow-hidden rounded-xl border border-clox-border bg-slate-100 dark:bg-slate-800 p-0.5 shadow-inner"
+          className="flex h-9 w-full overflow-hidden rounded-xl border border-clox-border bg-clox-surface-alt p-0.5 shadow-inner"
           role="progressbar"
           aria-valuenow={total}
           aria-valuemin={0}
@@ -151,10 +151,16 @@ export function RevenueSplitBar({
         <span className="flex items-center gap-1.5">
           <span
             className={`inline-block h-2 w-2 rounded-full ${
-              is100 ? 'bg-emerald-500' : 'bg-red-500'
+              is100 ? 'bg-[var(--status-ok)]' : 'bg-[var(--status-danger)]'
             }`}
           />
-          <span className={is100 ? 'font-medium text-emerald-700 dark:text-emerald-400' : 'font-semibold text-red-600'}>
+          <span
+            className={
+              is100
+                ? 'font-medium text-[var(--status-ok)]'
+                : 'font-semibold text-[var(--status-danger)]'
+            }
+          >
             {is100
               ? '100% Full Revenue Allocation'
               : `Total: ${total}% (Must sum to exactly 100%)`}

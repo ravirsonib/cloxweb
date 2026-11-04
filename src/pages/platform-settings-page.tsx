@@ -3,6 +3,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate } from 'react-router-dom';
 import {
+  Calculator,
+  Calendar,
+  Clock,
+  MapPin,
+  ShieldCheck,
+  Sliders,
+} from 'lucide-react';
+import {
   getErrorDetail,
   getPlatformSettings,
   getRevenueSplitSettings,
@@ -11,7 +19,7 @@ import {
   publishRevenueSplit,
   updateRegionEnabled,
 } from '@/lib/api';
-import { Button, Field, Notice, useToast } from '@/components/ui';
+import { Button, Field, Notice, StatusPill, useConfirm, useToast } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
 import { RevenueSplitBar } from '@/components/revenue-split-bar';
 import { AdminRole } from '@/shared/types';
@@ -22,6 +30,7 @@ export function PlatformSettingsPage() {
   const role = useAuthStore((s) => s.role);
   const qc = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
 
   const settings = useQuery({
     queryKey: ['admin', 'platform-settings'],
@@ -59,12 +68,24 @@ export function PlatformSettingsPage() {
     onError: (err) => toast.error(getErrorDetail(err)),
   });
 
+  // Operational thresholds
   const [discount, setDiscount] = useState('10');
   const [slaMinutes, setSlaMinutes] = useState('5');
   const [driverDelta, setDriverDelta] = useState('5');
   const [carrierDelta, setCarrierDelta] = useState('10');
   const [clearingDays, setClearingDays] = useState('7');
   const [gstRate, setGstRate] = useState('10');
+
+  // Pricing model parameters (PER_KM vs HOURLY)
+  const [perKmRateDollars, setPerKmRateDollars] = useState('2.50');
+  const [perKmMinBaseDollars, setPerKmMinBaseDollars] = useState('50.00');
+  const [hourlyRateDollars, setHourlyRateDollars] = useState('80.00');
+  const [hourlyFloorHours, setHourlyFloorHours] = useState('4.0');
+  const [hourlyMinBaseDollars, setHourlyMinBaseDollars] = useState('200.00');
+
+  // Settlement cycle cadence & cutoff
+  const [cadenceDays, setCadenceDays] = useState('14');
+  const [cutoffHour, setCutoffHour] = useState('4');
 
   // Dynamic revenue split fields
   const [carrierShare, setCarrierShare] = useState('70');
@@ -80,6 +101,28 @@ export function PlatformSettingsPage() {
     setCarrierDelta(String(settings.data.carrierMarketplaceReleaseScoreDelta));
     setClearingDays(String(settings.data.carrierClearingDays ?? 7));
     setGstRate(String(settings.data.gstPercent ?? 10));
+
+    if (settings.data.perKmRateCents != null) {
+      setPerKmRateDollars((settings.data.perKmRateCents / 100).toFixed(2));
+    }
+    if (settings.data.perKmMinBaseCents != null) {
+      setPerKmMinBaseDollars((settings.data.perKmMinBaseCents / 100).toFixed(2));
+    }
+    if (settings.data.hourlyRateCents != null) {
+      setHourlyRateDollars((settings.data.hourlyRateCents / 100).toFixed(2));
+    }
+    if (settings.data.hourlyMinFloorHours != null) {
+      setHourlyFloorHours(String(settings.data.hourlyMinFloorHours));
+    }
+    if (settings.data.hourlyMinBaseCents != null) {
+      setHourlyMinBaseDollars((settings.data.hourlyMinBaseCents / 100).toFixed(2));
+    }
+    if (settings.data.settlementCycleCadenceDays != null) {
+      setCadenceDays(String(settings.data.settlementCycleCadenceDays));
+    }
+    if (settings.data.settlementCutoffHour != null) {
+      setCutoffHour(String(settings.data.settlementCutoffHour));
+    }
   }, [settings.data]);
 
   useEffect(() => {
@@ -108,6 +151,16 @@ export function PlatformSettingsPage() {
       const carrierMarketplaceReleaseScoreDelta = Number(carrierDelta);
       const carrierClearing = Number(clearingDays);
       const gst = Number(gstRate);
+
+      const perKmRate = Math.round(Number(perKmRateDollars) * 100);
+      const perKmMinBase = Math.round(Number(perKmMinBaseDollars) * 100);
+      const hourlyRate = Math.round(Number(hourlyRateDollars) * 100);
+      const hourlyFloor = Number(hourlyFloorHours);
+      const hourlyMinBase = Math.round(Number(hourlyMinBaseDollars) * 100);
+
+      const cycleDays = Number(cadenceDays);
+      const cycleCutoff = Number(cutoffHour);
+
       if (
         !Number.isFinite(rescueDiscountPercent) ||
         !Number.isFinite(slaMin) ||
@@ -117,9 +170,29 @@ export function PlatformSettingsPage() {
         carrierClearing < 0 ||
         !Number.isFinite(gst) ||
         gst < 0 ||
-        gst > 100
+        gst > 100 ||
+        !Number.isFinite(perKmRate) ||
+        perKmRate <= 0 ||
+        !Number.isFinite(perKmMinBase) ||
+        perKmMinBase < 0 ||
+        !Number.isFinite(hourlyRate) ||
+        hourlyRate <= 0 ||
+        !Number.isFinite(hourlyFloor) ||
+        hourlyFloor < 0.5 ||
+        !Number.isFinite(hourlyMinBase) ||
+        hourlyMinBase < 0 ||
+        !Number.isFinite(cycleDays) ||
+        cycleDays < 1 ||
+        cycleDays > 90 ||
+        !Number.isFinite(cycleCutoff) ||
+        cycleCutoff < 0 ||
+        cycleCutoff > 23
       ) {
-        throw new Error(t('platformSettings.invalid'));
+        throw new Error(
+          t('platformSettings.invalid', {
+            defaultValue: 'Please enter valid numbers, pricing rates, and settlement schedule.',
+          }),
+        );
       }
       return patchPlatformSettings({
         rescueDiscountPercent: Math.round(rescueDiscountPercent),
@@ -128,6 +201,13 @@ export function PlatformSettingsPage() {
         carrierMarketplaceReleaseScoreDelta: Math.round(carrierMarketplaceReleaseScoreDelta),
         carrierClearingDays: Math.round(carrierClearing),
         gstPercent: gst,
+        perKmRateCents: perKmRate,
+        perKmMinBaseCents: perKmMinBase,
+        hourlyRateCents: hourlyRate,
+        hourlyMinFloorHours: hourlyFloor,
+        hourlyMinBaseCents: hourlyMinBase,
+        settlementCycleCadenceDays: Math.round(cycleDays),
+        settlementCutoffHour: Math.round(cycleCutoff),
       });
     },
     onSuccess: async () => {
@@ -157,42 +237,158 @@ export function PlatformSettingsPage() {
     onError: (err) => toast.error(getErrorDetail(err)),
   });
 
+  const handlePublishSplit = async () => {
+    if (splitTotal !== 100) return;
+    const ok = await confirm({
+      title: t('platformSettings.confirmPublishSplitTitle', {
+        defaultValue: 'Publish Revenue Split Policy?',
+      }),
+      description: t('platformSettings.confirmPublishSplitDesc', {
+        defaultValue: `This will update the national revenue distribution policy to Carrier: ${carrierShare}%, Super Admin: ${superShare}%, State Master: ${stateShare}%, and Local BDE: ${localShare}%. Future settlement accruals will apply this split.`,
+      }),
+      confirmLabel: t('platformSettings.confirmPublishSplitAction', {
+        defaultValue: 'Publish Split Policy',
+      }),
+      cancelLabel: t('cancel', { defaultValue: 'Cancel' }),
+      tone: 'default',
+    });
+    if (!ok) return;
+    publishSplitMut.mutate();
+  };
+
+  const handleSaveSettings = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const ok = await confirm({
+      title: t('platformSettings.confirmSaveTitle', {
+        defaultValue: 'Save Platform Configuration?',
+      }),
+      description: t('platformSettings.confirmSaveDesc', {
+        defaultValue:
+          'This will update marketplace operational SLA thresholds, freight quoting base rates (PER_KM and HOURLY), and the automated settlement disbursement schedule.',
+      }),
+      confirmLabel: t('platformSettings.confirmSaveAction', {
+        defaultValue: 'Save Configuration',
+      }),
+      cancelLabel: t('cancel', { defaultValue: 'Cancel' }),
+      tone: 'default',
+    });
+    if (!ok) return;
+    save.mutate();
+  };
+
+  const handlePresetCadence = async (label: string, val: string) => {
+    if (cadenceDays === val) return;
+    const ok = await confirm({
+      title: t('platformSettings.confirmPresetTitle', {
+        label,
+        defaultValue: `Apply ${label} Cadence Preset?`,
+      }),
+      description: t('platformSettings.confirmPresetDesc', {
+        val,
+        defaultValue: `This will set the settlement cycle window to ${val} days in the form. You must click "Save Platform Configuration" to apply the change.`,
+      }),
+      confirmLabel: t('platformSettings.confirmPresetAction', {
+        defaultValue: 'Apply Preset',
+      }),
+      cancelLabel: t('cancel', { defaultValue: 'Cancel' }),
+      tone: 'default',
+    });
+    if (!ok) return;
+    setCadenceDays(val);
+  };
+
+  const handleToggleRegion = async (code: string, name: string, enabled: boolean) => {
+    const actionLabel = enabled
+      ? t('platformSettings.disable', { defaultValue: 'Disable' })
+      : t('platformSettings.enable', { defaultValue: 'Enable' });
+    const ok = await confirm({
+      title: enabled
+        ? t('platformSettings.confirmDisableRegionTitle', {
+            code,
+            name,
+            defaultValue: `Disable Region ${code} (${name})?`,
+          })
+        : t('platformSettings.confirmEnableRegionTitle', {
+            code,
+            name,
+            defaultValue: `Enable Region ${code} (${name})?`,
+          }),
+      description: enabled
+        ? t('platformSettings.confirmDisableRegionDesc', {
+            code,
+            name,
+            defaultValue: `Disabling ${code} (${name}) will suspend new freight bookings originating or terminating in this state and pause carrier dispatch for this region.`,
+          })
+        : t('platformSettings.confirmEnableRegionDesc', {
+            code,
+            name,
+            defaultValue: `Enabling ${code} (${name}) will allow shippers to post jobs and carriers to receive dispatch offers across this state.`,
+          }),
+      confirmLabel: actionLabel,
+      cancelLabel: t('cancel', { defaultValue: 'Cancel' }),
+      tone: enabled ? 'destructive' : 'default',
+    });
+    if (!ok) return;
+    toggleRegionMut.mutate({ code, enabled: !enabled });
+  };
+
   if (role !== AdminRole.SUPER_ADMIN) return <Navigate to="/" replace />;
   if (settings.isLoading || revenueSplit.isLoading) {
     return <LoadingBlock label={t('platformSettings.loading')} />;
   }
 
   return (
-    <div className="max-w-2xl space-y-8">
-      <div>
-        <h1 className="font-display text-2xl font-bold text-clox-ink">
-          {t('platformSettings.title')}
-        </h1>
-        <p className="mt-2 text-sm text-clox-mute">{t('platformSettings.subtitle')}</p>
+    <div className="max-w-5xl space-y-8 pb-12">
+      {/* ─── Page Header ─── */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-clox-border pb-5">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-clox-md bg-clox-orange/10 text-clox-orange">
+              <Sliders className="h-5 w-5" />
+            </span>
+            <h1 className="font-display text-2xl font-bold text-clox-ink">
+              {t('platformSettings.title', { defaultValue: 'Platform Settings' })}
+            </h1>
+          </div>
+          <p className="mt-1.5 text-sm text-clox-mute">
+            {t('platformSettings.subtitle', {
+              defaultValue:
+                'Global operational policies, dynamic revenue distribution, freight pricing models, and regional coverage.',
+            })}
+          </p>
+        </div>
+        <div className="inline-flex items-center gap-2 self-start rounded-full border border-clox-border bg-clox-surface px-3 py-1.5 text-xs font-semibold text-clox-ink shadow-sm">
+          <ShieldCheck className="h-4 w-4 text-[var(--status-ok)]" />
+          <span>
+            {t('platformSettings.superAdminPolicyBadge', { defaultValue: 'Super Admin Policy' })}
+          </span>
+        </div>
       </div>
 
       {settings.isError ? (
-        <Notice tone="error">
-          {getErrorDetail(settings.error)}
-        </Notice>
+        <Notice tone="error">{getErrorDetail(settings.error)}</Notice>
       ) : null}
 
       {/* ─── 1. Carrier Share & Revenue Distribution Card ─── */}
-      <section className="clox-card space-y-4 p-5">
+      <section className="clox-card space-y-5 p-6 shadow-clox-1">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-clox-border pb-3">
           <div>
             <h2 className="font-display text-base font-semibold text-clox-ink">
-              {t('platformSettings.revenueSplitCardTitle')}
+              {t('platformSettings.revenueSplitCardTitle', {
+                defaultValue: 'Carrier Share & Revenue Distribution',
+              })}
             </h2>
             <p className="text-xs text-clox-mute">
-              {t('platformSettings.revenueSplitCardSubtitle')}
+              {t('platformSettings.revenueSplitCardSubtitle', {
+                defaultValue: 'Configure dynamic carrier share and platform administrative revenue splits.',
+              })}
             </p>
           </div>
           <Link
             to="/revenue-split"
-            className="text-xs font-medium text-clox-orange hover:underline"
+            className="text-xs font-semibold text-clox-orange hover:underline"
           >
-            {t('platformSettings.viewAuditHistory')} &rarr;
+            {t('platformSettings.viewAuditHistory', { defaultValue: 'View Full Split Version History' })} &rarr;
           </Link>
         </div>
 
@@ -205,9 +401,10 @@ export function PlatformSettingsPage() {
           showCards={true}
         />
 
-        <div className="grid gap-3 sm:grid-cols-4 pt-2">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 pt-1">
           <Field
             label={t('platformSettings.carrierShare', { defaultValue: 'Carrier Share %' })}
+            hint={t('platformSettings.carrierShareHint', { defaultValue: 'Net carrier payout' })}
             value={carrierShare}
             onChange={(e) => setCarrierShare(e.target.value)}
             inputMode="numeric"
@@ -215,6 +412,7 @@ export function PlatformSettingsPage() {
           />
           <Field
             label={t('platformSettings.superShare', { defaultValue: 'Super Admin %' })}
+            hint={t('platformSettings.superShareHint', { defaultValue: 'Platform HQ holding' })}
             value={superShare}
             onChange={(e) => setSuperShare(e.target.value)}
             inputMode="numeric"
@@ -222,6 +420,7 @@ export function PlatformSettingsPage() {
           />
           <Field
             label={t('platformSettings.stateShare', { defaultValue: 'State Master %' })}
+            hint={t('platformSettings.stateShareHint', { defaultValue: 'State franchise commission' })}
             value={stateShare}
             onChange={(e) => setStateShare(e.target.value)}
             inputMode="numeric"
@@ -229,6 +428,7 @@ export function PlatformSettingsPage() {
           />
           <Field
             label={t('platformSettings.localShare', { defaultValue: 'Local BDE %' })}
+            hint={t('platformSettings.localShareHint', { defaultValue: 'Local territory commission' })}
             value={localShare}
             onChange={(e) => setLocalShare(e.target.value)}
             inputMode="numeric"
@@ -236,109 +436,383 @@ export function PlatformSettingsPage() {
           />
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-          <p
-            className={
-              splitTotal === 100
-                ? 'text-xs font-medium text-emerald-600 dark:text-emerald-400'
-                : 'text-xs font-semibold text-[var(--status-danger)]'
-            }
-          >
-            {t('revenueSplit.poolSum', { sum: splitTotal })}
-          </p>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-clox-border-soft pt-3">
+          <div className="flex items-center gap-2">
+            <StatusPill
+              tone={splitTotal === 100 ? 'ok' : 'danger'}
+              className="text-xs px-3 py-1 font-semibold"
+            >
+              {t('revenueSplit.poolSum', {
+                sum: splitTotal,
+                defaultValue: `Total split sum: ${splitTotal} / 100%`,
+              })}
+            </StatusPill>
+          </div>
 
           <Button
             type="button"
             variant="cta"
             disabled={publishSplitMut.isPending || splitTotal !== 100}
-            onClick={() => publishSplitMut.mutate()}
+            onClick={handlePublishSplit}
           >
-            {publishSplitMut.isPending ? t('loading') : t('platformSettings.saveSplit')}
+            {publishSplitMut.isPending ? t('loading') : t('platformSettings.saveSplit', { defaultValue: 'Publish Split Policy' })}
           </Button>
         </div>
       </section>
 
-      {/* ─── 2. Operational & Reliability Parameters Card ─── */}
+      {/* ─── 2. Operational & Platform Parameters Form ─── */}
       <form
-        className="clox-card space-y-4 p-5"
-        onSubmit={(event) => {
-          event.preventDefault();
-          save.mutate();
-        }}
+        className="space-y-6"
+        onSubmit={handleSaveSettings}
         noValidate
       >
-        <h2 className="font-display text-base font-semibold text-clox-ink border-b border-clox-border pb-3">
-          {t('platformSettings.title')}
-        </h2>
+        {/* ─── Part A: Operational Thresholds & Marketplace SLA ─── */}
+        <section className="clox-card space-y-5 p-6 shadow-clox-1">
+          <div className="border-b border-clox-border pb-3">
+            <h2 className="font-display text-base font-semibold text-clox-ink">
+              {t('platformSettings.operationalCardTitle', {
+                defaultValue: 'Operational Thresholds & Marketplace SLA',
+              })}
+            </h2>
+            <p className="text-xs text-clox-mute">
+              {t('platformSettings.operationalCardSubtitle', {
+                defaultValue:
+                  'Configure dispatch timers, reliability score impacts, holding windows, and tax rates.',
+              })}
+            </p>
+          </div>
 
-        <Field
-          label={t('platformSettings.discountLabel')}
-          hint={t('platformSettings.discountHint')}
-          value={discount}
-          onChange={(e) => setDiscount(e.target.value)}
-          inputMode="numeric"
-          required
-        />
-        <Field
-          label={t('platformSettings.slaLabel')}
-          hint={t('platformSettings.slaHint')}
-          value={slaMinutes}
-          onChange={(e) => setSlaMinutes(e.target.value)}
-          inputMode="numeric"
-          required
-        />
-        <Field
-          label={t('platformSettings.driverDeltaLabel')}
-          hint={t('platformSettings.driverDeltaHint')}
-          value={driverDelta}
-          onChange={(e) => setDriverDelta(e.target.value)}
-          inputMode="numeric"
-          required
-        />
-        <Field
-          label={t('platformSettings.carrierDeltaLabel')}
-          hint={t('platformSettings.carrierDeltaHint')}
-          value={carrierDelta}
-          onChange={(e) => setCarrierDelta(e.target.value)}
-          inputMode="numeric"
-          required
-        />
-        <Field
-          label={t('platformSettings.clearingDaysLabel', { defaultValue: 'Carrier Clearing Pipeline (Days)' })}
-          hint={t('platformSettings.clearingDaysHint', {
-            defaultValue: 'Hold period before completed trip freight clears for automatic bank payout (0 = instant settlement upon POD).',
-          })}
-          value={clearingDays}
-          onChange={(e) => setClearingDays(e.target.value)}
-          inputMode="numeric"
-          required
-        />
-        <Field
-          label={t('platformSettings.gstLabel', { defaultValue: 'GST Rate %' })}
-          hint={t('platformSettings.gstHint', {
-            defaultValue:
-              'Applicable Goods & Services Tax percentage (default 10% in Australia). Used to calculate ex-GST base freight and tax line items.',
-          })}
-          value={gstRate}
-          onChange={(e) => setGstRate(e.target.value)}
-          inputMode="decimal"
-          required
-        />
-        {save.isError ? <Notice tone="error">{getErrorDetail(save.error)}</Notice> : null}
-        <Button type="submit" variant="cta" disabled={save.isPending}>
-          {save.isPending ? t('loading') : t('platformSettings.save')}
-        </Button>
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <Field
+              label={t('platformSettings.discountLabel', { defaultValue: 'Rescue Discount %' })}
+              hint={t('platformSettings.discountHint', {
+                defaultValue: 'Applied to carrier bid floor on re-listed jobs (0–50). Customer price unchanged.',
+              })}
+              value={discount}
+              onChange={(e) => setDiscount(e.target.value)}
+              inputMode="numeric"
+              required
+            />
+            <Field
+              label={t('platformSettings.slaLabel', { defaultValue: 'Marketplace Re-list SLA (min)' })}
+              hint={t('platformSettings.slaHint', {
+                defaultValue: 'Auto re-list pre-trip exceptions still awaiting carrier after this time.',
+              })}
+              value={slaMinutes}
+              onChange={(e) => setSlaMinutes(e.target.value)}
+              inputMode="numeric"
+              required
+            />
+            <Field
+              label={t('platformSettings.driverDeltaLabel', { defaultValue: 'Driver Score Delta' })}
+              hint={t('platformSettings.driverDeltaHint', {
+                defaultValue: 'Points deducted when a driver opens DRIVER_UNAVAILABLE.',
+              })}
+              value={driverDelta}
+              onChange={(e) => setDriverDelta(e.target.value)}
+              inputMode="numeric"
+              required
+            />
+            <Field
+              label={t('platformSettings.carrierDeltaLabel', { defaultValue: 'Carrier Score Delta' })}
+              hint={t('platformSettings.carrierDeltaHint', {
+                defaultValue: 'Points deducted when a job is released back to marketplace.',
+              })}
+              value={carrierDelta}
+              onChange={(e) => setCarrierDelta(e.target.value)}
+              inputMode="numeric"
+              required
+            />
+            <Field
+              label={t('platformSettings.clearingDaysLabel', { defaultValue: 'Carrier Clearing Pipeline (Days)' })}
+              hint={t('platformSettings.clearingDaysHint', {
+                defaultValue: 'Hold period before completed trip freight clears for payout (0 = instant).',
+              })}
+              value={clearingDays}
+              onChange={(e) => setClearingDays(e.target.value)}
+              inputMode="numeric"
+              required
+            />
+            <Field
+              label={t('platformSettings.gstLabel', { defaultValue: 'GST Rate %' })}
+              hint={t('platformSettings.gstHint', {
+                defaultValue: 'Applicable Australian Goods & Services Tax percentage (default 10%).',
+              })}
+              value={gstRate}
+              onChange={(e) => setGstRate(e.target.value)}
+              inputMode="decimal"
+              required
+            />
+          </div>
+        </section>
+
+        {/* ─── Part B: Freight Pricing Models & Base Rates ─── */}
+        <section className="clox-card space-y-5 p-6 shadow-clox-1">
+          <div className="border-b border-clox-border pb-3">
+            <h2 className="font-display text-base font-semibold text-clox-ink">
+              {t('platformSettings.pricingTitle', {
+                defaultValue: 'Freight Pricing Models & Base Rates',
+              })}
+            </h2>
+            <p className="text-xs text-clox-mute">
+              {t('platformSettings.pricingSubtitle', {
+                defaultValue:
+                  'Baseline rate cards, trip minimum base fares, and billable hour floors for automatic marketplace quoting.',
+              })}
+            </p>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Model 1: PER_KM (Distance-Based) */}
+            <div className="flex flex-col justify-between rounded-clox-md border border-clox-border bg-clox-surface-alt/40 p-5 space-y-4">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-clox-border pb-2.5">
+                  <span className="font-mono text-xs font-bold uppercase text-clox-orange">
+                    {t('platformSettings.perKmBadge', { defaultValue: '1. Distance-Based (PER_KM)' })}
+                  </span>
+                  <span className="rounded bg-clox-surface px-2 py-0.5 text-[11px] font-medium text-clox-mute border border-clox-border-soft">
+                    {t('platformSettings.perKmSubtitle', { defaultValue: 'Point-to-Point Freight' })}
+                  </span>
+                </div>
+
+                <Field
+                  label={t('platformSettings.perKmRateLabel', { defaultValue: 'Base Rate ($ AUD / km)' })}
+                  hint={t('platformSettings.perKmRateHint', {
+                    defaultValue: 'Rate per kilometre (e.g. 2.50 = $2.50/km inc GST).',
+                  })}
+                  value={perKmRateDollars}
+                  onChange={(e) => setPerKmRateDollars(e.target.value)}
+                  inputMode="decimal"
+                  required
+                />
+
+                <Field
+                  label={t('platformSettings.perKmMinBaseLabel', {
+                    defaultValue: 'Minimum Trip Base Fare ($ AUD inc GST)',
+                  })}
+                  hint={t('platformSettings.perKmMinBaseHint', {
+                    defaultValue: 'Minimum base fare floor applied to distance jobs (e.g. 50.00 = $50.00).',
+                  })}
+                  value={perKmMinBaseDollars}
+                  onChange={(e) => setPerKmMinBaseDollars(e.target.value)}
+                  inputMode="decimal"
+                  required
+                />
+              </div>
+
+              {/* High-Contrast Theme-Safe Formula Box */}
+              <div className="rounded-clox-md border border-clox-border bg-clox-surface p-4 text-xs text-clox-ink shadow-sm space-y-2">
+                <div className="flex items-center gap-1.5 font-semibold text-clox-ink">
+                  <Calculator className="h-4 w-4 text-clox-orange" />
+                  <span>{t('platformSettings.pricingFormulaLabel', { defaultValue: 'Pricing Formula:' })}</span>
+                </div>
+                <div className="rounded border border-clox-border-soft bg-clox-surface-alt px-3 py-2 font-mono text-[11.5px] text-clox-ink break-all">
+                  Estimate = max(${perKmMinBaseDollars || '50.00'}, Distance (km) × ${perKmRateDollars || '2.50'})
+                </div>
+                <p className="text-[11px] text-clox-mute">
+                  {t('platformSettings.perKmFormulaDesc', {
+                    defaultValue:
+                      'Standard distance formula applied from pickup to drop-off, protected by the trip base fare floor.',
+                  })}
+                </p>
+              </div>
+            </div>
+
+            {/* Model 2: HOURLY (Time-Based) */}
+            <div className="flex flex-col justify-between rounded-clox-md border border-clox-border bg-clox-surface-alt/40 p-5 space-y-4">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-clox-border pb-2.5">
+                  <span className="font-mono text-xs font-bold uppercase text-clox-orange">
+                    {t('platformSettings.hourlyBadge', { defaultValue: '2. Time-Based (HOURLY)' })}
+                  </span>
+                  <span className="rounded bg-clox-surface px-2 py-0.5 text-[11px] font-medium text-clox-mute border border-clox-border-soft">
+                    {t('platformSettings.hourlySubtitle', { defaultValue: 'Multi-Stop (up to 4 stops)' })}
+                  </span>
+                </div>
+
+                <Field
+                  label={t('platformSettings.hourlyRateLabel', { defaultValue: 'Hourly Rate ($ AUD / hr)' })}
+                  hint={t('platformSettings.hourlyRateHint', {
+                    defaultValue: 'Base rate per billable hour (e.g. 80.00 = $80.00/hr inc GST).',
+                  })}
+                  value={hourlyRateDollars}
+                  onChange={(e) => setHourlyRateDollars(e.target.value)}
+                  inputMode="decimal"
+                  required
+                />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <Field
+                    label={t('platformSettings.hourlyFloorHoursLabel', { defaultValue: 'Floor Hours' })}
+                    hint={t('platformSettings.hourlyFloorHoursHint', { defaultValue: 'Min billable hours (e.g. 4.0).' })}
+                    value={hourlyFloorHours}
+                    onChange={(e) => setHourlyFloorHours(e.target.value)}
+                    inputMode="decimal"
+                    required
+                  />
+                  <Field
+                    label={t('platformSettings.hourlyMinBaseLabel', { defaultValue: 'Platform Min Floor ($)' })}
+                    hint={t('platformSettings.hourlyMinBaseHint', { defaultValue: 'Absolute floor ($200.00).' })}
+                    value={hourlyMinBaseDollars}
+                    onChange={(e) => setHourlyMinBaseDollars(e.target.value)}
+                    inputMode="decimal"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* High-Contrast Theme-Safe Formula Box */}
+              <div className="rounded-clox-md border border-clox-border bg-clox-surface p-4 text-xs text-clox-ink shadow-sm space-y-2">
+                <div className="flex items-center gap-1.5 font-semibold text-clox-ink">
+                  <Clock className="h-4 w-4 text-clox-orange" />
+                  <span>{t('platformSettings.minBaseChargeLabel', { defaultValue: 'Minimum Base Charge:' })}</span>
+                </div>
+                <div className="rounded border border-clox-border-soft bg-clox-surface-alt px-3 py-2 font-mono text-[11.5px] text-clox-ink break-all">
+                  {hourlyFloorHours || '4.0'} hrs × ${hourlyRateDollars || '80.00'} = $
+                  {(
+                    (Number(hourlyFloorHours) || 4) *
+                    (Number(hourlyRateDollars) || 80)
+                  ).toFixed(2)}{' '}
+                  AUD ({t('platformSettings.platformFloor', { defaultValue: 'Platform Floor' })}: ${hourlyMinBaseDollars || '200.00'})
+                </div>
+                <p className="text-[11px] text-clox-mute">
+                  {t('platformSettings.hourlyFormulaDesc', {
+                    defaultValue:
+                      'Applied across scheduled duration or minimum hours floor for multi-stop freight bookings.',
+                  })}
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ─── Part C: Settlement Cycle & Payout Schedule ─── */}
+        <section className="clox-card space-y-5 p-6 shadow-clox-1">
+          <div className="border-b border-clox-border pb-3">
+            <h2 className="font-display text-base font-semibold text-clox-ink">
+              {t('platformSettings.settlementCycleTitle', {
+                defaultValue: 'Settlement Cycle & Payout Schedule',
+              })}
+            </h2>
+            <p className="text-xs text-clox-mute">
+              {t('platformSettings.settlementCycleSubtitle', {
+                defaultValue:
+                  'Rolling settlement cadence and autonomous disbursement sweep hour for carrier and partner net payouts.',
+              })}
+            </p>
+          </div>
+
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div>
+              <Field
+                label={t('platformSettings.cadenceLabel', { defaultValue: 'Cycle Cadence (Days)' })}
+                hint={t('platformSettings.cadenceHint', {
+                  defaultValue: 'Common presets: 7 (Weekly), 14 (Fortnightly), 30 (Monthly).',
+                })}
+                value={cadenceDays}
+                onChange={(e) => setCadenceDays(e.target.value)}
+                inputMode="numeric"
+                required
+              />
+              <div className="mt-2 flex items-center gap-2">
+                {[
+                  {
+                    label: t('platformSettings.presetWeekly', { defaultValue: 'Weekly (7d)' }),
+                    val: '7',
+                  },
+                  {
+                    label: t('platformSettings.presetFortnightly', { defaultValue: 'Fortnightly (14d)' }),
+                    val: '14',
+                  },
+                  {
+                    label: t('platformSettings.presetMonthly', { defaultValue: 'Monthly (30d)' }),
+                    val: '30',
+                  },
+                ].map((preset) => (
+                  <button
+                    key={preset.val}
+                    type="button"
+                    onClick={() => handlePresetCadence(preset.label, preset.val)}
+                    className={`rounded-clox-sm px-3 py-1.5 text-xs font-semibold transition ${
+                      cadenceDays === preset.val
+                        ? 'bg-clox-orange text-white shadow-sm'
+                        : 'border border-clox-border bg-clox-surface text-clox-mute hover:border-clox-mute hover:text-clox-ink'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <Field
+              label={t('platformSettings.cutoffHourLabel', {
+                defaultValue: 'Automated Cutoff Hour (0–23 AEST)',
+              })}
+              hint={t('platformSettings.cutoffHourHint', {
+                defaultValue:
+                  'Hour of day when autonomous watchdog triggers automated payout run (e.g. 4 = 4:00 AM AEST).',
+              })}
+              value={cutoffHour}
+              onChange={(e) => setCutoffHour(e.target.value)}
+              inputMode="numeric"
+              required
+            />
+          </div>
+
+          {/* High-Contrast Policy Callout Box */}
+          <div className="rounded-clox-md border border-clox-border bg-clox-surface p-4 text-xs text-clox-ink shadow-sm space-y-1.5">
+            <div className="flex items-center gap-1.5 font-semibold text-clox-ink">
+              <Calendar className="h-4 w-4 text-clox-orange" />
+              <span>
+                {t('platformSettings.activeWatchdogPolicyLabel', {
+                  defaultValue: 'Active Settlement Watchdog Policy:',
+                })}
+              </span>
+            </div>
+            <p className="text-[11.5px] text-clox-mute">
+              {t('platformSettings.activeWatchdogPolicyDesc', {
+                cadence: cadenceDays,
+                cutoff: cutoffHour,
+                defaultValue: `Rolling ${cadenceDays}-day settlement window. Automated autonomous disbursement sweep executes at ${cutoffHour}:00 AM AEST on the scheduled settlement cycle close date.`,
+              })}
+            </p>
+          </div>
+        </section>
+
+        {/* ─── Form Submission Action Bar ─── */}
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-clox-md border border-clox-border bg-clox-surface p-4 shadow-sm">
+          {save.isError ? (
+            <Notice tone="error">{getErrorDetail(save.error)}</Notice>
+          ) : (
+            <p className="text-xs text-clox-mute">
+              {t('platformSettings.saveBannerHint', {
+                defaultValue:
+                  'Changes take effect immediately across all newly created bookings and settlement cycles.',
+              })}
+            </p>
+          )}
+
+          <Button type="submit" variant="cta" disabled={save.isPending} className="px-6 py-2.5">
+            {save.isPending
+              ? t('loading')
+              : t('platformSettings.saveAllSettings', { defaultValue: 'Save Platform Configuration' })}
+          </Button>
+        </div>
       </form>
 
       {/* ─── 3. Service Regions & Coverage Card ─── */}
-      <section className="clox-card space-y-4 p-5">
+      <section className="clox-card space-y-5 p-6 shadow-clox-1">
         <div className="border-b border-clox-border pb-3">
-          <h2 className="font-display text-base font-semibold text-clox-ink">
-            {t('platformSettings.regionsTitle', {
-              defaultValue: 'Service Regions & Coverage (Australia)',
-            })}
-          </h2>
-          <p className="text-xs text-clox-mute">
+          <div className="flex items-center gap-2">
+            <MapPin className="h-4 w-4 text-clox-orange" />
+            <h2 className="font-display text-base font-semibold text-clox-ink">
+              {t('platformSettings.regionsTitle', {
+                defaultValue: 'Service Regions & Marketplace Coverage (Australia)',
+              })}
+            </h2>
+          </div>
+          <p className="mt-1 text-xs text-clox-mute">
             {t('platformSettings.regionsSubtitle', {
               defaultValue:
                 'Enable or disable Australian states and territories for marketplace operations, carrier coverage, and job matching.',
@@ -351,7 +825,7 @@ export function PlatformSettingsPage() {
         ) : geography.isError ? (
           <Notice tone="error">{getErrorDetail(geography.error)}</Notice>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
             {(geography.data?.regions ?? []).map((r) => {
               const isMutating =
                 toggleRegionMut.isPending &&
@@ -359,55 +833,42 @@ export function PlatformSettingsPage() {
               return (
                 <div
                   key={r.code}
-                  className="flex items-center justify-between rounded-clox-md border border-clox-border/80 bg-clox-canvas/50 p-3 transition hover:border-clox-border"
+                  className="flex flex-col justify-between rounded-clox-md border border-clox-border bg-clox-surface p-4 transition hover:border-clox-border-soft hover:shadow-sm"
                 >
-                  <div className="min-w-0 pr-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm font-bold text-clox-ink">
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-base font-bold text-clox-ink">
                         {r.code}
                       </span>
-                      <span className="truncate text-xs text-clox-mute">
-                        {r.name}
-                      </span>
-                    </div>
-                    <div className="mt-1 flex items-center gap-1.5">
-                      <span
-                        className={`inline-block h-2 w-2 rounded-full ${
-                          r.enabled ? 'bg-emerald-500' : 'bg-clox-faint/60'
-                        }`}
-                      />
-                      <span
-                        className={`text-[11px] font-medium ${
-                          r.enabled
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-clox-mute'
-                        }`}
-                      >
+                      <StatusPill tone={r.enabled ? 'ok' : 'neutral'}>
                         {r.enabled
                           ? t('platformSettings.regionActive', { defaultValue: 'Active' })
                           : t('platformSettings.regionInactive', { defaultValue: 'Inactive' })}
-                      </span>
+                      </StatusPill>
                     </div>
+                    <p className="mt-1.5 truncate text-xs font-medium text-clox-mute" title={r.name}>
+                      {r.name}
+                    </p>
                   </div>
 
-                  <button
-                    type="button"
-                    disabled={isMutating}
-                    onClick={() =>
-                      toggleRegionMut.mutate({ code: r.code, enabled: !r.enabled })
-                    }
-                    className={`rounded-clox-md px-3 py-1.5 text-xs font-semibold transition shadow-sm ${
-                      r.enabled
-                        ? 'border border-clox-border bg-clox-surface text-clox-ink hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 dark:hover:bg-rose-950/40'
-                        : 'border border-clox-orange bg-clox-orange text-white hover:bg-clox-orange/90'
-                    }`}
-                  >
-                    {isMutating
-                      ? t('loading')
-                      : r.enabled
-                      ? t('platformSettings.disable', { defaultValue: 'Disable' })
-                      : t('platformSettings.enable', { defaultValue: 'Enable' })}
-                  </button>
+                  <div className="mt-4 border-t border-clox-border-soft pt-3">
+                    <button
+                      type="button"
+                      disabled={isMutating}
+                      onClick={() => handleToggleRegion(r.code, r.name, r.enabled)}
+                      className={`w-full rounded-clox-sm px-3 py-1.5 text-xs font-semibold transition shadow-sm ${
+                        r.enabled
+                          ? 'border border-clox-border bg-clox-surface text-clox-ink hover:bg-[var(--status-danger-bg)] hover:text-[var(--status-danger)] hover:border-[var(--status-danger-bd)]'
+                          : 'border border-clox-orange bg-clox-orange text-white hover:bg-clox-orange/90'
+                      }`}
+                    >
+                      {isMutating
+                        ? t('loading')
+                        : r.enabled
+                        ? t('platformSettings.disable', { defaultValue: 'Disable' })
+                        : t('platformSettings.enable', { defaultValue: 'Enable' })}
+                    </button>
+                  </div>
                 </div>
               );
             })}

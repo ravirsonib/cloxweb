@@ -311,6 +311,7 @@ export type JobRouteEstimate = {
   billableHours: number | null;
   minBillableHours?: number | null;
   hourlyRateCents?: number | null;
+  perKmRateCents?: number | null;
   minBaseCents?: number;
   minChargeIncGstCents?: number;
   estimateIncGstCents?: number;

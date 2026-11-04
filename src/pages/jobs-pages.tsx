@@ -1624,8 +1624,18 @@ function JobDraftForm({
               >
                 <p>
                   {t('jobs.hourlyMinimumBody', {
-                    defaultValue:
-                      'Minimum hourly base charge: $320.00 inc GST (4-hour minimum @ $80.00/hr inc GST; platform base floor $200.00 inc GST). After 4 hours, time is billed in 15-minute increments.',
+                    defaultValue: `Minimum hourly base charge: $${(
+                      (routeEstimate?.minChargeIncGstCents ??
+                        Math.max(
+                          routeEstimate?.minBaseCents ?? 20_000,
+                          (routeEstimate?.minBillableHours ?? 4) *
+                            (routeEstimate?.hourlyRateCents ?? 8_000),
+                        )) / 100
+                    ).toFixed(2)} inc GST (${routeEstimate?.minBillableHours ?? 4}-hour minimum @ $${(
+                      (routeEstimate?.hourlyRateCents ?? 8_000) / 100
+                    ).toFixed(2)}/hr inc GST; platform base floor $${(
+                      (routeEstimate?.minBaseCents ?? 20_000) / 100
+                    ).toFixed(2)} inc GST). After ${routeEstimate?.minBillableHours ?? 4} hours, time is billed in 15-minute increments.`,
                   })}
                 </p>
                 <p className="mt-1.5 text-xs">
@@ -1636,13 +1646,16 @@ function JobDraftForm({
                   {routeEstimate?.billableHours != null ? (
                     <span className="mt-1 block font-semibold">
                       {t('jobs.hourlyLiveEstimate', {
-                        defaultValue: `Estimated from stops: ${routeEstimate.billableHours} billable hrs (~${routeEstimate.distanceKm} km, ${routeEstimate.durationMinutes} min) · Est. ${formatDollars(routeEstimate.estimateIncGstCents ?? Math.max(20_000, routeEstimate.billableHours * 8_000))} inc GST`,
+                        defaultValue: `Estimated from stops: ${routeEstimate.billableHours} billable hrs (~${routeEstimate.distanceKm} km, ${routeEstimate.durationMinutes} min) · Est. ${formatDollars(routeEstimate.estimateIncGstCents ?? Math.max(routeEstimate.minBaseCents ?? 20_000, routeEstimate.billableHours * (routeEstimate.hourlyRateCents ?? 8_000)))} inc GST`,
                         hours: routeEstimate.billableHours,
                         km: routeEstimate.distanceKm,
                         mins: routeEstimate.durationMinutes,
                         amount: (
                           (routeEstimate.estimateIncGstCents ??
-                            Math.max(20_000, routeEstimate.billableHours * 8_000)) / 100
+                            Math.max(
+                              routeEstimate.minBaseCents ?? 20_000,
+                              routeEstimate.billableHours * (routeEstimate.hourlyRateCents ?? 8_000),
+                            )) / 100
                         ).toFixed(2),
                       })}
                     </span>
@@ -2132,7 +2145,16 @@ function JobDraftForm({
                     {pricingModel === 'HOURLY' ? (
                       <span className="mt-0.5 block text-xs font-normal text-clox-faint">
                         {t('jobs.hourlyMinSummaryLine', {
-                          defaultValue: `Minimum hourly base charge: $320.00 inc GST (4 hrs @ $80.00/hr)${
+                          defaultValue: `Minimum hourly base charge: $${(
+                            (routeEstimate?.minChargeIncGstCents ??
+                              Math.max(
+                                routeEstimate?.minBaseCents ?? 20_000,
+                                (routeEstimate?.minBillableHours ?? 4) *
+                                  (routeEstimate?.hourlyRateCents ?? 8_000),
+                              )) / 100
+                          ).toFixed(2)} inc GST (${routeEstimate?.minBillableHours ?? 4} hrs @ $${(
+                            (routeEstimate?.hourlyRateCents ?? 8_000) / 100
+                          ).toFixed(2)}/hr)${
                             routeEstimate?.estimateIncGstCents != null
                               ? ` · Est. ${formatDollars(routeEstimate.estimateIncGstCents)} inc GST`
                               : ''

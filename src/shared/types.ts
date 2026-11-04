@@ -177,6 +177,8 @@ export const AuditAction = {
   DISPUTE_ASSIGNED: 'dispute.assigned',
   DISPUTE_RESOLVED: 'dispute.resolved',
   DISPUTE_CLOSED_LOCAL: 'dispute.closed_local',
+  SETTLEMENT_CYCLE_RUN: 'settlement.cycle_run',
+  RECONCILIATION_RUN: 'settlement.reconciliation_run',
 } as const;
 
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];

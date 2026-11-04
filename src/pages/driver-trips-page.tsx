@@ -542,8 +542,14 @@ export function DriverTripDetailPage() {
         (await refreshTripStatus());
       setMsg(
         status === 'COMPLETED'
-          ? t('trips.podFinalizedTripComplete')
-          : t('trips.podFinalizedLeaveHint'),
+          ? t('trips.podFinalizedTripComplete', {
+              defaultValue:
+                'POD finalized and confirmation emails sent successfully. Trip completed!',
+            })
+          : t('trips.podFinalizedLeaveHint', {
+              defaultValue:
+                'POD finalized and confirmation emails sent successfully. Tap I’ve left drop-off to finish the trip.',
+            }),
       );
     },
     onError: (e) => setMsg(getErrorDetail(e)),
@@ -1362,7 +1368,12 @@ export function DriverTripDetailPage() {
                   </div>
                 </>
               ) : (
-                <Notice tone="success">{t('trips.podFinalized')}</Notice>
+                <Notice tone="success">
+                  {t('trips.podFinalizedSuccessMessage', {
+                    defaultValue:
+                      'POD finalized and confirmation emails sent successfully with proof of delivery attached.',
+                  })}
+                </Notice>
               )}
 
               {signaturePreviewUrl ? (

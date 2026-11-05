@@ -3,9 +3,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate } from 'react-router-dom';
 import {
+  Building2,
   Calculator,
   Calendar,
   Clock,
+  Landmark,
+  Layers,
   MapPin,
   ShieldCheck,
   Sliders,
@@ -87,6 +90,9 @@ export function PlatformSettingsPage() {
   const [cadenceDays, setCadenceDays] = useState('14');
   const [cutoffHour, setCutoffHour] = useState('4');
 
+  // State Master Tier governance toggle
+  const [enableStateTier, setEnableStateTier] = useState<boolean>(false);
+
   // Dynamic revenue split fields
   const [carrierShare, setCarrierShare] = useState('70');
   const [superShare, setSuperShare] = useState('15');
@@ -122,6 +128,9 @@ export function PlatformSettingsPage() {
     }
     if (settings.data.settlementCutoffHour != null) {
       setCutoffHour(String(settings.data.settlementCutoffHour));
+    }
+    if (settings.data.enableStateMasterTier != null) {
+      setEnableStateTier(Boolean(settings.data.enableStateMasterTier));
     }
   }, [settings.data]);
 
@@ -208,6 +217,7 @@ export function PlatformSettingsPage() {
         hourlyMinBaseCents: hourlyMinBase,
         settlementCycleCadenceDays: Math.round(cycleDays),
         settlementCutoffHour: Math.round(cycleCutoff),
+        enableStateMasterTier: enableStateTier,
       });
     },
     onSuccess: async () => {
@@ -216,6 +226,53 @@ export function PlatformSettingsPage() {
     },
     onError: (err) => toast.error(getErrorDetail(err)),
   });
+
+  const toggleStateTierMut = useMutation({
+    mutationFn: (enabled: boolean) => patchPlatformSettings({ enableStateMasterTier: enabled }),
+    onSuccess: async (data) => {
+      setEnableStateTier(Boolean(data.enableStateMasterTier));
+      toast.success(
+        data.enableStateMasterTier
+          ? t('platformSettings.stateTierEnabledToast', {
+              defaultValue: 'State Master Tier enabled. 3-tier franchise governance active.',
+            })
+          : t('platformSettings.stateTierDisabledToast', {
+              defaultValue: 'State Master Tier disabled. 10% State split routed to Super Admin (HQ Holding). Direct 2-tier governance active.',
+            }),
+      );
+      await qc.invalidateQueries({ queryKey: ['admin', 'platform-settings'] });
+    },
+    onError: (err) => toast.error(getErrorDetail(err)),
+  });
+
+  const handleToggleStateTier = async () => {
+    const nextVal = !enableStateTier;
+    const ok = await confirm({
+      title: nextVal
+        ? t('platformSettings.confirmEnableStateTierTitle', {
+            defaultValue: 'Enable State Master Franchise Tier?',
+          })
+        : t('platformSettings.confirmDisableStateTierTitle', {
+            defaultValue: 'Disable State Master Tier (Direct HQ Mode)?',
+          }),
+      description: nextVal
+        ? t('platformSettings.confirmEnableStateTierDesc', {
+            defaultValue:
+              'Enabling the State Master tier activates the 3-tier franchise model. Active State Masters will receive their designated 10% commission on origin freight, and Local BDEs will escalate disputes to State Masters before Super Admin.',
+          })
+        : t('platformSettings.confirmDisableStateTierDesc', {
+            defaultValue:
+              'Disabling the State Master tier transitions the platform to a Direct 2-Tier governance model. The 10% State revenue split will automatically route directly to CLOX / Super Admin (HQ Holding). All Local BDE dispute escalations will bypass the State queue and go directly to Super Admin.',
+          }),
+      confirmLabel: nextVal
+        ? t('platformSettings.enableStateTierAction', { defaultValue: 'Enable State Tier' })
+        : t('platformSettings.disableStateTierAction', { defaultValue: 'Disable State Tier' }),
+      cancelLabel: t('cancel', { defaultValue: 'Cancel' }),
+      tone: nextVal ? 'default' : 'destructive',
+    });
+    if (!ok) return;
+    toggleStateTierMut.mutate(nextVal);
+  };
 
   const publishSplitMut = useMutation({
     mutationFn: () => {
@@ -460,7 +517,89 @@ export function PlatformSettingsPage() {
         </div>
       </section>
 
-      {/* ─── 2. Operational & Platform Parameters Form ─── */}
+      {/* ─── 2. State Master Tier Governance & Revenue Routing Card ─── */}
+      <section className="clox-card space-y-5 p-6 shadow-clox-1">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-clox-border pb-3">
+          <div className="flex items-start gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-clox-md bg-clox-orange/10 text-clox-orange">
+              <Building2 className="h-5 w-5" />
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-display text-base font-semibold text-clox-ink">
+                  {t('platformSettings.stateTierCardTitle', {
+                    defaultValue: 'State Master Tier Governance & Revenue Routing',
+                  })}
+                </h2>
+                <StatusPill tone={enableStateTier ? 'ok' : 'neutral'}>
+                  {enableStateTier
+                    ? t('platformSettings.stateTierActivePill', { defaultValue: 'Active (3-Tier Franchise)' })
+                    : t('platformSettings.stateTierDisabledPill', { defaultValue: 'Disabled (Direct 2-Tier HQ)' })}
+                </StatusPill>
+              </div>
+              <p className="mt-0.5 text-xs text-clox-mute">
+                {t('platformSettings.stateTierCardSubtitle', {
+                  defaultValue:
+                    'Toggle State Master franchise participation. When disabled, State share routes to Super Admin and dispute escalations bypass State directly to Super Admin.',
+                })}
+              </p>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            variant={enableStateTier ? 'destructive' : 'primary'}
+            disabled={toggleStateTierMut.isPending}
+            onClick={handleToggleStateTier}
+          >
+            {toggleStateTierMut.isPending
+              ? t('loading')
+              : enableStateTier
+              ? t('platformSettings.disableStateTierBtn', { defaultValue: 'Disable State Master Tier' })
+              : t('platformSettings.enableStateTierBtn', { defaultValue: 'Enable State Master Tier' })}
+          </Button>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 pt-1 text-xs">
+          <div className="rounded-clox-md border border-clox-border bg-clox-surface-subtle p-3.5 space-y-1.5">
+            <div className="flex items-center gap-1.5 font-semibold text-clox-ink">
+              <Landmark className="h-4 w-4 text-clox-orange" />
+              <span>{t('platformSettings.revenueRoutingTitle', { defaultValue: 'Revenue Commission Routing (10%)' })}</span>
+            </div>
+            <p className="text-clox-mute leading-relaxed">
+              {enableStateTier
+                ? t('platformSettings.revenueRoutingActiveDesc', {
+                    defaultValue:
+                      'Origin 10% commission is allocated to the active State Master seat assigned to the pickup state/region.',
+                  })
+                : t('platformSettings.revenueRoutingDisabledDesc', {
+                    defaultValue:
+                      'State Master tier is disabled. The 10% state commission automatically routes directly to CLOX / Super Admin (HQ Holding).',
+                  })}
+            </p>
+          </div>
+
+          <div className="rounded-clox-md border border-clox-border bg-clox-surface-subtle p-3.5 space-y-1.5">
+            <div className="flex items-center gap-1.5 font-semibold text-clox-ink">
+              <Layers className="h-4 w-4 text-clox-orange" />
+              <span>{t('platformSettings.disputeRoutingTitle', { defaultValue: 'Dispute Adjudication Workflow' })}</span>
+            </div>
+            <p className="text-clox-mute leading-relaxed">
+              {enableStateTier
+                ? t('platformSettings.disputeRoutingActiveDesc', {
+                    defaultValue:
+                      'Standard 3-tier escalation: Local BDE triages locally, escalates to State Master, who may rule or escalate to Super Admin.',
+                  })
+                : t('platformSettings.disputeRoutingDisabledDesc', {
+                    defaultValue:
+                      'Direct 2-tier escalation: Local BDE triages locally. All escalations bypass State Master and report directly to Super Admin for binding resolution.',
+                  })}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── 3. Operational & Platform Parameters Form ─── */}
       <form
         className="space-y-6"
         onSubmit={handleSaveSettings}

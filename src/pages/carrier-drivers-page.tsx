@@ -16,6 +16,7 @@ import {
   Notice,
   PaginationBar,
   ResponsiveDataView,
+  Select,
   StatusPill,
   dataCardClassName,
   useClientPagination,
@@ -23,17 +24,21 @@ import {
   useToast,
 } from '@/components/ui';
 import {
+  createDriverScheduleByCarrier,
   deleteCarrierDriver,
   disableCarrierDriver,
   getErrorDetail,
   getIdentityMe,
+  getCarrierFleetSchedule,
   inviteCarrierDriver,
   listCarrierDrivers,
   listDocuments,
   openDocumentContent,
   reactivateCarrierDriver,
   resendCarrierDriverInvite,
+  reviewDriverSchedule,
   type CarrierDriverListItem,
+  type DriverScheduleEntryItem,
 } from '@/lib/api';
 import { formatCalendarDate, formatDateTime } from '@/lib/datetime';
 
@@ -96,6 +101,16 @@ export function CarrierDriversPage() {
     mailSkipped: boolean;
   } | null>(null);
 
+  const [activeTab, setActiveTab] = useState<'drivers' | 'schedule'>('drivers');
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [schedDriverId, setSchedDriverId] = useState('');
+  const [schedType, setSchedType] = useState('ANNUAL_LEAVE');
+  const [schedStartAt, setSchedStartAt] = useState('');
+  const [schedEndAt, setSchedEndAt] = useState('');
+  const [schedReason, setSchedReason] = useState('');
+  const [rejectTarget, setRejectTarget] = useState<DriverScheduleEntryItem | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+
   const meQuery = useQuery({
     queryKey: ['identity', 'me'],
     queryFn: () => getIdentityMe(),
@@ -117,6 +132,150 @@ export function CarrierDriversPage() {
       listDocuments({ companyId: companyId!, driverId: docsTarget!.id }),
     enabled: Boolean(companyId && docsTarget?.id),
   });
+
+  const fleetScheduleQuery = useQuery({
+    queryKey: ['carrier', 'fleet', 'schedule'],
+    queryFn: () => getCarrierFleetSchedule(),
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+  });
+
+  const scheduleItems = fleetScheduleQuery.data ?? [];
+  const pendingSchedulesCount = scheduleItems.filter((s) => s.status === 'PENDING').length;
+  const pagedSchedules = useClientPagination(scheduleItems);
+
+  const createScheduleMutation = useMutation({
+    mutationFn: (payload: {
+      driverId: string;
+      type: string;
+      startAt: string;
+      endAt: string;
+      reason?: string;
+    }) => createDriverScheduleByCarrier(payload),
+    onSuccess: async () => {
+      toast.success(
+        t('drivers.scheduleCreated', {
+          defaultValue: 'Schedule block-out created successfully',
+        }),
+      );
+      setShowScheduleModal(false);
+      setSchedDriverId('');
+      setSchedStartAt('');
+      setSchedEndAt('');
+      setSchedReason('');
+      await queryClient.invalidateQueries({ queryKey: ['carrier', 'fleet', 'schedule'] });
+    },
+    onError: (err) => toast.error(getErrorDetail(err)),
+  });
+
+  const reviewScheduleMutation = useMutation({
+    mutationFn: ({
+      id,
+      status,
+      rejectionReason,
+    }: {
+      id: string;
+      status: 'APPROVED' | 'REJECTED';
+      rejectionReason?: string;
+    }) => reviewDriverSchedule(id, { status, rejectionReason }),
+    onSuccess: async (_, variables) => {
+      toast.success(
+        variables.status === 'APPROVED'
+          ? t('drivers.scheduleApproved', { defaultValue: 'Time-off request approved' })
+          : t('drivers.scheduleRejected', { defaultValue: 'Time-off request rejected' }),
+      );
+      setRejectTarget(null);
+      setRejectionReason('');
+      await queryClient.invalidateQueries({ queryKey: ['carrier', 'fleet', 'schedule'] });
+    },
+    onError: (err) => toast.error(getErrorDetail(err)),
+  });
+
+  const handleApproveSchedule = async (item: DriverScheduleEntryItem) => {
+    const ok = await confirm({
+      title: t('confirm.approveScheduleTitle', { defaultValue: 'Approve Time-Off Request' }),
+      description: t('confirm.approveScheduleBody', {
+        defaultValue: `Approve time-off for ${item.driver?.user?.name || 'this driver'} from ${formatDateTime(item.startAt)} to ${formatDateTime(item.endAt)}? The driver will be marked unavailable for job matching during this window.`,
+      }),
+      confirmLabel: t('confirm.approve', { defaultValue: 'Approve Request' }),
+    });
+    if (ok) {
+      await reviewScheduleMutation.mutateAsync({ id: item.id, status: 'APPROVED' });
+    }
+  };
+
+  const handleOpenRejectModal = (item: DriverScheduleEntryItem) => {
+    setRejectTarget(item);
+    setRejectionReason('');
+  };
+
+  const handleConfirmRejectSchedule = async () => {
+    if (!rejectTarget) return;
+    if (!rejectionReason.trim()) {
+      toast.error(
+        t('drivers.rejectionReasonRequired', { defaultValue: 'A rejection reason is required.' }),
+      );
+      return;
+    }
+    const ok = await confirm({
+      title: t('confirm.rejectScheduleTitle', { defaultValue: 'Reject Time-Off Request' }),
+      description: t('confirm.rejectScheduleBody', {
+        defaultValue: `Reject time-off request for ${rejectTarget.driver?.user?.name || 'this driver'} with note: "${rejectionReason.trim()}"?`,
+      }),
+      confirmLabel: t('confirm.reject', { defaultValue: 'Reject' }),
+      tone: 'destructive',
+    });
+    if (ok) {
+      await reviewScheduleMutation.mutateAsync({
+        id: rejectTarget.id,
+        status: 'REJECTED',
+        rejectionReason: rejectionReason.trim(),
+      });
+    }
+  };
+
+  const handleCreateScheduleSubmit = async () => {
+    if (!schedDriverId) {
+      toast.error(t('drivers.selectDriverRequired', { defaultValue: 'Please select a driver.' }));
+      return;
+    }
+    if (!schedStartAt || !schedEndAt) {
+      toast.error(
+        t('drivers.datesRequired', {
+          defaultValue: 'Please provide both start and end date/time.',
+        }),
+      );
+      return;
+    }
+    const start = new Date(schedStartAt);
+    const end = new Date(schedEndAt);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || start >= end) {
+      toast.error(
+        t('drivers.startBeforeEnd', {
+          defaultValue: 'Start time must be before end time.',
+        }),
+      );
+      return;
+    }
+
+    const selectedDrv = items.find((d) => d.id === schedDriverId);
+    const ok = await confirm({
+      title: t('confirm.createScheduleTitle', { defaultValue: 'Confirm Schedule Block-out' }),
+      description: t('confirm.createScheduleBody', {
+        defaultValue: `Block out schedule for ${selectedDrv?.user?.name || selectedDrv?.user?.email || 'selected driver'} from ${formatDateTime(start)} to ${formatDateTime(end)}? This will auto-approve the block-out.`,
+      }),
+      confirmLabel: t('confirm.confirmBlockout', { defaultValue: 'Create Block-out' }),
+    });
+    if (ok) {
+      await createScheduleMutation.mutateAsync({
+        driverId: schedDriverId,
+        type: schedType,
+        startAt: start.toISOString(),
+        endAt: end.toISOString(),
+        reason: schedReason.trim() || undefined,
+      });
+    }
+  };
 
   const schema = z.object({
     name: z.string().trim().min(2, t('validation.nameRequired')),
@@ -251,8 +410,20 @@ export function CarrierDriversPage() {
     const tripLabel =
       row.currentTrip?.jobTitle?.trim() ||
       (row.currentTrip?.jobId ? row.currentTrip.jobId.slice(0, 8) : null);
+    const activeLeave = scheduleItems.find(
+      (s) =>
+        s.driverId === row.id &&
+        s.status === 'APPROVED' &&
+        new Date(s.startAt).getTime() <= Date.now() &&
+        new Date(s.endAt).getTime() >= Date.now(),
+    );
     return (
       <div className="flex min-w-[9.5rem] max-w-[15rem] flex-col items-start gap-1">
+        {activeLeave ? (
+          <StatusPill tone="warn" className="max-w-full">
+            <span className="truncate">{activeLeave.type.replace(/_/g, ' ')} (On Leave)</span>
+          </StatusPill>
+        ) : null}
         {activity ? (
           <>
             <StatusPill tone={activityStatusTone(activity)} className="max-w-full">
@@ -428,22 +599,64 @@ export function CarrierDriversPage() {
               {t('drivers.manageFleet')}
             </Link>
           )}
-          <Button
-            type="button"
-            variant="primary"
-            disabled={busy}
-            onClick={() => setShowForm((open) => !open)}
-          >
-            {showForm ? t('cancel') : t('drivers.inviteDriver')}
-          </Button>
+          {activeTab === 'drivers' ? (
+            <Button
+              type="button"
+              variant="primary"
+              disabled={busy}
+              onClick={() => setShowForm((open) => !open)}
+            >
+              {showForm ? t('cancel') : t('drivers.inviteDriver')}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => setShowScheduleModal(true)}
+            >
+              {t('drivers.btnAddSchedule', { defaultValue: '+ Schedule Block-out' })}
+            </Button>
+          )}
         </div>
       </div>
 
-      {actionError ? (
-        <Notice tone="error" className="mt-4">
-          {actionError}
-        </Notice>
-      ) : null}
+      <div className="mt-4 mb-6 flex border-b border-clox-border">
+        <button
+          type="button"
+          className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
+            activeTab === 'drivers'
+              ? 'border-clox-orange text-clox-ink font-bold'
+              : 'border-transparent text-clox-mute hover:text-clox-ink'
+          }`}
+          onClick={() => setActiveTab('drivers')}
+        >
+          {t('drivers.tabDrivers', { defaultValue: 'All Drivers' })} ({items.length})
+        </button>
+        <button
+          type="button"
+          className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${
+            activeTab === 'schedule'
+              ? 'border-clox-orange text-clox-ink font-bold'
+              : 'border-transparent text-clox-mute hover:text-clox-ink'
+          }`}
+          onClick={() => setActiveTab('schedule')}
+        >
+          {t('drivers.tabSchedule', { defaultValue: 'Schedule & Time-Off' })}
+          {pendingSchedulesCount > 0 ? (
+            <span className="rounded-full bg-amber-500/20 px-1.5 py-0.2 text-xs font-bold text-amber-600 dark:text-amber-400">
+              {pendingSchedulesCount}
+            </span>
+          ) : null}
+        </button>
+      </div>
+
+      {activeTab === 'drivers' ? (
+        <>
+          {actionError ? (
+            <Notice tone="error" className="mt-4">
+              {actionError}
+            </Notice>
+          ) : null}
 
       {items.some((d) => d.status === 'PENDING_REVIEW') ? (
         <Notice tone="info" className="mt-4">
@@ -617,6 +830,216 @@ export function CarrierDriversPage() {
           </>
         )
       ) : null}
+      </>
+      ) : (
+        <div className="mt-4">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-display text-lg font-semibold text-clox-ink">
+                {t('drivers.fleetScheduleTitle', { defaultValue: 'Fleet Driver Schedules & Time-Off' })}
+              </h2>
+              <p className="text-xs text-clox-mute">
+                {t('drivers.fleetScheduleSubtitle', {
+                  defaultValue: 'Review pending driver time-off requests or directly block out scheduled leave.',
+                })}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => setShowScheduleModal(true)}
+            >
+              {t('drivers.btnAddSchedule', { defaultValue: '+ Schedule Block-out' })}
+            </Button>
+          </div>
+
+          {fleetScheduleQuery.isLoading ? (
+            <LoadingBlock label={t('loading')} />
+          ) : fleetScheduleQuery.isError ? (
+            <Notice tone="error">{getErrorDetail(fleetScheduleQuery.error)}</Notice>
+          ) : scheduleItems.length === 0 ? (
+            <EmptyBlock
+              title={t('drivers.scheduleEmptyTitle', { defaultValue: 'No schedule entries found' })}
+              description={t('drivers.scheduleEmptyDesc', {
+                defaultValue: 'No scheduled leaves, rostered off days, or time-off requests recorded for your fleet.',
+              })}
+            />
+          ) : (
+            <>
+              <ResponsiveDataView
+                className="mt-4"
+                cards={
+                  <DataCardList
+                    items={pagedSchedules.pagedItems}
+                    getKey={(row) => row.id}
+                    renderItem={(row) => (
+                      <div className={dataCardClassName}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="font-semibold text-clox-ink">
+                              {row.driver?.user?.name || row.driver?.user?.email || 'Driver'}
+                            </p>
+                            <p className="text-xs text-clox-mute">
+                              {row.driver?.user?.email} · {row.driver?.licenceClass || 'Licence'}
+                            </p>
+                          </div>
+                          <StatusPill
+                            tone={
+                              row.status === 'APPROVED'
+                                ? 'ok'
+                                : row.status === 'PENDING'
+                                  ? 'warn'
+                                  : row.status === 'REJECTED'
+                                    ? 'danger'
+                                    : 'neutral'
+                            }
+                          >
+                            {row.status}
+                          </StatusPill>
+                        </div>
+                        <div className="mt-2 text-xs">
+                          <p className="font-medium text-clox-ink">
+                            <span className="text-clox-mute">Window:</span> {formatDateTime(row.startAt)} → {formatDateTime(row.endAt)}
+                          </p>
+                          <p className="mt-1 text-clox-mute">
+                            <span className="font-semibold text-clox-ink">Type:</span> {row.type.replace(/_/g, ' ')}
+                            {row.reason ? ` · ${row.reason}` : ''}
+                          </p>
+                        </div>
+                        {row.rejectionReason ? (
+                          <p className="mt-1 text-xs text-clox-danger font-medium">
+                            Note: {row.rejectionReason}
+                          </p>
+                        ) : null}
+                        {row.status === 'PENDING' ? (
+                          <div className="mt-3 flex gap-2">
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              disabled={reviewScheduleMutation.isPending}
+                              onClick={() => void handleApproveSchedule(row)}
+                            >
+                              {t('drivers.scheduleApprove', { defaultValue: 'Approve' })}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              disabled={reviewScheduleMutation.isPending}
+                              onClick={() => handleOpenRejectModal(row)}
+                            >
+                              {t('drivers.scheduleReject', { defaultValue: 'Reject' })}
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  />
+                }
+                table={
+                  <DataTable
+                    minWidthClassName="min-w-[64rem]"
+                    headers={[
+                      t('drivers.scheduleColDriver', { defaultValue: 'Driver' }),
+                      t('drivers.scheduleColType', { defaultValue: 'Type' }),
+                      t('drivers.scheduleColDates', { defaultValue: 'Time Window' }),
+                      t('drivers.scheduleColStatus', { defaultValue: 'Status' }),
+                      t('drivers.scheduleColReason', { defaultValue: 'Reason / Note' }),
+                      t('drivers.scheduleColActions', { defaultValue: 'Actions' }),
+                    ]}
+                    headerClassNames={[
+                      undefined,
+                      undefined,
+                      undefined,
+                      undefined,
+                      undefined,
+                      'text-right',
+                    ]}
+                  >
+                    {pagedSchedules.pagedItems.map((row) => (
+                      <tr
+                        key={row.id}
+                        className="border-t border-clox-border-soft hover:bg-clox-surface-alt/60"
+                      >
+                        <td className="px-4 py-3 align-top text-clox-ink">
+                          <p className="font-semibold">{row.driver?.user?.name || row.driver?.user?.email || 'Driver'}</p>
+                          <p className="text-xs text-clox-mute">{row.driver?.user?.email} · {row.driver?.licenceClass || 'Licence'}</p>
+                        </td>
+                        <td className="px-4 py-3 align-top">
+                          <StatusPill tone={row.type === 'OVERTIME_AVAILABLE' ? 'ok' : 'info'}>
+                            {row.type.replace(/_/g, ' ')}
+                          </StatusPill>
+                        </td>
+                        <td className="px-4 py-3 align-top text-xs">
+                          <p className="font-medium text-clox-ink">{formatDateTime(row.startAt)} →</p>
+                          <p className="text-clox-mute">{formatDateTime(row.endAt)}</p>
+                        </td>
+                        <td className="px-4 py-3 align-top">
+                          <StatusPill
+                            tone={
+                              row.status === 'APPROVED'
+                                ? 'ok'
+                                : row.status === 'PENDING'
+                                  ? 'warn'
+                                  : row.status === 'REJECTED'
+                                    ? 'danger'
+                                    : 'neutral'
+                            }
+                          >
+                            {row.status}
+                          </StatusPill>
+                          {row.rejectionReason ? (
+                            <p className="text-[11px] text-clox-danger mt-0.5 truncate max-w-[12rem]" title={row.rejectionReason}>
+                              {row.rejectionReason}
+                            </p>
+                          ) : null}
+                        </td>
+                        <td className="max-w-[14rem] px-4 py-3 align-top text-xs text-clox-mute">
+                          <span className="line-clamp-2" title={row.reason || row.notes || undefined}>
+                            {row.reason || row.notes || '—'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 align-top text-right">
+                          {row.status === 'PENDING' ? (
+                            <ActionGroup>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                disabled={reviewScheduleMutation.isPending}
+                                onClick={() => void handleApproveSchedule(row)}
+                              >
+                                {t('drivers.scheduleApprove', { defaultValue: 'Approve' })}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                disabled={reviewScheduleMutation.isPending}
+                                onClick={() => handleOpenRejectModal(row)}
+                              >
+                                {t('drivers.scheduleReject', { defaultValue: 'Reject' })}
+                              </Button>
+                            </ActionGroup>
+                          ) : (
+                            <span className="text-xs text-clox-faint">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </DataTable>
+                }
+              />
+              <PaginationBar
+                page={pagedSchedules.page}
+                totalPages={pagedSchedules.totalPages}
+                onPageChange={pagedSchedules.setPage}
+              />
+            </>
+          )}
+        </div>
+      )}
 
       {disableTarget ? (
         <div
@@ -757,6 +1180,161 @@ export function CarrierDriversPage() {
             <div className="mt-6 flex justify-end">
               <Button type="button" variant="secondary" onClick={() => setDocsTarget(null)}>
                 {t('confirm.cancel')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showScheduleModal ? (
+        <div
+          className="clox-dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !createScheduleMutation.isPending) {
+              setShowScheduleModal(false);
+            }
+          }}
+        >
+          <div className="clox-dialog max-w-md" role="dialog" aria-modal="true">
+            <h2 className="font-display text-lg font-semibold text-clox-ink">
+              {t('drivers.modalScheduleTitle', { defaultValue: 'Schedule Driver Time-Off / Block-out' })}
+            </h2>
+            <p className="mt-1 text-sm text-clox-mute">
+              {t('drivers.modalScheduleDesc', {
+                defaultValue: 'Directly record planned leave or off-duty time for a driver. This will auto-approve the block-out.',
+              })}
+            </p>
+
+            <div className="mt-4 space-y-3">
+              <Select
+                label={t('drivers.selectDriver', { defaultValue: 'Driver' })}
+                value={schedDriverId}
+                onChange={(e) => setSchedDriverId(e.target.value)}
+                required
+              >
+                <option value="">{t('drivers.selectDriverPlaceholder', { defaultValue: 'Select a driver...' })}</option>
+                {items
+                  .filter((d) => d.status === 'ACTIVE')
+                  .map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.user?.name ?? d.user?.email ?? 'Driver'} ({d.licenceClass ?? 'Licence'})
+                    </option>
+                  ))}
+              </Select>
+
+              <Select
+                label={t('drivers.selectType', { defaultValue: 'Availability / Leave Type' })}
+                value={schedType}
+                onChange={(e) => setSchedType(e.target.value)}
+              >
+                <option value="ANNUAL_LEAVE">Annual Leave</option>
+                <option value="MEDICAL_LEAVE">Medical / Sick Leave</option>
+                <option value="ROSTERED_OFF">Rostered Day Off (RDO)</option>
+                <option value="PERSONAL">Personal / Emergency</option>
+                <option value="OVERTIME_AVAILABLE">Overtime / Priority Shift</option>
+              </Select>
+
+              <Field
+                type="datetime-local"
+                label={t('drivers.startAt', { defaultValue: 'Start Date & Time' })}
+                value={schedStartAt}
+                onChange={(e) => setSchedStartAt(e.target.value)}
+                required
+              />
+
+              <Field
+                type="datetime-local"
+                label={t('drivers.endAt', { defaultValue: 'End Date & Time' })}
+                value={schedEndAt}
+                onChange={(e) => setSchedEndAt(e.target.value)}
+                required
+              />
+
+              <label className="block">
+                <span className="mb-1 block text-[12.5px] font-semibold text-clox-ink">
+                  {t('drivers.reasonLabel', { defaultValue: 'Reason / Notes (Optional)' })}
+                </span>
+                <textarea
+                  className="clox-field-control min-h-[3rem]"
+                  value={schedReason}
+                  onChange={(e) => setSchedReason(e.target.value)}
+                  placeholder={t('drivers.reasonPlaceholder', { defaultValue: 'e.g. Approved holiday leave' })}
+                  maxLength={500}
+                />
+              </label>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={createScheduleMutation.isPending}
+                onClick={() => setShowScheduleModal(false)}
+              >
+                {t('confirm.cancel')}
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                disabled={createScheduleMutation.isPending || !schedDriverId || !schedStartAt || !schedEndAt}
+                onClick={() => void handleCreateScheduleSubmit()}
+              >
+                {createScheduleMutation.isPending ? t('loading') : t('confirm.save', { defaultValue: 'Create Block-out' })}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {rejectTarget ? (
+        <div
+          className="clox-dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !reviewScheduleMutation.isPending) {
+              setRejectTarget(null);
+            }
+          }}
+        >
+          <div className="clox-dialog max-w-sm" role="dialog" aria-modal="true">
+            <h2 className="font-display text-lg font-semibold text-clox-ink">
+              {t('drivers.rejectModalTitle', { defaultValue: 'Reject Time-Off Request' })}
+            </h2>
+            <p className="mt-2 text-sm text-clox-mute">
+              {t('drivers.rejectModalDesc', {
+                defaultValue: `Provide a reason for rejecting ${rejectTarget.driver?.user?.name || 'this driver'}'s leave request:`,
+              })}
+            </p>
+            <label className="mt-4 block">
+              <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
+                {t('drivers.rejectionReasonLabel', { defaultValue: 'Rejection Reason' })}
+              </span>
+              <textarea
+                className="clox-field-control min-h-[4rem]"
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                placeholder={t('drivers.rejectionReasonPlaceholder', { defaultValue: 'e.g. Insufficient fleet coverage during this period' })}
+                maxLength={500}
+                required
+              />
+            </label>
+            <div className="mt-6 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={reviewScheduleMutation.isPending}
+                onClick={() => setRejectTarget(null)}
+              >
+                {t('confirm.cancel')}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={reviewScheduleMutation.isPending || !rejectionReason.trim()}
+                onClick={() => void handleConfirmRejectSchedule()}
+              >
+                {reviewScheduleMutation.isPending ? t('loading') : t('confirm.reject', { defaultValue: 'Confirm Rejection' })}
               </Button>
             </div>
           </div>

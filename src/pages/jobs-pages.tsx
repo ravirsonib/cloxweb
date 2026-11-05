@@ -4,7 +4,14 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
-import { FileText } from 'lucide-react';
+import {
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  ExternalLink,
+  FileText,
+  Truck,
+} from 'lucide-react';
 import { z } from 'zod';
 import {
   acceptProposal,
@@ -390,6 +397,13 @@ export function JobsListPage() {
       )}
     </div>
   );
+}
+
+function formatAbn(val?: string | null) {
+  if (!val) return '';
+  const digits = val.replace(/\D/g, '');
+  if (digits.length !== 11) return val;
+  return `${digits.slice(0, 2)} ${digits.slice(2, 5)} ${digits.slice(5, 8)} ${digits.slice(8, 11)}`;
 }
 
 const STATE_ANCHOR_COORDS: Record<string, { lat: number; lng: number }> = {
@@ -990,12 +1004,17 @@ function JobDraftForm({
   const [step, setStep] = useState<DraftWizardStep>('pricing');
   const cancelTo = isEdit && jobId ? `/jobs/${jobId}` : '/jobs';
 
+  const [showAddressDetails, setShowAddressDetails] = useState(false);
+
   const senderOnboarding = useQuery({
     queryKey: ['sender', 'onboarding'],
     queryFn: getSenderOnboarding,
     enabled: role === AppRole.SENDER,
   });
   const senderCompanyId = senderOnboarding.data?.company.id;
+  const company = senderOnboarding.data?.company;
+  const hasAbn = Boolean(company?.abn);
+  const formattedCompanyAbn = useMemo(() => formatAbn(company?.abn), [company?.abn]);
 
   const [dgDocFilename, setDgDocFilename] = useState<string | null>(null);
   const [dgUploading, setDgUploading] = useState(false);
@@ -1485,6 +1504,22 @@ function JobDraftForm({
       !cargoOverLimit,
     retry: false,
   });
+
+  const transitMinutes = useMemo(() => {
+    if (routeEstimate?.durationMinutes && routeEstimate.durationMinutes > 0) {
+      return Math.round(routeEstimate.durationMinutes);
+    }
+    const km = Number(distanceKm) || 25;
+    return Math.max(12, Math.round(km * 1.5));
+  }, [routeEstimate?.durationMinutes, distanceKm]);
+
+  const vehicleTitle = useMemo(() => {
+    if (recommend.data?.recommendedVehicleClass) {
+      return recommend.data.recommendedVehicleClass.replace(/_/g, ' ');
+    }
+    if (pricingModel === 'HOURLY') return 'Commercial Hourly Freight';
+    return 'Commercial Freight Vehicle';
+  }, [recommend.data?.recommendedVehicleClass, pricingModel]);
 
   const save = useMutation({
     mutationFn: (values: JobCreateForm) => {
@@ -2125,6 +2160,186 @@ function JobDraftForm({
 
         {step === 'confirm' ? (
           <>
+            {/* Top Card: Vehicle Class + Transit Time + Free Loading Time Included */}
+            <div className="clox-card mb-4 overflow-hidden">
+              <div className="flex items-center justify-between p-4 sm:p-5">
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-clox-surface-alt border border-clox-border text-clox-orange">
+                    <Truck className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-display text-base font-bold text-clox-ink sm:text-lg">
+                      {vehicleTitle}
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddressDetails((prev) => !prev)}
+                      className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-clox-orange hover:underline"
+                    >
+                      <span>
+                        {showAddressDetails
+                          ? t('jobs.hideAddressDetails', { defaultValue: 'Hide Address Details' })
+                          : t('jobs.viewAddressDetails', { defaultValue: 'View Address Details' })}
+                      </span>
+                      <ChevronRight
+                        className={cn(
+                          'h-3.5 w-3.5 transition-transform duration-200',
+                          showAddressDetails && 'rotate-90',
+                        )}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-center justify-center rounded-xl border border-clox-border bg-clox-surface-alt px-3 py-1.5 text-center sm:px-4 sm:py-2">
+                  <span className="font-display text-lg font-bold text-clox-ink sm:text-xl leading-none">
+                    {transitMinutes}
+                  </span>
+                  <span className="mt-0.5 text-[10px] font-semibold text-clox-mute uppercase tracking-wider">
+                    mins
+                  </span>
+                </div>
+              </div>
+
+              {/* Collapsible Stop Address Details */}
+              {showAddressDetails ? (
+                <div className="border-t border-clox-border-soft bg-clox-surface-alt/60 p-4 text-xs space-y-2">
+                  <div className="flex items-start gap-2">
+                    <span className="inline-block w-16 font-semibold text-clox-mute">
+                      {t('jobs.pickupLabel', { defaultValue: 'Pickup' })}:
+                    </span>
+                    <span className="text-clox-ink font-medium">
+                      {pickupAddressLine}, {pickupSuburb} {pickupState} {pickupPostcode}
+                    </span>
+                  </div>
+                  {pricingModel === 'HOURLY' &&
+                    (extraPickups ?? []).map((p, idx) =>
+                      p.suburb ? (
+                        <div key={`extra-p-${idx}`} className="flex items-start gap-2 pl-4">
+                          <span className="inline-block w-16 font-semibold text-clox-faint">
+                            Stop #{idx + 2}:
+                          </span>
+                          <span className="text-clox-ink">
+                            {p.addressLine}, {p.suburb} {p.state} {p.postcode}
+                          </span>
+                        </div>
+                      ) : null,
+                    )}
+                  <div className="flex items-start gap-2">
+                    <span className="inline-block w-16 font-semibold text-clox-mute">
+                      {t('jobs.dropoffLabel', { defaultValue: 'Dropoff' })}:
+                    </span>
+                    <span className="text-clox-ink font-medium">
+                      {dropoffAddressLine}, {dropoffSuburb} {dropoffState} {dropoffPostcode}
+                    </span>
+                  </div>
+                  {pricingModel === 'HOURLY' &&
+                    (extraDropoffs ?? []).map((d, idx) =>
+                      d.suburb ? (
+                        <div key={`extra-d-${idx}`} className="flex items-start gap-2 pl-4">
+                          <span className="inline-block w-16 font-semibold text-clox-faint">
+                            Drop #{idx + 2}:
+                          </span>
+                          <span className="text-clox-ink">
+                            {d.addressLine}, {d.suburb} {d.state} {d.postcode}
+                          </span>
+                        </div>
+                      ) : null,
+                    )}
+                </div>
+              ) : null}
+
+              {/* Free Loading/Unloading Time Banner */}
+              <div className="flex items-center gap-2 border-t border-clox-border-soft bg-clox-surface-alt px-4 py-2.5 text-xs text-clox-ink">
+                <Clock className="h-4 w-4 shrink-0 text-clox-orange" />
+                <span className="font-medium text-clox-ink">
+                  {t('jobs.freeLoadingPrefix', { defaultValue: 'Free' })}{' '}
+                  <strong className="font-bold text-clox-ink">60 mins</strong>{' '}
+                  {t('jobs.freeLoadingSuffix', {
+                    defaultValue: 'of loading-unloading time included.',
+                  })}
+                </span>
+              </div>
+            </div>
+
+            {/* Middle Card: Tax Invoice / ABN Status Card */}
+            <div className="clox-card mb-4 overflow-hidden">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 sm:p-5">
+                <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                  <div
+                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border ${
+                      hasAbn
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-400'
+                        : 'border-clox-border bg-clox-surface-alt text-clox-mute'
+                    }`}
+                  >
+                    {hasAbn ? (
+                      <CheckCircle2 className="h-6 w-6" />
+                    ) : (
+                      <FileText className="h-6 w-6" />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-display text-base font-bold text-clox-ink truncate sm:text-lg">
+                      {hasAbn
+                        ? `${t('jobs.taxInvoicePrefix', { defaultValue: 'Tax Invoice' })}: ${
+                            company?.invoiceLegalName || company?.legalName
+                          }`
+                        : t('jobs.noAbnRegistered', { defaultValue: 'No ABN Registered' })}
+                    </h3>
+                    <p className="mt-0.5 text-xs text-clox-mute truncate">
+                      {hasAbn
+                        ? `ABN: ${formattedCompanyAbn}`
+                        : t('jobs.noAbnNotice', {
+                            defaultValue:
+                              'Invoices will be issued without an ABN. Add your ABN to claim 10% GST credits.',
+                          })}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center shrink-0">
+                  <Link
+                    to="/account"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-clox-border bg-clox-surface px-3 py-1.5 text-xs font-semibold text-clox-ink shadow-sm transition hover:bg-clox-surface-alt hover:text-clox-orange focus:outline-none focus:ring-2 focus:ring-clox-orange"
+                  >
+                    <span>
+                      {hasAbn
+                        ? t('jobs.manageAbnInAccount', { defaultValue: 'Manage in Account' })
+                        : t('jobs.addAbnInAccount', { defaultValue: 'Add ABN' })}
+                    </span>
+                    <ExternalLink className="h-3.5 w-3.5 text-clox-mute" />
+                  </Link>
+                </div>
+              </div>
+
+              {/* Bottom subtext banner */}
+              <div className="border-t border-clox-border-soft bg-clox-surface-alt px-4 py-2.5 text-xs">
+                {hasAbn ? (
+                  <span className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-medium">
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                    {t('jobs.abnVerifiedTaxInvoiceNotice', {
+                      defaultValue:
+                        'Compliant 10% GST Tax Invoice will be issued to claim Input Tax Credit',
+                    })}
+                  </span>
+                ) : (
+                  <span className="text-clox-mute">
+                    {t('jobs.getInvoicesWithAbnNoticePrefix', {
+                      defaultValue: 'Update your ABN in Account settings to claim',
+                    })}{' '}
+                    <strong className="font-bold text-clox-ink">
+                      {t('jobs.getInvoicesWithAbnNoticeBold', {
+                        defaultValue: '10% GST Input Tax Credit',
+                      })}
+                    </strong>
+                  </span>
+                )}
+              </div>
+            </div>
+
             <div className="mb-4 rounded-clox-md border border-clox-border bg-clox-surface-alt p-4">
               <p className="font-display text-sm font-semibold text-clox-ink">
                 {t('jobs.wizard.summaryTitle')}

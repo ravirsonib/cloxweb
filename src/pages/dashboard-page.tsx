@@ -151,7 +151,7 @@ export function DashboardPage() {
             <Building2 className="h-4 w-4" />
             {t('nav.companies')}
           </Link>
-          <Link to="/admin/jobs" className="clox-btn clox-btn-secondary">
+          <Link to="/admin-jobs" className="clox-btn clox-btn-secondary">
             <Package className="h-4 w-4" />
             {t('nav.adminJobs')}
           </Link>
@@ -563,7 +563,7 @@ export function DashboardPage() {
                   </p>
                 </div>
                 <Link
-                  to="/admin/jobs"
+                  to="/admin-jobs"
                   className="inline-flex items-center gap-1 text-xs font-semibold text-clox-orange hover:underline"
                 >
                   View All <ExternalLink className="h-3 w-3" />
@@ -586,7 +586,7 @@ export function DashboardPage() {
                     >
                       <div className="min-w-0 pr-3">
                         <Link
-                          to={`/admin/jobs/${job.id}`}
+                          to={`/admin-jobs/${job.id}`}
                           className="font-semibold text-clox-ink hover:text-clox-orange line-clamp-1"
                         >
                           {job.title}

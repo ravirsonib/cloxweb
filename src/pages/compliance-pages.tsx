@@ -328,10 +328,12 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
       note?: string;
       driverId?: string;
       vehicleId?: string;
+      documentId?: string;
     }) =>
       decideCompliance(caseId, vars.action, (vars.note ?? note).trim() || undefined, {
         driverId: vars.driverId,
         vehicleId: vars.vehicleId,
+        documentId: vars.documentId,
       }),
     onSuccess: async () => {
       setNoteError(null);
@@ -418,6 +420,7 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
     itemId: string,
     action: 'approve' | 'reject' | 'request-info',
     itemName: string,
+    documentId?: string,
   ) {
     const isReject = action === 'reject';
     const isInfo = action === 'request-info';
@@ -474,6 +477,7 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
       note: itemNote || undefined,
       driverId: itemType === 'driver' ? itemId : undefined,
       vehicleId: itemType === 'vehicle' ? itemId : undefined,
+      documentId,
     });
   }
 
@@ -658,6 +662,7 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
                               (isDriverDoc
                                 ? d.driverName || d.driverEmail
                                 : d.vehicleRegistration || d.vehicleLabel) || 'item',
+                              d.id,
                             )
                           }
                         >
@@ -684,6 +689,7 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
                                 (isDriverDoc
                                   ? d.driverName || d.driverEmail
                                   : d.vehicleRegistration || d.vehicleLabel) || 'item',
+                                d.id,
                               )
                             }
                           >
@@ -702,6 +708,7 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
                                 (isDriverDoc
                                   ? d.driverName || d.driverEmail
                                   : d.vehicleRegistration || d.vehicleLabel) || 'item',
+                                d.id,
                               )
                             }
                           >

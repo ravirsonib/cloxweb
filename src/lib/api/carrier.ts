@@ -354,3 +354,87 @@ export function reassignCarrierAssignment(
     )
     .then((r) => r.data);
 }
+
+export type DriverBidEligibilityItem = {
+  id: string;
+  name: string;
+  email: string | null;
+  licenceClass: string | null;
+  isEligible: boolean;
+  code: string | null;
+  reason: string | null;
+  conflictingWindow: { startAt: string; endAt: string } | null;
+};
+
+export type FleetBidCheckResult = {
+  jobId: string;
+  jobWindow: {
+    startAt: string;
+    endAt: string;
+    durationMinutes: number;
+    fatigueBreakMinutes: number;
+    bufferMinutes: number;
+  };
+  drivers: DriverBidEligibilityItem[];
+};
+
+export type DriverScheduleEntryItem = {
+  id: string;
+  driverId: string;
+  companyId: string;
+  type: string;
+  status: string;
+  startAt: string;
+  endAt: string;
+  isAllDay: boolean;
+  reason: string | null;
+  notes: string | null;
+  rejectionReason: string | null;
+  driver?: {
+    id: string;
+    licenceClass: string | null;
+    user?: { name: string | null; email: string };
+  };
+};
+
+export function checkFleetDriversBid(jobId: string) {
+  return http
+    .get<FleetBidCheckResult>(`/carrier/fleet/drivers/bid-check/${jobId}`)
+    .then((r) => r.data);
+}
+
+export function getCarrierFleetSchedule(params?: {
+  from?: string;
+  to?: string;
+  driverId?: string;
+}) {
+  return http
+    .get<DriverScheduleEntryItem[]>('/carrier/fleet/schedule', { params })
+    .then((r) => r.data);
+}
+
+export function createDriverScheduleByCarrier(payload: {
+  driverId: string;
+  startAt: string;
+  endAt: string;
+  type?: string;
+  isAllDay?: boolean;
+  reason?: string;
+  notes?: string;
+}) {
+  return http
+    .post<DriverScheduleEntryItem>('/carrier/fleet/schedule', payload)
+    .then((r) => r.data);
+}
+
+export function reviewDriverSchedule(
+  id: string,
+  payload: {
+    status: 'APPROVED' | 'REJECTED';
+    rejectionReason?: string;
+  },
+) {
+  return http
+    .patch<DriverScheduleEntryItem>(`/carrier/fleet/schedule/${id}/review`, payload)
+    .then((r) => r.data);
+}

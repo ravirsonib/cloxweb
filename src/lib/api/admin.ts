@@ -244,6 +244,7 @@ export type PlatformSettings = {
   hourlyMinBaseCents?: number;
   settlementCycleCadenceDays?: number;
   settlementCutoffHour?: number;
+  enableStateMasterTier?: boolean;
   updatedAt: string;
 };
 
@@ -261,6 +262,7 @@ export type PlatformSettingsPatch = {
   hourlyMinBaseCents?: number;
   settlementCycleCadenceDays?: number;
   settlementCutoffHour?: number;
+  enableStateMasterTier?: boolean;
 };
 
 export function getPlatformSettings(options?: { signal?: AbortSignal }) {
@@ -928,6 +930,7 @@ export function getPartnerPerformance(
 }
 
 export type SuperFinanceOverview = {
+  clearingDays?: number;
   summary: {
     gmvCents: number;
     platformRevenueCents: number;

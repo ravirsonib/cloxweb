@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { FileText } from 'lucide-react';
 import { z } from 'zod';
 import {
+  checkFleetDriversBid,
   getErrorDetail,
   getMarketBoard,
   listCarrierDrivers,
@@ -133,6 +134,21 @@ export function MarketBoardPage() {
   );
 
   const [jobId, setJobId] = useState<string | null>(null);
+
+  const driverBidCheckQuery = useQuery({
+    queryKey: ['carrier', 'drivers', 'bid-check', jobId],
+    queryFn: () => checkFleetDriversBid(jobId!),
+    enabled: role === AppRole.TRANSPORT_COMPANY && Boolean(jobId),
+    staleTime: 5_000,
+  });
+
+  const driverEligibilityMap = useMemo(() => {
+    const map = new Map<string, { isEligible: boolean; reason?: string | null }>();
+    for (const d of driverBidCheckQuery.data?.drivers ?? []) {
+      map.set(d.id, { isEligible: d.isEligible, reason: d.reason });
+    }
+    return map;
+  }, [driverBidCheckQuery.data?.drivers]);
   const [statusFilter, setStatusFilter] = useState<MarketFilter>('available');
   const [viewMode, setViewMode] = useDataViewMode('market', 'list');
   const toast = useToast();
@@ -286,6 +302,15 @@ export function MarketBoardPage() {
       }
       if (driver?.bidAvailable === false) {
         throw new Error(t('market.errorDriverBusy'));
+      }
+      const driverCheck = driverEligibilityMap.get(values.driverId);
+      if (driverCheck && !driverCheck.isEligible) {
+        throw new Error(
+          driverCheck.reason ||
+            t('market.driverUnavailableScheduled', {
+              defaultValue: 'Selected driver has scheduled leave during this job window.',
+            }),
+        );
       }
       return submitBid({
         jobId,
@@ -726,13 +751,20 @@ export function MarketBoardPage() {
           >
             <option value="">{t('market.selectDriver')}</option>
             {activeDrivers.map((d) => {
-              const busy = d.bidAvailable === false;
+              const check = driverEligibilityMap.get(d.id);
+              const scheduleUnavailable = check && !check.isEligible;
+              const busy = d.bidAvailable === false || scheduleUnavailable;
               const busyHint = busy
-                ? d.activityStatus === 'BID_COMMITTED'
-                  ? t('market.busyOpenBid')
-                  : d.activityStatus === 'PENDING_ASSIGNMENT'
-                    ? t('market.busyPendingAssign')
-                    : t('market.busyOnTrip')
+                ? scheduleUnavailable
+                  ? (check?.reason ??
+                    t('market.driverUnavailableScheduled', {
+                      defaultValue: 'Unavailable (scheduled leave)',
+                    }))
+                  : d.activityStatus === 'BID_COMMITTED'
+                    ? t('market.busyOpenBid')
+                    : d.activityStatus === 'PENDING_ASSIGNMENT'
+                      ? t('market.busyPendingAssign')
+                      : t('market.busyOnTrip')
                 : '';
               return (
                 <option key={d.id} value={d.id} disabled={busy}>
@@ -742,6 +774,15 @@ export function MarketBoardPage() {
               );
             })}
           </Select>
+
+          {driverIdWatch && driverEligibilityMap.get(driverIdWatch)?.isEligible === false ? (
+            <Notice tone="warn" className="mb-3">
+              {driverEligibilityMap.get(driverIdWatch)?.reason ??
+                t('market.driverUnavailableScheduled', {
+                  defaultValue: 'This driver has scheduled leave during the job execution window.',
+                })}
+            </Notice>
+          ) : null}
 
           {vehicleIdWatch && selectedVehicle?.bidAvailable === false ? (
             <Notice tone="warn" className="mb-3">

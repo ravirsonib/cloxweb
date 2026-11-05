@@ -120,6 +120,11 @@ function ComplianceCaseRoute() {
   return <ComplianceCasePage caseId={id} />;
 }
 
+function AdminJobParamRedirect() {
+  const { id } = useParams();
+  return <Navigate to={id ? `/admin-jobs/${id}` : '/admin-jobs'} replace />;
+}
+
 export function AppRouter() {
   return (
     <Routes>
@@ -178,6 +183,8 @@ export function AppRouter() {
             </SuperOnly>
           }
         />
+        <Route path="/admin/jobs" element={<Navigate to="/admin-jobs" replace />} />
+        <Route path="/admin/jobs/:id" element={<AdminJobParamRedirect />} />
         <Route
           path="/finance"
           element={

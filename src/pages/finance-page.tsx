@@ -149,6 +149,7 @@ export function FinancePage() {
   }
 
   const data = financeQuery.data;
+  const clearingDays = data?.clearingDays ?? 7;
 
   // Chart 1: Revenue Timeline (GMV vs Clox Revenue)
   const timelineGmvItems: ChartDataItem[] =
@@ -506,7 +507,12 @@ export function FinancePage() {
                     {t('finance.carrier.paidOut', { defaultValue: 'Paid' })}: {formatCompactDollars(data.summary.carrierPaidCents)}
                   </span>
                   <span className="font-semibold text-amber-700">
-                    {t('finance.carrier.inHold', { defaultValue: 'Clearing' })}: {formatCompactDollars(data.summary.carrierPendingCents)}
+                    {clearingDays === 0
+                      ? t('finance.carrier.inInstantHold', { defaultValue: 'Payout Processing' })
+                      : t('finance.carrier.inHold', {
+                          days: clearingDays,
+                          defaultValue: `In ${clearingDays}-Day Hold`,
+                        })}: {formatCompactDollars(data.summary.carrierPendingCents)}
                   </span>
                 </div>
               </div>
@@ -551,7 +557,14 @@ export function FinancePage() {
               <div className="space-y-0.5">
                 <div className="flex items-center gap-1.5 text-xs text-clox-mute">
                   <CreditCard className="h-3.5 w-3.5 text-sky-500" />
-                  <span>{t('finance.pipeline.clearing', { defaultValue: '7-Day Clearing Hold' })}</span>
+                  <span>
+                    {clearingDays === 0
+                      ? t('finance.carrier.clearingImmediate', { defaultValue: 'Immediate Settlement' })
+                      : t('finance.pipeline.clearing', {
+                          days: clearingDays,
+                          defaultValue: `${clearingDays}-Day Clearing Hold`,
+                        })}
+                  </span>
                 </div>
                 <div className="font-display text-lg font-bold text-sky-900">
                   {formatDollars(data.cashflowPipeline.clearingCents)}
@@ -771,7 +784,14 @@ export function FinancePage() {
                       <th className="pb-3 font-medium">{t('finance.leaderboard.trips', { defaultValue: 'Completed Trips' })}</th>
                       <th className="pb-3 font-medium">{t('finance.leaderboard.netEarned', { defaultValue: 'Net Earnings (70%)' })}</th>
                       <th className="pb-3 font-medium">{t('finance.carrier.paidOut', { defaultValue: 'Paid via Stripe' })}</th>
-                      <th className="pb-3 font-medium">{t('finance.carrier.clearingHold', { defaultValue: '7-Day Clearing' })}</th>
+                      <th className="pb-3 font-medium">
+                        {clearingDays === 0
+                          ? t('finance.carrier.clearingImmediate', { defaultValue: 'Immediate Clearing' })
+                          : t('finance.carrier.clearingHold', {
+                              days: clearingDays,
+                              defaultValue: `${clearingDays}-Day Clearing`,
+                            })}
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-clox-border-soft">
@@ -1169,7 +1189,9 @@ export function FinancePage() {
                   </div>
                 </div>
                 <div className="rounded-clox-md border border-clox-border bg-clox-surface p-4 shadow-clox-1">
-                  <span className="text-xs font-medium text-clox-mute">7-Day Clearing Hold</span>
+                  <span className="text-xs font-medium text-clox-mute">
+                    {clearingDays === 0 ? 'Immediate Settlement' : `${clearingDays}-Day Clearing Hold`}
+                  </span>
                   <div className="mt-1 font-display text-lg font-bold text-amber-700">
                     {formatDollars(reconcileQuery.data.metrics.totalPendingClearingCents)}
                   </div>

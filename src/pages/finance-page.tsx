@@ -151,12 +151,18 @@ export function FinancePage() {
   const data = financeQuery.data;
   const clearingDays = data?.clearingDays ?? 7;
 
+  const formatExactDollars = (v: number) =>
+    v.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
   // Chart 1: Revenue Timeline (GMV vs Clox Revenue)
   const timelineGmvItems: ChartDataItem[] =
     data?.timeline?.map((item, idx) => ({
       id: `gmv-${item.date}-${idx}`,
       label: item.label,
-      value: Math.round(item.gmvCents / 100),
+      value: item.gmvCents / 100,
       color: '#f97316',
     })) ?? [];
 
@@ -166,29 +172,27 @@ export function FinancePage() {
         {
           id: 'sur-mass-paid',
           label: t('finance.surcharges.massPaid', { defaultValue: 'Mass Check (Paid)' }),
-          value: Math.round(data.surcharges.byKind.mass.paidCents / 100),
+          value: data.surcharges.byKind.mass.paidCents / 100,
           color: '#0284c7',
         },
         {
           id: 'sur-mass-pending',
           label: t('finance.surcharges.massPending', { defaultValue: 'Mass Check (Pending)' }),
-          value: Math.round(
+          value:
             (data.surcharges.byKind.mass.amountCents - data.surcharges.byKind.mass.paidCents) / 100,
-          ),
           color: '#38bdf8',
         },
         {
           id: 'sur-wait-paid',
           label: t('finance.surcharges.waitPaid', { defaultValue: 'Detention Wait (Paid)' }),
-          value: Math.round(data.surcharges.byKind.waiting.paidCents / 100),
+          value: data.surcharges.byKind.waiting.paidCents / 100,
           color: '#ea580c',
         },
         {
           id: 'sur-wait-pending',
           label: t('finance.surcharges.waitPending', { defaultValue: 'Detention Wait (Pending)' }),
-          value: Math.round(
+          value:
             (data.surcharges.byKind.waiting.amountCents - data.surcharges.byKind.waiting.paidCents) / 100,
-          ),
           color: '#fb923c',
         },
       ]
@@ -200,25 +204,25 @@ export function FinancePage() {
         {
           id: 'split-carrier',
           label: t('finance.charts.splitCarrier', { defaultValue: 'Carriers (70%)' }),
-          value: Math.round(data.summary.carrierPayoutsCents / 100),
+          value: data.summary.carrierPayoutsCents / 100,
           color: '#2563eb',
         },
         {
           id: 'split-hq',
           label: t('finance.charts.splitHq', { defaultValue: 'Clox Platform HQ (15%)' }),
-          value: Math.round(data.summary.hqShareCents / 100),
+          value: data.summary.hqShareCents / 100,
           color: '#f97316',
         },
         {
           id: 'split-state',
           label: t('finance.charts.splitState', { defaultValue: 'State Masters (10%)' }),
-          value: Math.round(data.summary.stateCommissionsCents / 100),
+          value: data.summary.stateCommissionsCents / 100,
           color: '#0284c7',
         },
         {
           id: 'split-local',
           label: t('finance.charts.splitLocal', { defaultValue: 'Local BDEs (5%)' }),
-          value: Math.round(data.summary.localCommissionsCents / 100),
+          value: data.summary.localCommissionsCents / 100,
           color: '#fb923c',
         },
       ]
@@ -434,9 +438,9 @@ export function FinancePage() {
                 </div>
                 <div className="mt-3 font-display text-2xl font-bold text-clox-ink sm:text-3xl">
                   <AnimatedNumber
-                    value={Math.round(data.summary.gmvCents / 100)}
+                    value={data.summary.gmvCents / 100}
                     prefix={CURRENCY_SYMBOL}
-                    formatter={(v) => v.toLocaleString()}
+                    formatter={formatExactDollars}
                   />
                 </div>
                 <div className="mt-2 flex items-center justify-between text-xs text-clox-mute">
@@ -464,9 +468,9 @@ export function FinancePage() {
                 </div>
                 <div className="mt-3 font-display text-2xl font-bold text-sky-900 sm:text-3xl">
                   <AnimatedNumber
-                    value={Math.round(data.summary.platformRevenueCents / 100)}
+                    value={data.summary.platformRevenueCents / 100}
                     prefix={CURRENCY_SYMBOL}
-                    formatter={(v) => v.toLocaleString()}
+                    formatter={formatExactDollars}
                   />
                 </div>
                 <div className="mt-2 flex items-center justify-between text-xs text-clox-mute">
@@ -497,9 +501,9 @@ export function FinancePage() {
                 </div>
                 <div className="mt-3 font-display text-2xl font-bold text-clox-ink sm:text-3xl">
                   <AnimatedNumber
-                    value={Math.round(data.summary.carrierPayoutsCents / 100)}
+                    value={data.summary.carrierPayoutsCents / 100}
                     prefix={CURRENCY_SYMBOL}
-                    formatter={(v) => v.toLocaleString()}
+                    formatter={formatExactDollars}
                   />
                 </div>
                 <div className="mt-2 flex items-center justify-between text-xs text-clox-mute">
@@ -529,9 +533,9 @@ export function FinancePage() {
                 </div>
                 <div className="mt-3 font-display text-2xl font-bold text-clox-ink sm:text-3xl">
                   <AnimatedNumber
-                    value={Math.round(data.summary.partnerCommissionsCents / 100)}
+                    value={data.summary.partnerCommissionsCents / 100}
                     prefix={CURRENCY_SYMBOL}
-                    formatter={(v) => v.toLocaleString()}
+                    formatter={formatExactDollars}
                   />
                 </div>
                 <div className="mt-2 flex items-center justify-between text-xs text-clox-mute">

@@ -79,6 +79,7 @@ export function SenderPaymentElement({
       stripe={stripePromise}
       options={{
         clientSecret,
+        locale: 'en-AU',
         appearance: {
           theme: 'stripe',
           variables: {

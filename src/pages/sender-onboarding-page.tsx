@@ -7,17 +7,14 @@ import { Link, Navigate } from 'react-router-dom';
 import { z } from 'zod';
 import {
   confirmDocument,
-  confirmSenderPayment,
   createUploadIntent,
   getErrorDetail,
   getSenderOnboarding,
-  setupSenderPayment,
   submitSenderVerification,
   updateSenderProfile,
   uploadDocumentContent,
   type SenderOnboarding,
 } from '@/lib/api';
-import { SenderPaymentElement } from '@/components/stripe/SenderPaymentElement';
 import {
   Button,
   ChoiceCheck,
@@ -47,7 +44,6 @@ const SENDER_STEPS = [
   'invoice',
   'documents',
   'waiting_ops',
-  'payment',
   'complete',
 ] as const;
 
@@ -134,7 +130,6 @@ export function SenderOnboardingPage() {
           { id: 'invoice', label: t('senderOnboarding.stepInvoice') },
           { id: 'documents', label: t('senderOnboarding.stepDocs') },
           { id: 'waiting_ops', label: t('senderOnboarding.stepOps') },
-          { id: 'payment', label: t('senderOnboarding.stepPay') },
           { id: 'complete', label: t('senderOnboarding.stepDone') },
         ]}
         onStepSelect={canEditSteps ? setViewStep : undefined}
@@ -209,23 +204,12 @@ export function SenderOnboardingPage() {
         </Notice>
       )}
 
-      {step === 'payment' && (
-        <PaymentStep
-          mock={data.stripeMock}
-          repairRequired={Boolean(data.paymentRepairRequired)}
-          onDone={async () => {
-            await qc.invalidateQueries({ queryKey: ['sender', 'onboarding'] });
-          }}
-        />
-      )}
-
       {step === 'complete' && (
         <Notice tone="success" className="mt-8" title={t('senderOnboarding.activeTitle')}>
           <p>{t('senderOnboarding.activeBody')}</p>
           <ul className="mt-3 space-y-1 text-xs">
             <li>{t('senderOnboarding.goNoGoOpsApproved', { value: String(data.goNoGo.opsApproved) })}</li>
             <li>{t('senderOnboarding.goNoGoInvoice', { value: String(data.goNoGo.invoiceComplete) })}</li>
-            <li>{t('senderOnboarding.goNoGoPayment', { value: String(data.goNoGo.paymentReady) })}</li>
             <li>{t('senderOnboarding.goNoGoCanBook', { value: String(data.goNoGo.canBook) })}</li>
           </ul>
         </Notice>
@@ -660,134 +644,6 @@ function DocumentsStep({
           {submit.isPending ? t('submitting') : t('senderOnboarding.submitToOps')}
         </Button>
       </div>
-    </div>
-  );
-}
-
-function PaymentStep({
-  mock,
-  repairRequired,
-  onDone,
-}: {
-  mock: boolean;
-  repairRequired?: boolean;
-  onDone: () => Promise<void>;
-}) {
-  const { t } = useTranslation();
-  const [setupInfo, setSetupInfo] = useState<string | null>(null);
-  const [liveSetup, setLiveSetup] = useState<{
-    clientSecret: string;
-    publishableKey: string;
-  } | null>(null);
-
-  const setup = useMutation({
-    mutationFn: () => setupSenderPayment(),
-    onSuccess: (data) => {
-      if (data.mock) {
-        setLiveSetup(null);
-        setSetupInfo(t('senderOnboarding.setupIntentMock', { id: data.setupIntentId }));
-        return;
-      }
-      if (!data.clientSecret || !data.publishableKey) {
-        setSetupInfo(null);
-        setLiveSetup(null);
-        return;
-      }
-      setSetupInfo(t('senderOnboarding.setupIntentReady'));
-      setLiveSetup({
-        clientSecret: data.clientSecret,
-        publishableKey: data.publishableKey,
-      });
-    },
-  });
-
-  const confirm = useMutation({
-    mutationFn: (paymentMethodId?: string) => confirmSenderPayment(paymentMethodId),
-    onSuccess: () => {
-      setSetupInfo(null);
-      setLiveSetup(null);
-      void onDone();
-    },
-  });
-
-  return (
-    <div className="mt-8 space-y-4">
-      <h2 className="font-display text-lg font-semibold">
-        {t('senderOnboarding.paymentTitle')}
-      </h2>
-      {repairRequired ? (
-        <Notice tone="warn">{t('senderOnboarding.paymentRepairNotice')}</Notice>
-      ) : null}
-      <p className="text-sm text-clox-mute">
-        {mock
-          ? t('senderOnboarding.paymentMockHint')
-          : t('senderOnboarding.paymentLiveHint')}
-      </p>
-      {!mock ? (
-        <ul className="list-disc space-y-1.5 pl-5 text-sm text-clox-mute">
-          <li>{t('senderOnboarding.paymentStep1')}</li>
-          <li>{t('senderOnboarding.paymentStep2')}</li>
-          <li>{t('senderOnboarding.paymentStep3')}</li>
-        </ul>
-      ) : null}
-      {(setup.isError || confirm.isError) && (
-        <Notice tone="error">{getErrorDetail(setup.error ?? confirm.error)}</Notice>
-      )}
-      {setupInfo ? <Notice tone="success">{setupInfo}</Notice> : null}
-
-      {mock ? (
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="secondary"
-            disabled={setup.isPending}
-            onClick={() => {
-              confirm.reset();
-              setup.mutate();
-            }}
-          >
-            {t('senderOnboarding.createSetupIntent')}
-          </Button>
-          <Button
-            variant="cta"
-            disabled={confirm.isPending || !setup.isSuccess}
-            onClick={() => {
-              setup.reset();
-              confirm.mutate(undefined);
-            }}
-          >
-            {t('senderOnboarding.confirmPaymentReady')}
-          </Button>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {!liveSetup ? (
-            <Button
-              variant="cta"
-              disabled={setup.isPending}
-              onClick={() => {
-                confirm.reset();
-                setup.mutate();
-              }}
-            >
-              {setup.isPending
-                ? t('senderOnboarding.paymentOpening')
-                : t('senderOnboarding.createSetupIntent')}
-            </Button>
-          ) : (
-            <SenderPaymentElement
-              clientSecret={liveSetup.clientSecret}
-              publishableKey={liveSetup.publishableKey}
-              submitting={confirm.isPending}
-              onPaymentMethodReady={async (paymentMethodId) => {
-                await confirm.mutateAsync(paymentMethodId);
-              }}
-            />
-          )}
-          {setup.isSuccess && !liveSetup ? (
-            <Notice tone="error">{t('senderOnboarding.paymentMissingPublishable')}</Notice>
-          ) : null}
-        </div>
-      )}
     </div>
   );
 }

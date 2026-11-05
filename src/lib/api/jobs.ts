@@ -21,6 +21,9 @@ export type JobSummary = {
   minVehicleClass: string | null;
   recommendedVehicleClass: string | null;
   chargeableWeightKg: number | null;
+  siteManeuverability?: string | null;
+  siteFacility?: string | null;
+  siteDisclaimerAcceptedAt?: string | null;
   requiresDg: boolean;
   dgDocumentId?: string | null;
   dgDocumentFilename?: string | null;
@@ -59,6 +62,7 @@ export type JobSummary = {
       email?: string | null;
       phone?: string | null;
       abn?: string | null;
+      reliabilityScore?: number | null;
     } | null;
     vehicleClass: string | null;
     vehicleLabel?: string | null;
@@ -195,6 +199,8 @@ export type MarketBoardJob = {
   marketplacePriority?: boolean;
   rescueDiscountPercent?: number | null;
   minBidIncGstCents?: number | null;
+  siteManeuverability?: string | null;
+  siteFacility?: string | null;
   pickupAt: string | null;
   publishedAt: string | null;
   alreadyBid: boolean;
@@ -211,6 +217,8 @@ export type MarketBoardJob = {
 
 export type MarketBoard = {
   netPayoutHint: string;
+  carrierReliabilityScore?: number;
+  carrierReliabilityTier?: 'EXCELLENT' | 'GOOD' | 'FAIR' | 'CRITICAL';
   jobs: MarketBoardJob[];
 };
 

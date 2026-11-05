@@ -137,7 +137,9 @@ export function useAnimatedNumber(target: number, durationMs = 700): number {
       const progress = Math.min((timestamp - startTime) / durationMs, 1);
       // easeOutCubic
       const ease = 1 - Math.pow(1 - progress, 3);
-      setCurrent(Math.round(startValue + diff * ease));
+      const nextVal = startValue + diff * ease;
+      const isIntegerTarget = Number.isInteger(target);
+      setCurrent(isIntegerTarget ? Math.round(nextVal) : Math.round(nextVal * 100) / 100);
 
       if (progress < 1) {
         frameId = requestAnimationFrame(step);

@@ -14,7 +14,7 @@ export interface CurrencyConfig {
 
 export const DEFAULT_CURRENCY: CurrencyConfig = {
   code: 'AUD',
-  symbol: '$',
+  symbol: 'A$',
   locale: 'en-AU',
   decimals: 2,
 };

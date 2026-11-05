@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { FileText } from 'lucide-react';
+import { FileText, ShieldCheck } from 'lucide-react';
 import { z } from 'zod';
 import {
   checkFleetDriversBid,
@@ -18,6 +18,10 @@ import {
   withdrawProposalByJobId,
   type MarketBoardJob,
 } from '@/lib/api';
+import {
+  formatManeuverabilityLabel,
+  formatFacilityLabel,
+} from './jobs-pages';
 import {
   Button,
   DataCardList,
@@ -383,9 +387,39 @@ export function MarketBoardPage() {
             {board.data?.netPayoutHint ?? t('market.netPayoutHintDefault')}
           </p>
         </div>
-        {(marketJobs?.length ?? 0) > 0 ? (
-          <ViewModeToggle value={viewMode} onChange={setViewMode} />
-        ) : null}
+        <div className="flex flex-wrap items-center gap-3">
+          {typeof board.data?.carrierReliabilityScore === 'number' ? (
+            <div className="flex items-center gap-2 rounded-clox-md border border-clox-border bg-clox-surface px-3 py-1.5 shadow-clox-1">
+              <ShieldCheck className="h-4 w-4 text-clox-orange shrink-0" />
+              <div className="text-xs">
+                <span className="font-semibold text-clox-ink">
+                  {board.data.carrierReliabilityScore}% {t('companies.reliabilityShort', { defaultValue: 'Reliability' })}
+                </span>
+                <span
+                  className={cn(
+                    'ml-2 font-medium',
+                    board.data.carrierReliabilityScore >= 90
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : board.data.carrierReliabilityScore >= 75
+                        ? 'text-sky-600 dark:text-sky-400'
+                        : board.data.carrierReliabilityScore >= 60
+                          ? 'text-amber-600 dark:text-amber-400'
+                          : 'text-rose-600 dark:text-rose-400',
+                  )}
+                >
+                  {board.data.carrierReliabilityScore >= 90
+                    ? `★ ${t('companies.topRated', { defaultValue: 'Top Rated Priority' })}`
+                    : board.data.carrierReliabilityScore >= 75
+                      ? t('companies.goodStanding', { defaultValue: 'Good Standing' })
+                      : t('companies.atRiskNotice', { defaultValue: 'At-Risk Visibility' })}
+                </span>
+              </div>
+            </div>
+          ) : null}
+          {(marketJobs?.length ?? 0) > 0 ? (
+            <ViewModeToggle value={viewMode} onChange={setViewMode} />
+          ) : null}
+        </div>
       </div>
       {board.isError ? (
         <Notice tone="error" className="mt-4">
@@ -512,6 +546,15 @@ export function MarketBoardPage() {
                           ? ` · ${t('market.minBidHint', { amount: formatDollars(j.minBidIncGstCents) })}`
                           : ''}
                       </p>
+                      {(j.siteManeuverability || j.siteFacility) && (
+                        <p className="mt-1 text-xs text-clox-mute">
+                          <span className="font-semibold text-clox-ink">
+                            {t('jobs.siteAccess.badge', { defaultValue: 'Site' })}:
+                          </span>{' '}
+                          {formatManeuverabilityLabel(j.siteManeuverability)} ·{' '}
+                          {formatFacilityLabel(j.siteFacility)}
+                        </p>
+                      )}
                       {j.requiresDg && j.dgDocumentId ? (
                         <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-clox-border bg-clox-surface p-2 text-xs">
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -558,7 +601,7 @@ export function MarketBoardPage() {
                               handleWithdrawBid(j.id);
                             }}
                           >
-                            {withdraw.isPending
+                            {withdraw.isPending && withdraw.variables === j.id
                               ? t('loading')
                               : t('market.withdrawBid', { defaultValue: 'Withdraw bid' })}
                           </Button>
@@ -609,7 +652,7 @@ export function MarketBoardPage() {
                 disabled={withdraw.isPending}
                 onClick={() => handleWithdrawBid(selectedJob.id)}
               >
-                {withdraw.isPending
+                {withdraw.isPending && withdraw.variables === selectedJob.id
                   ? t('loading')
                   : t('market.withdrawBid', { defaultValue: 'Withdraw bid' })}
               </Button>
@@ -639,6 +682,15 @@ export function MarketBoardPage() {
               : ''}
             {selectedJob.deadWeightKg != null ? ` · ${selectedJob.deadWeightKg} kg` : ''}
           </p>
+          {(selectedJob.siteManeuverability || selectedJob.siteFacility) && (
+            <p className="mb-2 text-xs text-clox-mute">
+              <span className="font-semibold text-clox-ink">
+                {t('jobs.siteAccess.badge', { defaultValue: 'Site' })}:
+              </span>{' '}
+              {formatManeuverabilityLabel(selectedJob.siteManeuverability)} ·{' '}
+              {formatFacilityLabel(selectedJob.siteFacility)}
+            </p>
+          )}
 
           {selectedJob.requiresDg && selectedJob.dgDocumentId ? (
             <div className="mb-3 rounded-clox-sm border border-clox-border bg-clox-surface-alt p-2.5 text-xs">

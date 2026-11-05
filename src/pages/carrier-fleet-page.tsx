@@ -36,12 +36,14 @@ import {
   openDocumentContent,
   reactivateCarrierVehicle,
   retireCarrierVehicle,
+  updateCarrierCapabilities,
   uploadDocumentContent,
   getVehicleClassesMeta,
   type CarrierVehicleListItem,
 } from '@/lib/api';
 import { formatCalendarDate } from '@/lib/datetime';
 import { resolveUploadMime } from '@/lib/upload-mime';
+import { cn } from '@/lib/cn';
 import {
   suggestedGvmKgForClass,
   suggestedTareKgForClass,
@@ -148,6 +150,12 @@ export function CarrierFleetPage() {
   const [rwcFile, setRwcFile] = useState<File | null>(null);
   const [hasDgForm, setHasDgForm] = useState(false);
   const [dgFile, setDgFile] = useState<File | null>(null);
+  const [hasReefer, setHasReefer] = useState(false);
+  const [hasOversize, setHasOversize] = useState(false);
+  const [hasTailLift, setHasTailLift] = useState(false);
+  const [hasCurtainsider, setHasCurtainsider] = useState(false);
+  const [showManageCaps, setShowManageCaps] = useState(false);
+  const [editingCaps, setEditingCaps] = useState<string[]>([]);
   const [rwcFormError, setRwcFormError] = useState<string | null>(null);
   const [uploadingVehicleId, setUploadingVehicleId] = useState<string | null>(null);
   const [uploadingDgVehicleId, setUploadingDgVehicleId] = useState<string | null>(null);
@@ -274,6 +282,27 @@ export function CarrierFleetPage() {
       if (hasDgForm && dgFile) {
         await uploadVehicleDgDoc(companyId, created.id, dgFile);
       }
+      // Merge vehicle capabilities into company capabilities if any new ones checked
+      const newCaps: string[] = [];
+      if (hasDgForm) newCaps.push('DG');
+      if (hasReefer) newCaps.push('REEFER');
+      if (hasOversize) newCaps.push('OVERSIZE');
+      if (hasTailLift) newCaps.push('TAIL_LIFT');
+      if (hasCurtainsider) newCaps.push('CURTAINSIDER');
+      const existingCaps = companyQuery.data?.company.capabilities ?? [];
+      const mergedCaps = Array.from(new Set([...existingCaps, ...newCaps]));
+      if (mergedCaps.length > existingCaps.length) {
+        try {
+          await updateCarrierCapabilities({
+            capabilities: mergedCaps,
+            serviceRegionCodes: companyQuery.data?.company.serviceRegionCodes?.length
+              ? companyQuery.data.company.serviceRegionCodes
+              : ['VIC'],
+          });
+        } catch {
+          // Non-blocking best-effort sync
+        }
+      }
       return onboarding;
     },
     onSuccess: async () => {
@@ -287,12 +316,31 @@ export function CarrierFleetPage() {
       setRwcFile(null);
       setHasDgForm(false);
       setDgFile(null);
+      setHasReefer(false);
+      setHasOversize(false);
+      setHasTailLift(false);
+      setHasCurtainsider(false);
       setRwcFormError(null);
       setShowForm(false);
       toast.success(t('fleet.addSuccess'));
       await invalidate();
     },
     onError: (error) => setRwcFormError(getErrorDetail(error)),
+  });
+
+  const capsMutation = useMutation({
+    mutationFn: async (capabilities: string[]) => {
+      const serviceRegionCodes = companyQuery.data?.company.serviceRegionCodes?.length
+        ? companyQuery.data.company.serviceRegionCodes
+        : ['VIC'];
+      return updateCarrierCapabilities({ capabilities, serviceRegionCodes });
+    },
+    onSuccess: async () => {
+      setShowManageCaps(false);
+      toast.success(t('fleet.capabilitiesSaved', { defaultValue: 'Fleet capabilities updated successfully.' }));
+      await invalidate();
+    },
+    onError: (err) => toast.error(getErrorDetail(err)),
   });
 
   const rwcUploadMutation = useMutation({
@@ -724,6 +772,121 @@ export function CarrierFleetPage() {
         </Notice>
       ) : null}
 
+      {/* Fleet Capabilities & Load Types Card */}
+      <div className="clox-card mt-5 p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-clox-ink sm:text-base">
+              {t('fleet.capabilitiesTitle', { defaultValue: 'Fleet Capabilities & Load Types' })}
+            </h2>
+            <p className="mt-0.5 text-xs text-clox-mute">
+              {t('fleet.capabilitiesSubtitle', {
+                defaultValue: 'Specialized equipment and certifications supported across your fleet.',
+              })}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-xs"
+            onClick={() => {
+              setEditingCaps(companyQuery.data?.company.capabilities ?? []);
+              setShowManageCaps((prev) => !prev);
+            }}
+          >
+            {showManageCaps ? t('cancel') : t('fleet.manageCapabilities', { defaultValue: 'Manage Capabilities' })}
+          </Button>
+        </div>
+
+        {/* Current Active Capability Badges */}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <StatusPill tone="info">General Freight</StatusPill>
+          {(companyQuery.data?.company.capabilities ?? []).includes('DG') ? (
+            <StatusPill tone="warn">Dangerous Goods (DG)</StatusPill>
+          ) : null}
+          {(companyQuery.data?.company.capabilities ?? []).includes('REEFER') ? (
+            <StatusPill tone="info">Temperature Controlled (Reefer)</StatusPill>
+          ) : null}
+          {(companyQuery.data?.company.capabilities ?? []).includes('OVERSIZE') ? (
+            <StatusPill tone="warn">Oversize / Flatbed</StatusPill>
+          ) : null}
+          {(companyQuery.data?.company.capabilities ?? []).includes('TAIL_LIFT') ? (
+            <StatusPill tone="neutral">Tail-lift Equipped</StatusPill>
+          ) : null}
+          {(companyQuery.data?.company.capabilities ?? []).includes('CURTAINSIDER') ? (
+            <StatusPill tone="neutral">Curtainsider</StatusPill>
+          ) : null}
+          {(companyQuery.data?.company.capabilities ?? []).length === 0 ? (
+            <span className="text-xs text-clox-mute">No specialized equipment certifications enabled.</span>
+          ) : null}
+        </div>
+
+        {/* Inline Capabilities Editor */}
+        {showManageCaps ? (
+          <div className="mt-4 border-t border-clox-border-soft pt-4">
+            <p className="text-xs font-semibold text-clox-ink">
+              Toggle certified equipment and specialized load capabilities:
+            </p>
+            <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 text-xs">
+              {[
+                { code: 'DG', label: 'Dangerous Goods (DG)', hint: 'Requires active DG licence doc' },
+                { code: 'REEFER', label: 'Refrigerated / Reefer', hint: 'Temperature controlled units' },
+                { code: 'OVERSIZE', label: 'Oversize / Flatbed', hint: 'Extendable trailers & wide loads' },
+                { code: 'TAIL_LIFT', label: 'Tail-lift Equipped', hint: 'Hydraulic lift vehicles' },
+                { code: 'CURTAINSIDER', label: 'Curtainsider / Tautliner', hint: 'Side-loading weather protection' },
+              ].map((cap) => {
+                const checked = editingCaps.includes(cap.code);
+                return (
+                  <label
+                    key={cap.code}
+                    className={cn(
+                      'flex items-start gap-2.5 rounded-clox-sm border p-2.5 cursor-pointer transition-colors',
+                      checked
+                        ? 'border-[#f26e22] bg-[#f26e22]/5 dark:bg-[#f26e22]/10'
+                        : 'border-clox-border bg-clox-surface',
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 rounded text-[#f26e22] focus:ring-[#f26e22]"
+                      checked={checked}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setEditingCaps((prev) => [...prev, cap.code]);
+                        } else {
+                          setEditingCaps((prev) => prev.filter((c) => c !== cap.code));
+                        }
+                      }}
+                    />
+                    <div>
+                      <span className="font-semibold text-clox-ink block">{cap.label}</span>
+                      <span className="text-[11px] text-clox-mute">{cap.hint}</span>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="mt-4 flex items-center gap-2">
+              <Button
+                type="button"
+                variant="primary"
+                disabled={capsMutation.isPending}
+                onClick={() => capsMutation.mutate(editingCaps)}
+              >
+                {capsMutation.isPending ? t('saving') : t('fleet.saveCapabilities', { defaultValue: 'Save Capabilities' })}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setShowManageCaps(false)}
+              >
+                {t('cancel')}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
       {showForm ? (
         <form
           className="clox-card mt-6 p-4 sm:p-5"
@@ -833,6 +996,39 @@ export function CarrierFleetPage() {
                     }}
                   />
                 ) : null}
+              </div>
+
+              {/* Vehicle specialized equipment checkboxes */}
+              <div className="sm:col-span-2 lg:col-span-3 border-t border-clox-border-soft pt-3">
+                <span className="text-xs font-semibold text-clox-ink block mb-2">
+                  {t('fleet.vehicleCapabilities', { defaultValue: 'Vehicle Equipment & Supported Load Types' })}
+                </span>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4 text-xs">
+                  <ChoiceCheck
+                    checked={hasReefer}
+                    onChange={(e) => setHasReefer(e.target.checked)}
+                  >
+                    Reefer / Refrigerated
+                  </ChoiceCheck>
+                  <ChoiceCheck
+                    checked={hasOversize}
+                    onChange={(e) => setHasOversize(e.target.checked)}
+                  >
+                    Flatbed / Oversize
+                  </ChoiceCheck>
+                  <ChoiceCheck
+                    checked={hasTailLift}
+                    onChange={(e) => setHasTailLift(e.target.checked)}
+                  >
+                    Tail-lift Equipped
+                  </ChoiceCheck>
+                  <ChoiceCheck
+                    checked={hasCurtainsider}
+                    onChange={(e) => setHasCurtainsider(e.target.checked)}
+                  >
+                    Curtainsider
+                  </ChoiceCheck>
+                </div>
               </div>
             </div>
             {rwcFormError || addMutation.isError ? (

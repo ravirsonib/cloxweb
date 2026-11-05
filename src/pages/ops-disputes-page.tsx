@@ -255,7 +255,7 @@ function DisputeCard({ row }: { row: DisputeSummaryRow }) {
           <StatusPill tone={statusTone(row.status)}>{row.status}</StatusPill>
           {row.disputedAmountCents ? (
             <span className="font-mono text-xs font-bold text-clox-ink">
-              {formatDollars(row.disputedAmountCents / 100)}
+              {formatDollars(row.disputedAmountCents)}
             </span>
           ) : null}
         </div>
@@ -411,7 +411,7 @@ export function OpsDisputeDetailPage() {
               Disputed Amount
             </span>
             <p className="font-mono text-xl font-bold text-clox-ink">
-              {formatDollars(dispute.disputedAmountCents / 100)}
+              {formatDollars(dispute.disputedAmountCents)}
             </p>
           </div>
         ) : null}

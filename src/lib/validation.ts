@@ -132,6 +132,201 @@ export const VEHICLE_CLASSES = [
 
 export type VehicleClass = (typeof VEHICLE_CLASSES)[number];
 
+export type VehicleClassSpec = {
+  code: VehicleClass;
+  name: string;
+  subTitle: string;
+  rank: number;
+  maxChargeableWeightKg: number;
+  maxLengthCm: number;
+  maxWidthCm: number;
+  maxHeightCm: number;
+  minLicence: string;
+};
+
+export const CLOX_VEHICLE_SPECS: readonly VehicleClassSpec[] = [
+  {
+    code: 'UTE',
+    name: 'Ute',
+    subTitle: 'Up to 1.0t',
+    rank: 1,
+    maxChargeableWeightKg: 1000,
+    maxLengthCm: 240,
+    maxWidthCm: 180,
+    maxHeightCm: 150,
+    minLicence: 'C',
+  },
+  {
+    code: 'VAN',
+    name: 'Van',
+    subTitle: 'Up to 1.5t',
+    rank: 2,
+    maxChargeableWeightKg: 1500,
+    maxLengthCm: 340,
+    maxWidthCm: 180,
+    maxHeightCm: 190,
+    minLicence: 'C',
+  },
+  {
+    code: 'RIGID_1_2T',
+    name: 'Rigid 1–2T',
+    subTitle: 'Up to 2.5t',
+    rank: 3,
+    maxChargeableWeightKg: 2500,
+    maxLengthCm: 450,
+    maxWidthCm: 220,
+    maxHeightCm: 220,
+    minLicence: 'LR',
+  },
+  {
+    code: 'RIGID_3_4T',
+    name: 'Rigid 3–4T',
+    subTitle: 'Up to 5.0t',
+    rank: 4,
+    maxChargeableWeightKg: 5000,
+    maxLengthCm: 650,
+    maxWidthCm: 245,
+    maxHeightCm: 250,
+    minLicence: 'MR',
+  },
+  {
+    code: 'SEMI',
+    name: 'Semi-Trailer',
+    subTitle: 'Up to 15.0t',
+    rank: 5,
+    maxChargeableWeightKg: 15000,
+    maxLengthCm: 1360,
+    maxWidthCm: 250,
+    maxHeightCm: 270,
+    minLicence: 'HC',
+  },
+  {
+    code: 'BDOUBLE',
+    name: 'B-Double',
+    subTitle: 'Up to 50.0t',
+    rank: 6,
+    maxChargeableWeightKg: 50000,
+    maxLengthCm: 2000,
+    maxWidthCm: 500,
+    maxHeightCm: 500,
+    minLicence: 'MC',
+  },
+] as const;
+
+export const VEHICLE_CLASS_RANK: Record<string, number> = Object.fromEntries(
+  CLOX_VEHICLE_SPECS.map((s) => [s.code, s.rank]),
+);
+
+export type CloxLoadTypeMeta = {
+  code: string;
+  nameKey: string;
+  defaultName: string;
+  descKey: string;
+  defaultDesc: string;
+  badgeTone: 'neutral' | 'warn' | 'info';
+  requiresDoc?: boolean;
+};
+
+export const CLOX_LOAD_TYPES: readonly CloxLoadTypeMeta[] = [
+  {
+    code: 'GENERAL',
+    nameKey: 'loadTypes.general',
+    defaultName: 'General Freight',
+    descKey: 'loadTypes.generalDesc',
+    defaultDesc: 'Cartons, pallets, retail stock, FMCG, general merchandise.',
+    badgeTone: 'neutral',
+  },
+  {
+    code: 'DG',
+    nameKey: 'loadTypes.dg',
+    defaultName: 'Dangerous Goods (DG)',
+    descKey: 'loadTypes.dgDesc',
+    defaultDesc: 'Flammables, toxics, batteries, gas, chemicals (SDS document required).',
+    badgeTone: 'warn',
+    requiresDoc: true,
+  },
+  {
+    code: 'LIQUID',
+    nameKey: 'loadTypes.liquid',
+    defaultName: 'Liquid / Bulk Liquid',
+    descKey: 'loadTypes.liquidDesc',
+    defaultDesc: 'Drums, IBCs, oils, bulk liquids (spill containment required).',
+    badgeTone: 'info',
+  },
+  {
+    code: 'OVERSIZE',
+    nameKey: 'loadTypes.oversize',
+    defaultName: 'Oversize / Over-dimension',
+    descKey: 'loadTypes.oversizeDesc',
+    defaultDesc: 'Long steel, pipes, beams (flatbed & permit warnings apply).',
+    badgeTone: 'warn',
+  },
+  {
+    code: 'STEEL',
+    nameKey: 'loadTypes.steel',
+    defaultName: 'Steel / Metal',
+    descKey: 'loadTypes.steelDesc',
+    defaultDesc: 'Coils, rebar, metal sheets (chains & NHVR restraints required).',
+    badgeTone: 'neutral',
+  },
+  {
+    code: 'REEFER',
+    nameKey: 'loadTypes.reefer',
+    defaultName: 'Temperature Controlled (Reefer)',
+    descKey: 'loadTypes.reeferDesc',
+    defaultDesc: 'Chilled, frozen, perishable food, pharma (refrigerated unit required).',
+    badgeTone: 'info',
+  },
+  {
+    code: 'HEAVY_MACHINERY',
+    nameKey: 'loadTypes.heavyMachinery',
+    defaultName: 'Machinery / Heavy Equipment',
+    descKey: 'loadTypes.heavyMachineryDesc',
+    defaultDesc: 'Engines, mining & industrial gear, ramps & high-capacity transport.',
+    badgeTone: 'neutral',
+  },
+  {
+    code: 'VEHICLES_PLANT',
+    nameKey: 'loadTypes.vehiclesPlant',
+    defaultName: 'Vehicles / Plant',
+    descKey: 'loadTypes.vehiclesPlantDesc',
+    defaultDesc: 'Cars, excavators, forklifts, tractors, tilt-tray/ramps required.',
+    badgeTone: 'neutral',
+  },
+  {
+    code: 'CONTAINERS',
+    nameKey: 'loadTypes.containers',
+    defaultName: 'Containers (Port / Wharf)',
+    descKey: 'loadTypes.containersDesc',
+    defaultDesc: '20ft/40ft shipping containers (wharf access required).',
+    badgeTone: 'info',
+  },
+  {
+    code: 'TIMBER',
+    nameKey: 'loadTypes.timber',
+    defaultName: 'Timber / Building Materials',
+    descKey: 'loadTypes.timberDesc',
+    defaultDesc: 'Timber packs, plywood, gyprock, bricks, roofing.',
+    badgeTone: 'neutral',
+  },
+  {
+    code: 'HIGH_VALUE',
+    nameKey: 'loadTypes.highValue',
+    defaultName: 'High-Value / Sensitive',
+    descKey: 'loadTypes.highValueDesc',
+    defaultDesc: 'Electronics, medical gear, high-security sensitive freight.',
+    badgeTone: 'warn',
+  },
+  {
+    code: 'WASTE',
+    nameKey: 'loadTypes.waste',
+    defaultName: 'Waste / Recycling',
+    descKey: 'loadTypes.wasteDesc',
+    defaultDesc: 'Industrial/construction waste, scrap, EPA compliance applies.',
+    badgeTone: 'neutral',
+  },
+] as const;
+
 /**
  * Indicative GVM (kg) by class for form defaults only — carrier must confirm
  * against the vehicle’s compliance plate / registration papers.
@@ -172,16 +367,6 @@ export function suggestedTareKgForClass(
   if (map && map[key] != null) return map[key];
   return (SUGGESTED_TARE_KG as Record<string, number>)[key] ?? SUGGESTED_TARE_KG.RIGID_1_2T;
 }
-
-/** Keep in sync with api/src/modules/jobs/job-pricing.util.ts (G0-12 ranks). */
-const VEHICLE_CLASS_RANK: Record<string, number> = {
-  UTE: 1,
-  VAN: 2,
-  RIGID_1_2T: 3,
-  RIGID_3_4T: 4,
-  SEMI: 5,
-  BDOUBLE: 6,
-};
 
 export function vehicleClassRank(
   vehicleClass: string | null | undefined,
@@ -257,6 +442,7 @@ export function optionalPhoneSchema(invalidMessage: string) {
   return z
     .string()
     .trim()
+    .optional()
     .superRefine((value, ctx) => {
       if (!value) return;
       if (!/^[+\d\s().\-]+$/.test(value)) {

@@ -5,11 +5,14 @@ import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import {
+  AlertCircle,
+  Check,
   CheckCircle2,
   ChevronRight,
   Clock,
   ExternalLink,
   FileText,
+  ShieldCheck,
   Truck,
 } from 'lucide-react';
 import { z } from 'zod';
@@ -72,15 +75,20 @@ import {
 import { jobStatusTone } from '@/lib/status-tone';
 import {
   AU_STATE_OPTIONS,
+  CLOX_LOAD_TYPES,
+  CLOX_VEHICLE_SPECS,
   MAX_JOB_CHARGEABLE_WEIGHT_KG,
   MAX_JOB_DEAD_WEIGHT_KG,
   MAX_JOB_HEIGHT_CM,
   MAX_JOB_LENGTH_CM,
   MAX_JOB_WIDTH_CM,
+  VEHICLE_CLASS_RANK,
   auPostcodeErrorForState,
   chargeableWeightKg,
   isChargeableOverLimit,
   isValidAuPostcodeForState,
+  optionalPhoneSchema,
+  requiredPhoneSchema,
 } from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
@@ -464,14 +472,52 @@ type JobCreateForm = {
   widthCm: number;
   heightCm: number;
   loadDg: boolean;
+  loadTypes: string[];
+  minVehicleClass?: string;
   dgDocumentId?: string | null;
   receiverName: string;
   receiverEmail: string;
   receiverPhone: string;
   receiverAltEmail?: string;
   receiverAltPhone?: string;
+  siteManeuverability: 'TIGHT_STREET' | 'STANDARD_INDUSTRIAL' | 'WIDE_YARD';
+  siteFacility: 'RAISED_DOCK' | 'GROUND_LEVEL' | 'FORKLIFT_REQUIRED';
   siteDisclaimerAccepted: boolean;
 };
+
+export function normalizeManeuverability(
+  val?: string | null,
+): 'TIGHT_STREET' | 'STANDARD_INDUSTRIAL' | 'WIDE_YARD' {
+  if (!val) return 'STANDARD_INDUSTRIAL';
+  if (val === 'TIGHT' || val === 'TIGHT_STREET') return 'TIGHT_STREET';
+  if (val === 'WIDE' || val === 'WIDE_YARD' || val === 'EASY') return 'WIDE_YARD';
+  return 'STANDARD_INDUSTRIAL';
+}
+
+export function normalizeFacility(
+  val?: string | null,
+): 'RAISED_DOCK' | 'GROUND_LEVEL' | 'FORKLIFT_REQUIRED' {
+  if (!val) return 'GROUND_LEVEL';
+  if (val === 'DOCK' || val === 'RAISED_DOCK') return 'RAISED_DOCK';
+  if (val === 'FORKLIFT' || val === 'FORKLIFT_REQUIRED') return 'FORKLIFT_REQUIRED';
+  return 'GROUND_LEVEL';
+}
+
+export function formatManeuverabilityLabel(val?: string | null): string {
+  if (!val) return '—';
+  if (val === 'TIGHT_STREET' || val === 'TIGHT') return 'Tight Street';
+  if (val === 'STANDARD_INDUSTRIAL' || val === 'MODERATE') return 'Standard Industrial';
+  if (val === 'WIDE_YARD' || val === 'WIDE' || val === 'EASY') return 'Wide Yard';
+  return val;
+}
+
+export function formatFacilityLabel(val?: string | null): string {
+  if (!val) return '—';
+  if (val === 'RAISED_DOCK' || val === 'DOCK') return 'Raised Loading Dock (48-52 inches)';
+  if (val === 'GROUND_LEVEL' || val === 'GROUND') return 'Ground Level';
+  if (val === 'FORKLIFT_REQUIRED' || val === 'FORKLIFT') return 'Forklift Required';
+  return val;
+}
 
 function buildStopsFromForm(
   values: Pick<
@@ -613,7 +659,13 @@ function buildJobTitle(
 }
 
 function buildJobPayload(values: JobCreateForm) {
-  const loadTypes = ['GENERAL', ...(values.loadDg ? (['DG'] as const) : [])];
+  const loadTypes =
+    Array.isArray(values.loadTypes) && values.loadTypes.length > 0
+      ? values.loadTypes
+      : values.loadDg
+        ? ['GENERAL', 'DG']
+        : ['GENERAL'];
+  const requiresDg = loadTypes.includes('DG');
   const stops = buildStopsFromForm(values);
   const pickupCount = stops.filter((s) => s.stopType === 'PICKUP').length;
   return {
@@ -631,7 +683,8 @@ function buildJobPayload(values: JobCreateForm) {
     receiverPhone: values.receiverPhone.trim(),
     receiverAltEmail: values.receiverAltEmail?.trim() || null,
     receiverAltPhone: values.receiverAltPhone?.trim() || null,
-    dgDocumentId: values.loadDg ? (values.dgDocumentId ?? null) : null,
+    dgDocumentId: requiresDg ? (values.dgDocumentId ?? null) : null,
+    minVehicleClass: values.minVehicleClass || undefined,
     deadWeightKg: values.deadWeightKg,
     lengthCm: values.lengthCm,
     widthCm: values.widthCm,
@@ -640,8 +693,8 @@ function buildJobPayload(values: JobCreateForm) {
       ? { distanceKm: values.distanceKm }
       : {}),
     loadTypes,
-    siteManeuverability: 'MODERATE',
-    siteFacility: 'GROUND',
+    siteManeuverability: values.siteManeuverability,
+    siteFacility: values.siteFacility,
     siteDisclaimerAccepted: true as const,
     stops,
   };
@@ -707,10 +760,12 @@ function JobReceiverForm({ jobId, job }: { jobId: string; job: JobSummary }) {
       .trim()
       .min(1, t('validation.receiverEmailRequired'))
       .email(t('validation.receiverEmailInvalid')),
-    receiverPhone: z
-      .string()
-      .trim()
-      .min(8, t('validation.receiverPhoneRequired', { defaultValue: 'Enter a valid phone number' })),
+    receiverPhone: requiredPhoneSchema(
+      t('validation.receiverPhoneRequired', { defaultValue: 'Enter receiver phone number' }),
+      t('validation.receiverPhoneInvalid', {
+        defaultValue: 'Enter a valid Australian phone number (e.g. 04xx xxx xxx or +61...)',
+      }),
+    ),
     receiverAltEmail: z
       .string()
       .trim()
@@ -718,7 +773,11 @@ function JobReceiverForm({ jobId, job }: { jobId: string; job: JobSummary }) {
       .refine((v) => !v || z.string().email().safeParse(v).success, {
         message: t('validation.receiverEmailInvalid'),
       }),
-    receiverAltPhone: z.string().trim().optional(),
+    receiverAltPhone: optionalPhoneSchema(
+      t('validation.receiverPhoneInvalid', {
+        defaultValue: 'Enter a valid Australian phone number (e.g. 04xx xxx xxx or +61...)',
+      }),
+    ),
   });
 
   type ReceiverForm = z.infer<typeof schema>;
@@ -978,7 +1037,16 @@ const DRAFT_STEP_FIELDS: Record<DraftWizardStep, (keyof JobCreateForm)[]> = {
     'extraDropoffs',
     'distanceKm',
   ],
-  cargo: ['deadWeightKg', 'lengthCm', 'widthCm', 'heightCm', 'loadDg', 'dgDocumentId'],
+  cargo: [
+    'deadWeightKg',
+    'lengthCm',
+    'widthCm',
+    'heightCm',
+    'loadDg',
+    'loadTypes',
+    'minVehicleClass',
+    'dgDocumentId',
+  ],
   receiver: [
     'receiverName',
     'receiverEmail',
@@ -986,7 +1054,7 @@ const DRAFT_STEP_FIELDS: Record<DraftWizardStep, (keyof JobCreateForm)[]> = {
     'receiverAltEmail',
     'receiverAltPhone',
   ],
-  confirm: ['siteDisclaimerAccepted'],
+  confirm: ['siteManeuverability', 'siteFacility', 'siteDisclaimerAccepted'],
 };
 
 function JobDraftForm({
@@ -1090,6 +1158,8 @@ function JobDraftForm({
         .positive(t('validation.dimensionPositive'))
         .max(MAX_JOB_HEIGHT_CM, t('validation.heightMax', { max: MAX_JOB_HEIGHT_CM })),
       loadDg: z.boolean(),
+      loadTypes: z.array(z.string()).default(['GENERAL']),
+      minVehicleClass: z.string().optional(),
       dgDocumentId: z.string().uuid().nullable().optional(),
       receiverName: z.string().trim().min(1, t('validation.receiverNameRequired')),
       receiverEmail: z
@@ -1097,10 +1167,12 @@ function JobDraftForm({
         .trim()
         .min(1, t('validation.receiverEmailRequired'))
         .email(t('validation.receiverEmailInvalid')),
-      receiverPhone: z
-        .string()
-        .trim()
-        .min(8, t('validation.receiverPhoneRequired', { defaultValue: 'Enter receiver phone number' })),
+      receiverPhone: requiredPhoneSchema(
+        t('validation.receiverPhoneRequired', { defaultValue: 'Enter receiver phone number' }),
+        t('validation.receiverPhoneInvalid', {
+          defaultValue: 'Enter a valid Australian phone number (e.g. 04xx xxx xxx or +61...)',
+        }),
+      ),
       receiverAltEmail: z
         .string()
         .trim()
@@ -1108,7 +1180,13 @@ function JobDraftForm({
         .refine((v) => !v || z.string().email().safeParse(v).success, {
           message: t('validation.receiverEmailInvalid'),
         }),
-      receiverAltPhone: z.string().trim().optional(),
+      receiverAltPhone: optionalPhoneSchema(
+        t('validation.receiverPhoneInvalid', {
+          defaultValue: 'Enter a valid Australian phone number (e.g. 04xx xxx xxx or +61...)',
+        }),
+      ),
+      siteManeuverability: z.enum(['TIGHT_STREET', 'STANDARD_INDUSTRIAL', 'WIDE_YARD']),
+      siteFacility: z.enum(['RAISED_DOCK', 'GROUND_LEVEL', 'FORKLIFT_REQUIRED']),
       siteDisclaimerAccepted: z.boolean().refine((value) => value === true, {
         message: t('validation.siteDisclaimerRequired'),
       }),
@@ -1154,7 +1232,7 @@ function JobDraftForm({
           }),
         });
       }
-      if (values.loadDg && !values.dgDocumentId) {
+      if ((values.loadDg || values.loadTypes?.includes('DG')) && !values.dgDocumentId) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['dgDocumentId'],
@@ -1235,7 +1313,7 @@ function JobDraftForm({
     });
 
   const form = useForm<JobCreateForm>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema) as any,
     defaultValues: {
       pricingModel: 'PER_KM',
       distanceKm: undefined,
@@ -1254,12 +1332,16 @@ function JobDraftForm({
       widthCm: 80,
       heightCm: 80,
       loadDg: false,
+      loadTypes: ['GENERAL'],
+      minVehicleClass: undefined,
       dgDocumentId: null,
       receiverName: '',
       receiverEmail: '',
       receiverPhone: '',
       receiverAltEmail: '',
       receiverAltPhone: '',
+      siteManeuverability: 'STANDARD_INDUSTRIAL',
+      siteFacility: 'GROUND_LEVEL',
       siteDisclaimerAccepted: false,
     },
   });
@@ -1338,12 +1420,19 @@ function JobDraftForm({
       widthCm: Number(existing.data.widthCm) || 80,
       heightCm: Number(existing.data.heightCm) || 80,
       loadDg: Boolean(existing.data.requiresDg),
+      loadTypes:
+        Array.isArray(existing.data.loadTypes) && existing.data.loadTypes.length > 0
+          ? existing.data.loadTypes
+          : ['GENERAL'],
+      minVehicleClass: existing.data.minVehicleClass || undefined,
       dgDocumentId: existing.data.dgDocumentId ?? null,
       receiverName: existing.data.receiverName || '',
       receiverEmail: existing.data.receiverEmail || '',
       receiverPhone: existing.data.receiverPhone || '',
       receiverAltEmail: existing.data.receiverAltEmail || '',
       receiverAltPhone: existing.data.receiverAltPhone || '',
+      siteManeuverability: normalizeManeuverability(existing.data.siteManeuverability),
+      siteFacility: normalizeFacility(existing.data.siteFacility),
       siteDisclaimerAccepted: true,
     });
     if (Number.isFinite(savedKm) && savedKm > 0) {
@@ -1376,7 +1465,8 @@ function JobDraftForm({
   const widthCm = form.watch('widthCm');
   const heightCm = form.watch('heightCm');
   const distanceKm = form.watch('distanceKm');
-  const loadDg = form.watch('loadDg');
+  const loadTypes = form.watch('loadTypes') ?? ['GENERAL'];
+  const minVehicleClass = form.watch('minVehicleClass');
   const dgDocumentId = form.watch('dgDocumentId');
 
   const extraStopsSignature = JSON.stringify({
@@ -1505,6 +1595,32 @@ function JobDraftForm({
     retry: false,
   });
 
+  useEffect(() => {
+    if (!recommend.data?.recommendedVehicleClass) return;
+    const current = form.getValues('minVehicleClass');
+    const recRank = VEHICLE_CLASS_RANK[recommend.data.recommendedVehicleClass] ?? 1;
+    const currentRank = current ? (VEHICLE_CLASS_RANK[current] ?? 0) : 0;
+    if (!current || currentRank < recRank) {
+      form.setValue('minVehicleClass', recommend.data.recommendedVehicleClass);
+    }
+  }, [recommend.data?.recommendedVehicleClass, form]);
+
+  const [vehicleFilter, setVehicleFilter] = useState<'suitable' | 'all'>('suitable');
+  const suitableVehicleCount = useMemo(() => {
+    const recCode = recommend.data?.recommendedVehicleClass;
+    const recRank = recCode ? (VEHICLE_CLASS_RANK[recCode] ?? 1) : 1;
+    const w = localChargeable ?? cargoForRecommend.deadWeightKg;
+    return CLOX_VEHICLE_SPECS.filter(
+      (v) =>
+        (w > 0 ? v.maxChargeableWeightKg >= w : true) &&
+        (cargoForRecommend.lengthCm > 0 ? v.maxLengthCm >= cargoForRecommend.lengthCm : true) &&
+        (cargoForRecommend.widthCm > 0 ? v.maxWidthCm >= cargoForRecommend.widthCm : true) &&
+        (cargoForRecommend.heightCm > 0 ? v.maxHeightCm >= cargoForRecommend.heightCm : true) &&
+        (recCode ? v.rank >= recRank : true),
+    ).length;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cargoForRecommend is derived from the watched fields below
+  }, [recommend.data?.recommendedVehicleClass, localChargeable, deadWeightKg, lengthCm, widthCm, heightCm]);
+
   const transitMinutes = useMemo(() => {
     if (routeEstimate?.durationMinutes && routeEstimate.durationMinutes > 0) {
       return Math.round(routeEstimate.durationMinutes);
@@ -1576,7 +1692,7 @@ function JobDraftForm({
   }
 
   return (
-    <div className="max-w-2xl">
+    <div className={step === 'cargo' ? 'max-w-5xl' : 'max-w-2xl'}>
       <Link to={cancelTo} className="text-sm text-clox-orange hover:underline">
         ← {isEdit ? t('jobs.backToJob') : t('jobs.backToJobs')}
       </Link>
@@ -1620,7 +1736,7 @@ function JobDraftForm({
             void goNext();
             return;
           }
-          void form.handleSubmit((values) => save.mutate(values))();
+          void form.handleSubmit((values) => save.mutate(values as JobCreateForm))();
         }}
         noValidate
       >
@@ -1997,6 +2113,18 @@ function JobDraftForm({
 
         {step === 'cargo' ? (
           <>
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold text-clox-ink">
+                {t('jobs.cargoDimensionsTitle', { defaultValue: 'Cargo Dimensions & Weight' })}
+              </h3>
+              <p className="mt-0.5 text-xs text-clox-mute">
+                {t('jobs.cargoDimensionsSubtitle', {
+                  defaultValue:
+                    'Enter dead weight and bounding dimensions to compute chargeable weight and suitable vehicles.',
+                })}
+              </p>
+            </div>
+
             <Field
               type="number"
               label={t('validation.deadWeightLabel')}
@@ -2005,7 +2133,7 @@ function JobDraftForm({
               error={form.formState.errors.deadWeightKg?.message}
               {...form.register('deadWeightKg', { valueAsNumber: true })}
             />
-            <div className="grid grid-cols-1 gap-0 sm:grid-cols-3 sm:gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <Field
                 type="number"
                 label={t('validation.lengthLabel')}
@@ -2041,20 +2169,108 @@ function JobDraftForm({
                 {getErrorDetail(recommend.error)}
               </Notice>
             ) : null}
-            {!cargoOverLimit && recommend.data ? (
-              <Notice tone="success" className="mb-4">
-                {t('jobs.chargeableHint', {
-                  kg: recommend.data.chargeableWeightKg.toFixed(1),
-                  vehicleClass: recommend.data.recommendedVehicleClass,
-                })}
-              </Notice>
-            ) : null}
-            <ChoiceCheck className="mb-4" {...form.register('loadDg')}>
-              {t('jobs.dgLoad')}
-            </ChoiceCheck>
 
-            {loadDg ? (
-              <div className="mb-4 rounded-clox-md border border-clox-border bg-clox-surface-alt p-4">
+            {/* 12 CLOX Load Types Selection */}
+            <div className="mt-6 mb-4">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-semibold text-clox-ink">
+                    {t('loadTypes.title', { defaultValue: 'Type of Load' })}
+                  </h3>
+                  <p className="mt-0.5 text-xs text-clox-mute">
+                    {t('loadTypes.subtitle', {
+                      defaultValue: 'Select all categories that apply to your freight.',
+                    })}
+                  </p>
+                </div>
+                <span className="text-[11px] font-medium text-clox-mute">
+                  {loadTypes.length} {t('selected', { defaultValue: 'selected' })}
+                </span>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-2 sm:gap-2.5 lg:grid-cols-3">
+                {CLOX_LOAD_TYPES.map((lt) => {
+                  const isChecked = loadTypes.includes(lt.code);
+                  return (
+                    <button
+                      key={lt.code}
+                      type="button"
+                      onClick={() => {
+                        let next: string[];
+                        if (isChecked) {
+                          next = loadTypes.filter((c) => c !== lt.code);
+                          if (next.length === 0) next = ['GENERAL'];
+                        } else {
+                          next = [...loadTypes, lt.code];
+                        }
+                        form.setValue('loadTypes', next);
+                        form.setValue('loadDg', next.includes('DG'));
+                      }}
+                      className={cn(
+                        'group flex flex-col items-start rounded-clox-md border p-3 text-left transition-all duration-150',
+                        isChecked
+                          ? 'border-[#f26e22] bg-[#f26e22]/5 dark:bg-[#f26e22]/10 shadow-sm ring-1 ring-[#f26e22]'
+                          : 'border-clox-border bg-clox-surface hover:border-slate-300 dark:hover:border-slate-600',
+                      )}
+                    >
+                      <div className="flex w-full items-center justify-between gap-2">
+                        <span
+                          className={cn(
+                            'text-xs font-semibold',
+                            isChecked ? 'text-[#f26e22] dark:text-[#ff8f4d]' : 'text-clox-ink',
+                          )}
+                        >
+                          {t(lt.nameKey, { defaultValue: lt.defaultName })}
+                        </span>
+                        <div
+                          className={cn(
+                            'flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors',
+                            isChecked
+                              ? 'border-[#f26e22] bg-[#f26e22] text-white'
+                              : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800',
+                          )}
+                        >
+                          {isChecked ? <Check className="h-3 w-3 stroke-[3]" /> : null}
+                        </div>
+                      </div>
+                      <p className="mt-1 hidden text-[11px] leading-snug text-clox-mute sm:block">
+                        {t(lt.descKey, { defaultValue: lt.defaultDesc })}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {loadTypes.includes('OVERSIZE') ? (
+                <Notice tone="warn" className="mt-3 text-xs">
+                  <strong>Oversize Alert:</strong> Flatbed trailer or extendable vehicle required. Permits or pilot escort may apply.
+                </Notice>
+              ) : null}
+              {loadTypes.includes('STEEL') ? (
+                <Notice tone="info" className="mt-3 text-xs">
+                  <strong>Steel Restraint:</strong> Heavy transport chains and NHVR-compliant load restraints required.
+                </Notice>
+              ) : null}
+              {loadTypes.includes('REEFER') ? (
+                <Notice tone="info" className="mt-3 text-xs">
+                  <strong>Refrigeration:</strong> Carrier must provide continuous temperature-controlled vehicle.
+                </Notice>
+              ) : null}
+              {loadTypes.includes('LIQUID') ? (
+                <Notice tone="warn" className="mt-3 text-xs">
+                  <strong>Liquid Freight:</strong> Spill containment and certified bunding equipment required.
+                </Notice>
+              ) : null}
+              {loadTypes.includes('CONTAINERS') ? (
+                <Notice tone="info" className="mt-3 text-xs">
+                  <strong>Wharf Access:</strong> Port terminal access and 1-Stop vehicle booking slot required.
+                </Notice>
+              ) : null}
+            </div>
+
+            {/* Dangerous Goods Document Upload */}
+            {loadTypes.includes('DG') ? (
+              <div className="mb-6 rounded-clox-md border border-amber-300/60 bg-amber-50/50 dark:border-amber-900/50 dark:bg-amber-950/20 p-4">
                 <FileInput
                   className="mb-0"
                   label={t('jobs.dgDocUploadLabel', {
@@ -2062,7 +2278,7 @@ function JobDraftForm({
                   })}
                   hint={t('jobs.dgDocUploadHint', {
                     defaultValue:
-                      'Upload the DG transport declaration or Safety Data Sheet (document or image). Carriers will review this before bidding.',
+                      'Upload the DG transport declaration or Safety Data Sheet (PDF or image). Only DG-licensed carriers will be eligible to bid.',
                   })}
                   accept=".pdf,image/png,image/jpeg,image/webp"
                   fileName={dgDocFilename}
@@ -2100,6 +2316,266 @@ function JobDraftForm({
                 ) : null}
               </div>
             ) : null}
+
+            {/* Vehicle Recommendation & Selection Grid */}
+            <div className="mt-6 mb-4">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-semibold text-clox-ink">
+                    {t('jobs.vehicleSelectionTitle', { defaultValue: 'Vehicle Recommendation & Selection' })}
+                  </h3>
+                  <p className="mt-0.5 text-xs text-clox-mute">
+                    {t('jobs.vehicleSelectionSubtitle', {
+                      defaultValue:
+                        'Available fleet vehicle classes. Smaller classes are disabled when your cargo exceeds their limits.',
+                    })}
+                  </p>
+                </div>
+                {localChargeable != null && localChargeable > 0 ? (
+                  <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    Chargeable: {localChargeable.toFixed(1)} kg
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(
+                  [
+                    ['suitable', `Suitable (${suitableVehicleCount})`],
+                    ['all', `All (${CLOX_VEHICLE_SPECS.length})`],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setVehicleFilter(key)}
+                    className={cn(
+                      'rounded-full border px-3 py-1 text-xs font-semibold transition',
+                      vehicleFilter === key
+                        ? 'border-clox-orange bg-clox-orange text-white'
+                        : 'border-clox-border bg-clox-surface text-clox-mute hover:text-clox-ink',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {CLOX_VEHICLE_SPECS.map((v) => {
+                  const recommendedCode = recommend.data?.recommendedVehicleClass;
+                  const recRank = recommendedCode ? (VEHICLE_CLASS_RANK[recommendedCode] ?? 1) : 1;
+                  const isRecommended = recommendedCode === v.code;
+
+                  const weight = localChargeable ?? cargoForRecommend.deadWeightKg;
+                  const weightOk = weight > 0 ? v.maxChargeableWeightKg >= weight : true;
+                  const lengthOk = cargoForRecommend.lengthCm > 0 ? v.maxLengthCm >= cargoForRecommend.lengthCm : true;
+                  const widthOk = cargoForRecommend.widthCm > 0 ? v.maxWidthCm >= cargoForRecommend.widthCm : true;
+                  const heightOk = cargoForRecommend.heightCm > 0 ? v.maxHeightCm >= cargoForRecommend.heightCm : true;
+                  const dimsOk = lengthOk && widthOk && heightOk;
+                  const rankOk = recommendedCode ? v.rank >= recRank : true;
+
+                  const isApplicable = weightOk && dimsOk && rankOk;
+                  const isSelected = (minVehicleClass || recommendedCode) === v.code;
+
+                  if (vehicleFilter === 'suitable' && !isApplicable) return null;
+
+                  let reason = '';
+                  if (!weightOk) {
+                    reason = `Exceeds max payload (${v.maxChargeableWeightKg.toLocaleString()} kg max vs ${Math.round(weight).toLocaleString()} kg cargo)`;
+                  } else if (!dimsOk) {
+                    const parts: string[] = [];
+                    if (!lengthOk) parts.push(`Length > ${v.maxLengthCm}cm`);
+                    if (!widthOk) parts.push(`Width > ${v.maxWidthCm}cm`);
+                    if (!heightOk) parts.push(`Height > ${v.maxHeightCm}cm`);
+                    reason = `Cargo bay exceeded (${parts.join(', ')})`;
+                  } else if (!rankOk) {
+                    reason = `Smaller capacity class than recommended (${v.name} vs required ${recommendedCode || 'minimum'})`;
+                  }
+
+                  return (
+                    <div
+                      key={v.code}
+                      onClick={() => {
+                        if (isApplicable) {
+                          form.setValue('minVehicleClass', v.code);
+                        }
+                      }}
+                      className={cn(
+                        'relative flex flex-col justify-between rounded-clox-md border p-3.5 transition-all duration-150',
+                        !isApplicable &&
+                          'border-slate-300/80 bg-slate-100/90 dark:border-slate-800 dark:bg-slate-900/60 cursor-not-allowed shadow-none',
+                        isApplicable &&
+                          !isSelected &&
+                          !isRecommended &&
+                          'border-clox-border bg-clox-surface hover:border-clox-orange/60 hover:shadow-clox-1 cursor-pointer',
+                        isApplicable &&
+                          isRecommended &&
+                          !isSelected &&
+                          'border-2 border-emerald-500/90 bg-emerald-50/30 dark:border-emerald-500/70 dark:bg-emerald-950/20 shadow-xs cursor-pointer hover:border-emerald-600',
+                        isApplicable &&
+                          isSelected &&
+                          'border-2 border-clox-orange ring-2 ring-clox-orange/20 bg-clox-orange/5 dark:bg-clox-orange/10 shadow-sm cursor-pointer',
+                      )}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-baseline gap-1.5">
+                              <span
+                                className={cn(
+                                  'text-sm font-bold',
+                                  !isApplicable ? 'text-slate-700 dark:text-slate-300' : 'text-clox-ink',
+                                )}
+                              >
+                                {v.name}
+                              </span>
+                              <span className="text-xs font-normal text-clox-mute">
+                                ({v.subTitle})
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-clox-mute block mt-0.5">
+                              Licence: {v.minLicence}
+                            </span>
+                          </div>
+
+                          {!isApplicable ? (
+                            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-rose-100 dark:bg-rose-950/70 px-2 py-0.5 text-[10px] font-semibold text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50">
+                              ✕ {t('jobs.notApplicableBadge', { defaultValue: 'Not Suitable' })}
+                            </span>
+                          ) : isRecommended ? (
+                            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-950/70 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/60 shadow-2xs">
+                              ★ {t('jobs.recommendedBadge', { defaultValue: 'Recommended' })}
+                            </span>
+                          ) : (
+                            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                              ✓ {t('jobs.applicableBadge', { defaultValue: 'Suitable' })}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Weight & Bay Dimensions Specs Section */}
+                        {isApplicable ? (
+                          <div className="mt-2.5 rounded-md border border-clox-border/80 bg-clox-surface-alt/80 p-2.5">
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div>
+                                <span className="block text-[10px] font-semibold uppercase tracking-wider text-clox-mute">
+                                  Max Payload
+                                </span>
+                                <span className="block text-sm font-bold text-clox-ink mt-0.5">
+                                  {v.maxChargeableWeightKg.toLocaleString()} kg
+                                </span>
+                              </div>
+                              <div>
+                                <span className="block text-[10px] font-semibold uppercase tracking-wider text-clox-mute">
+                                  Cargo Bay
+                                </span>
+                                <span className="block text-xs font-semibold text-clox-ink mt-0.5 leading-tight">
+                                  {v.maxLengthCm} × {v.maxWidthCm} × {v.maxHeightCm} cm
+                                </span>
+                              </div>
+                            </div>
+
+                            {weight > 0 ? (
+                              <div className="mt-2 pt-2 border-t border-clox-border/60">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="text-clox-mute font-medium text-[11px]">Your Cargo:</span>
+                                  <span className="font-bold text-clox-ink text-xs">
+                                    {weight.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg
+                                    <span className="ml-1 text-[10px] font-normal text-clox-mute">
+                                      ({Math.min(100, Math.round((weight / v.maxChargeableWeightKg) * 100))}% payload)
+                                    </span>
+                                  </span>
+                                </div>
+                                <div className="mt-1 h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                                  <div
+                                    className={cn(
+                                      'h-full rounded-full transition-all duration-300',
+                                      isSelected
+                                        ? 'bg-clox-orange'
+                                        : isRecommended
+                                          ? 'bg-emerald-500'
+                                          : 'bg-slate-500 dark:bg-slate-400',
+                                    )}
+                                    style={{
+                                      width: `${Math.min(100, Math.max(5, (weight / v.maxChargeableWeightKg) * 100))}%`,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="mt-2.5 rounded-md border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/50 p-2.5">
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div>
+                                  <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                    Max Payload
+                                  </span>
+                                  <span className="block text-sm font-bold text-slate-700 dark:text-slate-300 mt-0.5">
+                                    {v.maxChargeableWeightKg.toLocaleString()} kg
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                    Cargo Bay
+                                  </span>
+                                  <span className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mt-0.5 leading-tight">
+                                    {v.maxLengthCm} × {v.maxWidthCm} × {v.maxHeightCm} cm
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {reason ? (
+                              <div className="mt-2 flex items-start gap-1.5 rounded-md bg-rose-50 dark:bg-rose-950/40 border border-rose-200/80 dark:border-rose-900/50 px-2.5 py-1.5 text-xs text-rose-700 dark:text-rose-300">
+                                <AlertCircle className="h-4 w-4 shrink-0 text-rose-500 mt-0.5" />
+                                <span className="font-medium leading-tight">{reason}</span>
+                              </div>
+                            ) : null}
+                          </>
+                        )}
+                      </div>
+
+                      {isApplicable ? (
+                        <div className="mt-3 flex items-center justify-between border-t border-clox-border/60 pt-2 text-xs">
+                          <span
+                            className={cn(
+                              'text-xs font-semibold',
+                              isSelected ? 'text-clox-orange dark:text-orange-400' : 'text-clox-mute',
+                            )}
+                          >
+                            {isSelected
+                              ? t('jobs.selectedVehicleClass', { defaultValue: '✓ Selected Vehicle Class' })
+                              : t('jobs.clickToSelectVehicle', { defaultValue: 'Click to select this class' })}
+                          </span>
+                          <div
+                            className={cn(
+                              'h-4 w-4 rounded-full border flex items-center justify-center transition-colors',
+                              isSelected
+                                ? 'border-clox-orange bg-clox-orange text-white'
+                                : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800',
+                            )}
+                          >
+                            {isSelected ? <div className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-3 flex items-center justify-between border-t border-slate-200 dark:border-slate-800 pt-2 text-xs text-slate-500 dark:text-slate-400">
+                          <span className="text-[11px] font-medium">
+                            {t('jobs.vehicleNotAvailable', { defaultValue: 'Not suitable for this cargo' })}
+                          </span>
+                          <span className="text-[10px] uppercase font-semibold text-slate-400 dark:text-slate-500 tracking-wider">
+                            Ineligible
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </>
         ) : null}
 
@@ -2422,12 +2898,12 @@ function JobDraftForm({
                       h: heightCm,
                     })}
                     <span className="mt-0.5 block text-xs font-normal text-clox-faint">
-                      {loadDg ? t('jobs.wizard.summaryDgYes') : t('jobs.wizard.summaryDgNo')}
+                      {loadTypes.join(', ')}
+                      {minVehicleClass || recommend.data?.recommendedVehicleClass
+                        ? ` · Class: ${minVehicleClass || recommend.data?.recommendedVehicleClass}`
+                        : ''}
                       {recommend.data
-                        ? ` · ${t('jobs.chargeableHint', {
-                            kg: recommend.data.chargeableWeightKg.toFixed(1),
-                            vehicleClass: recommend.data.recommendedVehicleClass,
-                          })}`
+                        ? ` · Chargeable: ${recommend.data.chargeableWeightKg.toFixed(1)} kg`
                         : ''}
                     </span>
                   </dd>
@@ -2446,15 +2922,110 @@ function JobDraftForm({
                     ) : null}
                   </dd>
                 </div>
+                <div className="flex flex-wrap justify-between gap-2">
+                  <dt className="text-clox-mute">{t('jobs.siteAccess.badge')}</dt>
+                  <dd className="text-right font-medium text-clox-ink">
+                    {formatManeuverabilityLabel(form.watch('siteManeuverability'))} ·{' '}
+                    {formatFacilityLabel(form.watch('siteFacility'))}
+                  </dd>
+                </div>
               </dl>
             </div>
-            <ChoiceCheck
-              className="mb-4"
-              error={form.formState.errors.siteDisclaimerAccepted?.message}
-              {...form.register('siteDisclaimerAccepted')}
-            >
-              {t('jobs.siteDisclaimer')}
-            </ChoiceCheck>
+
+            {/* 3.5 Site Access & Maneuverability Assessment */}
+            <div className="mb-6 rounded-clox-md border border-clox-border bg-clox-surface p-4 shadow-clox-1">
+              <div className="mb-4 border-b border-clox-border/60 pb-3">
+                <h3 className="font-display text-sm font-semibold text-clox-ink">
+                  {t('jobs.siteAccess.sectionTitle')}
+                </h3>
+                <p className="mt-1 text-xs text-clox-mute">
+                  {t('jobs.siteAccess.sectionDesc')}
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <RadioCardGroup
+                  name="siteManeuverability"
+                  label={t('jobs.siteAccess.maneuverabilityLabel')}
+                  required
+                  error={form.formState.errors.siteManeuverability?.message}
+                  value={form.watch('siteManeuverability')}
+                  onChange={(next) =>
+                    form.setValue(
+                      'siteManeuverability',
+                      next as 'TIGHT_STREET' | 'STANDARD_INDUSTRIAL' | 'WIDE_YARD',
+                      {
+                        shouldValidate: true,
+                        shouldDirty: true,
+                      },
+                    )
+                  }
+                  options={[
+                    {
+                      value: 'TIGHT_STREET',
+                      title: t('jobs.siteAccess.tightStreet'),
+                      description: t('jobs.siteAccess.tightStreetDesc'),
+                    },
+                    {
+                      value: 'STANDARD_INDUSTRIAL',
+                      title: t('jobs.siteAccess.standardIndustrial'),
+                      description: t('jobs.siteAccess.standardIndustrialDesc'),
+                    },
+                    {
+                      value: 'WIDE_YARD',
+                      title: t('jobs.siteAccess.wideYard'),
+                      description: t('jobs.siteAccess.wideYardDesc'),
+                    },
+                  ]}
+                />
+
+                <RadioCardGroup
+                  name="siteFacility"
+                  label={t('jobs.siteAccess.facilityLabel')}
+                  required
+                  error={form.formState.errors.siteFacility?.message}
+                  value={form.watch('siteFacility')}
+                  onChange={(next) =>
+                    form.setValue(
+                      'siteFacility',
+                      next as 'RAISED_DOCK' | 'GROUND_LEVEL' | 'FORKLIFT_REQUIRED',
+                      {
+                        shouldValidate: true,
+                        shouldDirty: true,
+                      },
+                    )
+                  }
+                  options={[
+                    {
+                      value: 'RAISED_DOCK',
+                      title: t('jobs.siteAccess.raisedDock'),
+                      description: t('jobs.siteAccess.raisedDockDesc'),
+                    },
+                    {
+                      value: 'GROUND_LEVEL',
+                      title: t('jobs.siteAccess.groundLevel'),
+                      description: t('jobs.siteAccess.groundLevelDesc'),
+                    },
+                    {
+                      value: 'FORKLIFT_REQUIRED',
+                      title: t('jobs.siteAccess.forkliftRequired'),
+                      description: t('jobs.siteAccess.forkliftRequiredDesc'),
+                    },
+                  ]}
+                />
+
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3.5">
+                  <ChoiceCheck
+                    error={form.formState.errors.siteDisclaimerAccepted?.message}
+                    {...form.register('siteDisclaimerAccepted')}
+                  >
+                    <span className="text-xs font-medium text-clox-ink">
+                      {t('jobs.siteDisclaimer')}
+                    </span>
+                  </ChoiceCheck>
+                </div>
+              </div>
+            </div>
           </>
         ) : null}
 
@@ -2606,7 +3177,30 @@ export function JobDetailPage() {
   }
 
   const j = job.data;
+  const [proposalSort, setProposalSort] = useState<'recommended' | 'price' | 'reliability'>('recommended');
   const openProposals = (j.proposals ?? []).filter((p) => p.status === 'SUBMITTED');
+
+  const sortedProposals = useMemo(() => {
+    const list = [...(j.proposals ?? [])];
+    if (proposalSort === 'price') {
+      return list.sort((a, b) => a.amountIncGstCents - b.amountIncGstCents);
+    }
+    if (proposalSort === 'reliability') {
+      return list.sort(
+        (a, b) =>
+          (b.carrierCompany?.reliabilityScore ?? 100) -
+          (a.carrierCompany?.reliabilityScore ?? 100),
+      );
+    }
+    return list.sort((a, b) => {
+      if (a.status === 'SUBMITTED' && b.status !== 'SUBMITTED') return -1;
+      if (a.status !== 'SUBMITTED' && b.status === 'SUBMITTED') return 1;
+      const aRel = a.carrierCompany?.reliabilityScore ?? 100;
+      const bRel = b.carrierCompany?.reliabilityScore ?? 100;
+      if (Math.abs(aRel - bRel) >= 10) return bRel - aRel;
+      return a.amountIncGstCents - b.amountIncGstCents;
+    });
+  }, [j.proposals, proposalSort]);
   const pricingLabel =
     j.pricingModel === 'HOURLY' ? t('jobs.pricingHourly') : t('jobs.pricingPerKm');
   const canEdit = Boolean(j.editability?.mode && j.editability.mode !== 'NONE');
@@ -2932,40 +3526,114 @@ export function JobDetailPage() {
 
           <section>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-display text-lg font-semibold text-clox-ink">
-                {t('jobs.proposalsTitle')}
-              </h2>
-              {(j.openProposalCount ?? openProposals.length) > 0 ? (
-                <span className="text-xs text-clox-faint">
-                  {t('jobs.openBidsCount', {
-                    count: j.openProposalCount ?? openProposals.length,
-                  })}
-                </span>
+              <div className="flex items-center gap-2">
+                <h2 className="font-display text-lg font-semibold text-clox-ink">
+                  {t('jobs.proposalsTitle')}
+                </h2>
+                {(j.openProposalCount ?? openProposals.length) > 0 ? (
+                  <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-clox-orange dark:bg-orange-950/40 dark:text-orange-400">
+                    {t('jobs.openBidsCount', {
+                      count: j.openProposalCount ?? openProposals.length,
+                    })}
+                  </span>
+                ) : null}
+              </div>
+              {sortedProposals.length > 1 ? (
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className="text-clox-faint">{t('jobs.sortBy', { defaultValue: 'Sort:' })}</span>
+                  <button
+                    type="button"
+                    onClick={() => setProposalSort('recommended')}
+                    className={cn(
+                      'rounded px-2 py-0.5 font-medium transition',
+                      proposalSort === 'recommended'
+                        ? 'bg-clox-orange text-white'
+                        : 'bg-clox-surface-alt text-clox-mute hover:text-clox-ink',
+                    )}
+                  >
+                    {t('jobs.sortRecommended', { defaultValue: 'Recommended' })}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProposalSort('price')}
+                    className={cn(
+                      'rounded px-2 py-0.5 font-medium transition',
+                      proposalSort === 'price'
+                        ? 'bg-clox-orange text-white'
+                        : 'bg-clox-surface-alt text-clox-mute hover:text-clox-ink',
+                    )}
+                  >
+                    {t('jobs.sortPrice', { defaultValue: 'Lowest Price' })}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProposalSort('reliability')}
+                    className={cn(
+                      'rounded px-2 py-0.5 font-medium transition',
+                      proposalSort === 'reliability'
+                        ? 'bg-clox-orange text-white'
+                        : 'bg-clox-surface-alt text-clox-mute hover:text-clox-ink',
+                    )}
+                  >
+                    {t('jobs.sortReliability', { defaultValue: 'Reliability' })}
+                  </button>
+                </div>
               ) : null}
             </div>
-            {(j.proposals ?? []).length === 0 ? (
+            {sortedProposals.length === 0 ? (
               <p className="mt-2 text-sm text-clox-faint">{t('jobs.noBidsYet')}</p>
             ) : (
               <ul className="mt-3 space-y-3">
-                {(j.proposals ?? []).map((p) => (
+                {sortedProposals.map((p) => (
                   <li
                     key={p.id}
                     className="rounded-clox-md border border-clox-border bg-clox-surface p-4 shadow-clox-1"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0 space-y-1">
-                        <p className="font-semibold text-clox-ink">
-                          {p.carrierCompany?.tradingName ||
-                            p.carrierCompany?.legalName ||
-                            p.carrierLabel}
-                          {p.carrierCompany?.tradingName &&
-                          p.carrierCompany.legalName &&
-                          p.carrierCompany.tradingName !== p.carrierCompany.legalName ? (
-                            <span className="ml-1.5 text-xs font-normal text-clox-mute">
-                              ({p.carrierCompany.legalName})
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold text-clox-ink">
+                            {p.carrierCompany?.tradingName ||
+                              p.carrierCompany?.legalName ||
+                              p.carrierLabel}
+                            {p.carrierCompany?.tradingName &&
+                            p.carrierCompany.legalName &&
+                            p.carrierCompany.tradingName !== p.carrierCompany.legalName ? (
+                              <span className="ml-1.5 text-xs font-normal text-clox-mute">
+                                ({p.carrierCompany.legalName})
+                              </span>
+                            ) : null}
+                          </p>
+                          {typeof p.carrierCompany?.reliabilityScore === 'number' ? (
+                            <span
+                              className={cn(
+                                'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold',
+                                p.carrierCompany.reliabilityScore >= 90
+                                  ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                  : p.carrierCompany.reliabilityScore >= 75
+                                    ? 'border border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300'
+                                    : p.carrierCompany.reliabilityScore >= 60
+                                      ? 'border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
+                                      : 'border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300',
+                              )}
+                              title={t('companies.reliabilityScoreTooltip', {
+                                defaultValue:
+                                  'Carrier Reliability Score based on historical on-time delivery and breakdown records',
+                              })}
+                            >
+                              <ShieldCheck className="h-3 w-3 shrink-0" />
+                              <span>
+                                {p.carrierCompany.reliabilityScore}%{' '}
+                                {t('companies.reliabilityShort', { defaultValue: 'Reliability' })}
+                              </span>
+                              {p.carrierCompany.reliabilityScore >= 90 ? (
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                                  ★ {t('companies.topRated', { defaultValue: 'Top Rated' })}
+                                </span>
+                              ) : null}
                             </span>
                           ) : null}
-                        </p>
+                        </div>
                         {(p.carrierCompany?.email ||
                           p.carrierCompany?.phone ||
                           p.carrierCompany?.abn) ? (
@@ -3174,6 +3842,32 @@ export function JobDetailPage() {
                 </div>
               </div>
             ) : null}
+          </section>
+
+          <section className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-4">
+            <h2 className="font-display text-sm font-semibold text-clox-ink">
+              {t('jobs.siteAccess.sectionTitle')}
+            </h2>
+            <dl className="mt-3 space-y-2">
+              {detailRow(
+                t('jobs.siteAccess.maneuverabilityLabel'),
+                formatManeuverabilityLabel(j.siteManeuverability),
+              )}
+              {detailRow(
+                t('jobs.siteAccess.facilityLabel'),
+                formatFacilityLabel(j.siteFacility),
+              )}
+              {detailRow(
+                t('jobs.siteAccess.disclaimerLabel'),
+                j.siteDisclaimerAcceptedAt ? (
+                  <span className="text-xs font-medium text-[var(--status-ok)]">
+                    ✓ Accepted ({new Date(j.siteDisclaimerAcceptedAt).toLocaleDateString()})
+                  </span>
+                ) : (
+                  <span className="text-xs text-clox-faint">—</span>
+                ),
+              )}
+            </dl>
           </section>
 
           <section className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-4">

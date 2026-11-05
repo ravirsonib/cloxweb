@@ -15,7 +15,7 @@ type Form = {
   email: string;
   phone: string;
   alternateEmail?: string;
-  alternatePhone: string;
+  alternatePhone?: string;
   acceptedTerms: boolean;
 };
 
@@ -53,7 +53,7 @@ export function SenderRegisterPage() {
   });
 
   const form = useForm<Form>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema) as any,
     defaultValues: {
       name: '',
       email: '',
@@ -115,7 +115,7 @@ export function SenderRegisterPage() {
 
         <form
           className="mt-6"
-          onSubmit={form.handleSubmit((v) => mutation.mutate(v as Form))}
+          onSubmit={form.handleSubmit((v) => mutation.mutate(v as unknown as Form))}
           noValidate
         >
           <Field

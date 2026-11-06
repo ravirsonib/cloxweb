@@ -3168,20 +3168,10 @@ export function JobDetailPage() {
     },
   });
 
-  if (role !== AppRole.SENDER) return <Navigate to="/" replace />;
-  if (job.isLoading) return <LoadingBlock label={t('jobs.loadingDetail')} />;
-  if (job.isError || !job.data) {
-    return (
-      <Notice tone="error">{getErrorDetail(job.error)}</Notice>
-    );
-  }
-
-  const j = job.data;
   const [proposalSort, setProposalSort] = useState<'recommended' | 'price' | 'reliability'>('recommended');
-  const openProposals = (j.proposals ?? []).filter((p) => p.status === 'SUBMITTED');
-
+  const jobProposals = job.data?.proposals;
   const sortedProposals = useMemo(() => {
-    const list = [...(j.proposals ?? [])];
+    const list = [...(jobProposals ?? [])];
     if (proposalSort === 'price') {
       return list.sort((a, b) => a.amountIncGstCents - b.amountIncGstCents);
     }
@@ -3200,7 +3190,18 @@ export function JobDetailPage() {
       if (Math.abs(aRel - bRel) >= 10) return bRel - aRel;
       return a.amountIncGstCents - b.amountIncGstCents;
     });
-  }, [j.proposals, proposalSort]);
+  }, [jobProposals, proposalSort]);
+
+  if (role !== AppRole.SENDER) return <Navigate to="/" replace />;
+  if (job.isLoading) return <LoadingBlock label={t('jobs.loadingDetail')} />;
+  if (job.isError || !job.data) {
+    return (
+      <Notice tone="error">{getErrorDetail(job.error)}</Notice>
+    );
+  }
+
+  const j = job.data;
+  const openProposals = (j.proposals ?? []).filter((p) => p.status === 'SUBMITTED');
   const pricingLabel =
     j.pricingModel === 'HOURLY' ? t('jobs.pricingHourly') : t('jobs.pricingPerKm');
   const canEdit = Boolean(j.editability?.mode && j.editability.mode !== 'NONE');

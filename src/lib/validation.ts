@@ -373,7 +373,7 @@ export function vehicleClassRank(
   ranks?: Record<string, number>,
 ): number {
   if (!vehicleClass) return 0;
-  const map = ranks ?? VEHICLE_CLASS_RANK;
+  const map = ranks ? { ...VEHICLE_CLASS_RANK, ...ranks } : VEHICLE_CLASS_RANK;
   return map[vehicleClass.toUpperCase()] ?? 0;
 }
 
@@ -387,7 +387,22 @@ const VEHICLE_CLASS_MAX_CHARGEABLE_KG: Record<string, number> = {
   BDOUBLE: 50_000,
 };
 
-export function recommendVehicleClass(chargeableKg: number): string {
+export function recommendVehicleClass(
+  chargeableKg: number,
+  maxChargeableMap?: Record<string, number>,
+  ranks?: Record<string, number>,
+): string {
+  if (maxChargeableMap && Object.keys(maxChargeableMap).length > 0) {
+    const mergedMax = { ...VEHICLE_CLASS_MAX_CHARGEABLE_KG, ...maxChargeableMap };
+    const mergedRank = { ...VEHICLE_CLASS_RANK, ...ranks };
+    const sorted = Object.entries(mergedMax).sort(
+      (a, b) => (mergedRank[a[0]] ?? 99) - (mergedRank[b[0]] ?? 99),
+    );
+    for (const [code, maxKg] of sorted) {
+      if (chargeableKg <= maxKg) return code;
+    }
+    return sorted[sorted.length - 1]?.[0] ?? 'BDOUBLE';
+  }
   if (chargeableKg <= 1000) return 'UTE';
   if (chargeableKg <= 1500) return 'VAN';
   if (chargeableKg <= 2500) return 'RIGID_1_2T';
@@ -412,12 +427,16 @@ export function isVehicleAdequateForJob(
   minClass: string | null | undefined,
   chargeableKg: number | null | undefined,
   ranks?: Record<string, number>,
+  maxChargeableMap?: Record<string, number>,
 ): boolean {
   if (isVehicleClassAdequate(offeredClass, minClass, ranks)) return true;
   if (chargeableKg == null || chargeableKg <= 0 || !offeredClass) return false;
-  const offeredMax = VEHICLE_CLASS_MAX_CHARGEABLE_KG[offeredClass.toUpperCase()];
+  const maxMap = maxChargeableMap
+    ? { ...VEHICLE_CLASS_MAX_CHARGEABLE_KG, ...maxChargeableMap }
+    : VEHICLE_CLASS_MAX_CHARGEABLE_KG;
+  const offeredMax = maxMap[offeredClass.toUpperCase()];
   if (offeredMax == null || chargeableKg > offeredMax) return false;
-  const weightMin = recommendVehicleClass(chargeableKg);
+  const weightMin = recommendVehicleClass(chargeableKg, maxChargeableMap, ranks);
   if (!minClass) return isVehicleClassAdequate(offeredClass, weightMin, ranks);
   if (vehicleClassRank(minClass, ranks) > vehicleClassRank(weightMin, ranks) + 1) return false;
   return isVehicleClassAdequate(offeredClass, weightMin, ranks);

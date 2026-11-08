@@ -38,6 +38,7 @@ import { LoadingBlock } from '@/components/status-blocks';
 import { resolveUploadMime } from '@/lib/upload-mime';
 import {
   abnSchema,
+  AU_STATES,
   suggestedGvmKgForClass,
   suggestedTareKgForClass,
   VEHICLE_CLASSES,
@@ -342,7 +343,7 @@ function ProfileStep({
       updateCarrierProfile({
         legalName: values.legalName,
         abn: values.abn,
-        homeRegionCode: 'VIC',
+        homeRegionCode: data.company.homeRegionCode || 'VIC',
       }),
     onSuccess: () => onSaved(),
   });
@@ -1293,6 +1294,16 @@ function CapabilitiesStep({
   const [tailLift, setTailLift] = useState(
     data.company.capabilities.length === 0 || data.company.capabilities.includes('TAIL_LIFT'),
   );
+  const [serviceRegions, setServiceRegions] = useState<string[]>(() =>
+    Array.from(
+      new Set([
+        ...(data.company.serviceRegionCodes?.length
+          ? data.company.serviceRegionCodes
+          : [data.company.homeRegionCode || 'VIC']),
+        ...(data.company.homeRegionCode ? [data.company.homeRegionCode] : []),
+      ]),
+    ),
+  );
   const [dgDocId, setDgDocId] = useState<string | null>(existingDg?.id ?? null);
   const [dgMsg, setDgMsg] = useState<string | null>(
     existingDg ? t('carrierOnboarding.dgLicenceUploaded') : null,
@@ -1306,6 +1317,16 @@ function CapabilitiesStep({
     setTailLift(
       data.company.capabilities.length === 0 || data.company.capabilities.includes('TAIL_LIFT'),
     );
+    setServiceRegions(
+      Array.from(
+        new Set([
+          ...(data.company.serviceRegionCodes?.length
+            ? data.company.serviceRegionCodes
+            : [data.company.homeRegionCode || 'VIC']),
+          ...(data.company.homeRegionCode ? [data.company.homeRegionCode] : []),
+        ]),
+      ),
+    );
     const dgDoc = (data.uploadedDocs ?? []).find(
       (d) =>
         d.docType === 'DG_LICENCE' &&
@@ -1314,7 +1335,13 @@ function CapabilitiesStep({
     );
     setDgDocId(dgDoc?.id ?? null);
     setDgMsg(dgDoc ? t('carrierOnboarding.dgLicenceUploaded') : null);
-  }, [data.company.capabilities, data.uploadedDocs, t]);
+  }, [
+    data.company.capabilities,
+    data.company.serviceRegionCodes,
+    data.company.homeRegionCode,
+    data.uploadedDocs,
+    t,
+  ]);
 
   async function uploadDgLicence(file: File) {
     const mime = resolveUploadMime(file);
@@ -1344,7 +1371,10 @@ function CapabilitiesStep({
       ];
       return updateCarrierCapabilities({
         capabilities,
-        serviceRegionCodes: ['VIC'],
+        serviceRegionCodes:
+          serviceRegions.length > 0
+            ? serviceRegions
+            : [data.company.homeRegionCode || 'VIC'],
       });
     },
     onSuccess: async (next) => {
@@ -1428,7 +1458,39 @@ function CapabilitiesStep({
           {t('carrierOnboarding.capOversize')}
         </ChoiceCheck>
       </div>
-      <p className="text-xs text-clox-faint">{t('carrierOnboarding.serviceRegionVic')}</p>
+      <div>
+        <p className="mb-2 text-xs font-semibold text-clox-ink">
+          {t('account.serviceRegions', { defaultValue: 'Service regions' })}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {AU_STATES.map((code) => {
+            const on = serviceRegions.includes(code);
+            return (
+              <button
+                key={code}
+                type="button"
+                aria-pressed={on}
+                className={
+                  on
+                    ? 'rounded-clox-md border border-clox-orange bg-clox-orange/10 px-3 py-1.5 text-xs font-semibold text-clox-orange shadow-sm transition'
+                    : 'rounded-clox-md border border-clox-border bg-clox-canvas px-3 py-1.5 text-xs font-medium text-clox-mute hover:border-clox-ink hover:text-clox-ink transition'
+                }
+                onClick={() =>
+                  setServiceRegions((prev) =>
+                    prev.includes(code)
+                      ? prev.length > 1
+                        ? prev.filter((c) => c !== code)
+                        : prev
+                      : [...prev, code],
+                  )
+                }
+              >
+                {code}
+              </button>
+            );
+          })}
+        </div>
+      </div>
       {dgMsg ? <Notice tone="success">{dgMsg}</Notice> : null}
       {formError || mutation.isError ? (
         <Notice tone="error">{formError ?? getErrorDetail(mutation.error)}</Notice>

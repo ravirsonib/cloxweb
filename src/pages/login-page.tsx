@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
@@ -27,11 +27,15 @@ type OtpForm = { code: string };
 export function LoginPage() {
   const { t } = useTranslation('common');
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const accessToken = useAuthStore((state) => state.accessToken);
   const role = useAuthStore((state) => state.role);
 
-  const emailFromQuery = (searchParams.get('email') ?? '').trim().toLowerCase();
+  const emailFromState =
+    ((location.state as { email?: string } | null)?.email ?? '').trim().toLowerCase();
+  const emailFromQuery =
+    (searchParams.get('email') ?? '').trim().toLowerCase() || emailFromState;
   const switchAccount = searchParams.get('switch') === '1';
   const accountStatus = searchParams.get('accountStatus');
   const accountStatusReason = (searchParams.get('reason') ?? '').trim();
@@ -90,9 +94,11 @@ export function LoginPage() {
         if (!cancelled) setSessionReady(true);
         return;
       }
+      const currentEmail = state.email?.trim().toLowerCase() ?? '';
+      const emailMismatch = Boolean(emailFromQuery && emailFromQuery !== currentEmail);
       const mismatch =
         safeNext != null && !roleCanAccessPath(state.role, safeNext);
-      if (switchAccount || mismatch) {
+      if (switchAccount || mismatch || emailMismatch) {
         await clearBrowserSession();
       }
       if (!cancelled) setSessionReady(true);
@@ -101,7 +107,7 @@ export function LoginPage() {
     return () => {
       cancelled = true;
     };
-  }, [switchAccount, safeNext]);
+  }, [switchAccount, safeNext, emailFromQuery]);
 
   const requestMutation = useMutation({
     mutationFn: (payload: EmailForm) => requestOtp({ email: payload.email.trim() }),

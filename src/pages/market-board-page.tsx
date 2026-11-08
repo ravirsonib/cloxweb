@@ -10,6 +10,7 @@ import {
   checkFleetDriversBid,
   getErrorDetail,
   getMarketBoard,
+  getVehicleClassesMeta,
   listCarrierDrivers,
   listCarrierVehicles,
   listTripExceptions,
@@ -129,6 +130,14 @@ export function MarketBoardPage() {
     staleTime: 5_000,
     refetchInterval: 10_000,
   });
+  const vehicleClassesMeta = useQuery({
+    queryKey: ['jobs', 'meta', 'vehicle-classes'],
+    queryFn: () => getVehicleClassesMeta(),
+    enabled: role === AppRole.TRANSPORT_COMPANY,
+    staleTime: 60_000,
+  });
+  const dynamicRanks = vehicleClassesMeta.data?.ranks;
+  const dynamicMaxChargeable = vehicleClassesMeta.data?.maxChargeableKg;
   const openExceptionsCount = useMemo(
     () =>
       (exceptionsQuery.data?.items ?? []).filter(
@@ -235,6 +244,8 @@ export function MarketBoardPage() {
             v.vehicleClass,
             selectedJob.minVehicleClass,
             selectedJob.chargeableWeightKg,
+            dynamicRanks,
+            dynamicMaxChargeable,
           ) &&
           (!selectedJob.requiresDg || Boolean(v.hasDg && v.dgDocumentId)),
       ) ?? null;
@@ -260,7 +271,7 @@ export function MarketBoardPage() {
         ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 50);
     return () => window.clearTimeout(t);
-  }, [selectedJob, selectableVehicles, selectableDrivers, form]);
+  }, [selectedJob, selectableVehicles, selectableDrivers, form, dynamicRanks, dynamicMaxChargeable]);
 
   const selectedVehicle = activeVehicles.find((v) => v.id === vehicleIdWatch);
   const selectedVehicleDgOk =
@@ -274,6 +285,8 @@ export function MarketBoardPage() {
       selectedVehicle.vehicleClass,
       selectedJob?.minVehicleClass,
       selectedJob?.chargeableWeightKg,
+      dynamicRanks,
+      dynamicMaxChargeable,
     );
   const selectedDriver = activeDrivers.find((d) => d.id === driverIdWatch);
   const driverEligible = !!selectedDriver && selectedDriver.bidAvailable !== false;
@@ -290,6 +303,8 @@ export function MarketBoardPage() {
           vehicle?.vehicleClass,
           selectedJob?.minVehicleClass,
           selectedJob?.chargeableWeightKg,
+          dynamicRanks,
+          dynamicMaxChargeable,
         )
       ) {
         throw new Error(t('market.errorVehicleUndersize'));
@@ -735,6 +750,8 @@ export function MarketBoardPage() {
                 v.vehicleClass,
                 selectedJob.minVehicleClass,
                 selectedJob.chargeableWeightKg,
+                dynamicRanks,
+                dynamicMaxChargeable,
               );
               const dgOk = !selectedJob.requiresDg || Boolean(v.hasDg && v.dgDocumentId);
               const busy = v.bidAvailable === false;

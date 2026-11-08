@@ -6,6 +6,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { getErrorDetail, peekCompanyInvite, registerCarrier } from '@/lib/api';
+import { clearBrowserSession } from '@/lib/auth-session';
 import { BrandLogo } from '@/components/brand-logo';
 import { Button, Field, Notice } from '@/components/ui';
 import { optionalPhoneSchema, requiredPhoneSchema } from '@/lib/validation';
@@ -65,6 +66,10 @@ export function CarrierRegisterPage() {
   });
 
   useEffect(() => {
+    void clearBrowserSession();
+  }, []);
+
+  useEffect(() => {
     if (!invitePeek.data) return;
     form.setValue('email', invitePeek.data.email);
     if (invitePeek.data.legalNameHint) {
@@ -73,8 +78,9 @@ export function CarrierRegisterPage() {
   }, [invitePeek.data, form]);
 
   const mutation = useMutation({
-    mutationFn: (values: Form) =>
-      registerCarrier({
+    mutationFn: async (values: Form) => {
+      await clearBrowserSession();
+      return registerCarrier({
         name: values.name.trim(),
         email: values.email.trim(),
         phone: values.phone.trim(),
@@ -82,9 +88,14 @@ export function CarrierRegisterPage() {
         alternatePhone: values.alternatePhone?.trim() || undefined,
         acceptedTerms: values.acceptedTerms,
         inviteToken,
-      }),
+      });
+    },
     onSuccess: (_data, values) => {
-      navigate('/login', { replace: true, state: { email: values.email.trim().toLowerCase() } });
+      const targetEmail = values.email.trim().toLowerCase();
+      navigate(`/login?switch=1&email=${encodeURIComponent(targetEmail)}`, {
+        replace: true,
+        state: { email: targetEmail },
+      });
     },
   });
 
@@ -188,7 +199,7 @@ export function CarrierRegisterPage() {
 
         <p className="mt-6 text-center text-sm text-clox-mute">
           {t('alreadyRegistered')}{' '}
-          <Link to="/login" className="font-semibold text-clox-orange hover:underline">
+          <Link to="/login?switch=1" className="font-semibold text-clox-orange hover:underline">
             {t('signIn')}
           </Link>
         </p>

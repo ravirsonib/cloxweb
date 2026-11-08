@@ -26,6 +26,7 @@ import {
   getErrorDetail,
   getSenderJob,
   getSenderOnboarding,
+  getVehicleClassesMeta,
   listSenderJobs,
   openDocumentContent,
   previewJobRoute,
@@ -1595,22 +1596,60 @@ function JobDraftForm({
     retry: false,
   });
 
+  const vehicleClassesMeta = useQuery({
+    queryKey: ['jobs', 'meta', 'vehicle-classes'],
+    queryFn: () => getVehicleClassesMeta(),
+    enabled: role === AppRole.SENDER,
+    staleTime: 60_000,
+  });
+
+  const vehicleSpecs = useMemo(() => {
+    const classes = vehicleClassesMeta.data?.classes;
+    if (!classes || classes.length === 0) return CLOX_VEHICLE_SPECS;
+    const defaultByCode = new Map<string, (typeof CLOX_VEHICLE_SPECS)[number]>(
+      CLOX_VEHICLE_SPECS.map((s) => [s.code, s]),
+    );
+    return [...classes]
+      .sort((a, b) => a.rank - b.rank)
+      .map((c) => {
+        const def = defaultByCode.get(c.code);
+        return {
+          code: c.code,
+          name: c.name || def?.name || c.code.replace(/_/g, ' '),
+          subTitle:
+            def?.subTitle ||
+            `Up to ${(c.maxChargeableWeightKg / 1000).toFixed(1)}t`,
+          rank: c.rank,
+          maxChargeableWeightKg: c.maxChargeableWeightKg,
+          maxLengthCm: c.maxLengthCm,
+          maxWidthCm: c.maxWidthCm,
+          maxHeightCm: c.maxHeightCm,
+          minLicence: c.minLicenceClass || def?.minLicence || 'C',
+        };
+      });
+  }, [vehicleClassesMeta.data?.classes]);
+
+  const vehicleRankMap = useMemo(
+    () => ({ ...VEHICLE_CLASS_RANK, ...(vehicleClassesMeta.data?.ranks ?? {}) }),
+    [vehicleClassesMeta.data?.ranks],
+  );
+
   useEffect(() => {
     if (!recommend.data?.recommendedVehicleClass) return;
     const current = form.getValues('minVehicleClass');
-    const recRank = VEHICLE_CLASS_RANK[recommend.data.recommendedVehicleClass] ?? 1;
-    const currentRank = current ? (VEHICLE_CLASS_RANK[current] ?? 0) : 0;
+    const recRank = vehicleRankMap[recommend.data.recommendedVehicleClass] ?? 1;
+    const currentRank = current ? (vehicleRankMap[current] ?? 0) : 0;
     if (!current || currentRank < recRank) {
       form.setValue('minVehicleClass', recommend.data.recommendedVehicleClass);
     }
-  }, [recommend.data?.recommendedVehicleClass, form]);
+  }, [recommend.data?.recommendedVehicleClass, form, vehicleRankMap]);
 
   const [vehicleFilter, setVehicleFilter] = useState<'suitable' | 'all'>('suitable');
   const suitableVehicleCount = useMemo(() => {
     const recCode = recommend.data?.recommendedVehicleClass;
-    const recRank = recCode ? (VEHICLE_CLASS_RANK[recCode] ?? 1) : 1;
+    const recRank = recCode ? (vehicleRankMap[recCode] ?? 1) : 1;
     const w = localChargeable ?? cargoForRecommend.deadWeightKg;
-    return CLOX_VEHICLE_SPECS.filter(
+    return vehicleSpecs.filter(
       (v) =>
         (w > 0 ? v.maxChargeableWeightKg >= w : true) &&
         (cargoForRecommend.lengthCm > 0 ? v.maxLengthCm >= cargoForRecommend.lengthCm : true) &&
@@ -1619,7 +1658,16 @@ function JobDraftForm({
         (recCode ? v.rank >= recRank : true),
     ).length;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- cargoForRecommend is derived from the watched fields below
-  }, [recommend.data?.recommendedVehicleClass, localChargeable, deadWeightKg, lengthCm, widthCm, heightCm]);
+  }, [
+    recommend.data?.recommendedVehicleClass,
+    localChargeable,
+    deadWeightKg,
+    lengthCm,
+    widthCm,
+    heightCm,
+    vehicleSpecs,
+    vehicleRankMap,
+  ]);
 
   const transitMinutes = useMemo(() => {
     if (routeEstimate?.durationMinutes && routeEstimate.durationMinutes > 0) {
@@ -2342,7 +2390,7 @@ function JobDraftForm({
                 {(
                   [
                     ['suitable', `Suitable (${suitableVehicleCount})`],
-                    ['all', `All (${CLOX_VEHICLE_SPECS.length})`],
+                    ['all', `All (${vehicleSpecs.length})`],
                   ] as const
                 ).map(([key, label]) => (
                   <button
@@ -2362,9 +2410,9 @@ function JobDraftForm({
               </div>
 
               <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {CLOX_VEHICLE_SPECS.map((v) => {
+                {vehicleSpecs.map((v) => {
                   const recommendedCode = recommend.data?.recommendedVehicleClass;
-                  const recRank = recommendedCode ? (VEHICLE_CLASS_RANK[recommendedCode] ?? 1) : 1;
+                  const recRank = recommendedCode ? (vehicleRankMap[recommendedCode] ?? 1) : 1;
                   const isRecommended = recommendedCode === v.code;
 
                   const weight = localChargeable ?? cargoForRecommend.deadWeightKg;

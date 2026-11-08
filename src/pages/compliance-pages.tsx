@@ -42,13 +42,10 @@ const COMPLIANCE_PAGE_SIZE = 10;
 
 export function ComplianceQueuePage() {
   const { t } = useTranslation('common');
-  const role = useAuthStore((s) => s.role);
   const [viewMode, setViewMode] = useDataViewMode('compliance', 'list');
-  const [status, setStatus] = useState('OPEN');
+  const [status, setStatus] = useState('');
   const [caseType, setCaseType] = useState('');
-  const [regionCode, setRegionCode] = useState(
-    role === AdminRole.SUPER_ADMIN ? '' : 'VIC',
-  );
+  const [regionCode, setRegionCode] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
 
@@ -588,8 +585,12 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
 
           const renderDoc = (d: ComplianceCaseDocument) => {
             const canView = d.status !== 'UPLOAD_PENDING';
-            const isDriverDoc = c.caseType === 'CARRIER_DRIVER_LICENCE' && Boolean(d.driverId);
-            const isVehicleDoc = c.caseType === 'CARRIER_FLEET_RWC' && Boolean(d.vehicleId);
+            const isDriverDoc =
+              (c.caseType === 'CARRIER_DRIVER_LICENCE' || c.caseType === 'CARRIER_KYB') &&
+              Boolean(d.driverId);
+            const isVehicleDoc =
+              (c.caseType === 'CARRIER_FLEET_RWC' || c.caseType === 'CARRIER_KYB') &&
+              Boolean(d.vehicleId);
             const canItemDecide = canDecide && (isDriverDoc || isVehicleDoc);
             const isPendingItem = d.status !== 'APPROVED' && d.status !== 'REJECTED';
 

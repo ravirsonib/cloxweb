@@ -23,6 +23,7 @@ import {
   getCarrierAssignments,
   getErrorDetail,
   getTripPod,
+  getVehicleClassesMeta,
   listCarrierDrivers,
   listCarrierExceptions,
   listCarrierVehicles,
@@ -253,6 +254,14 @@ export function CarrierAssignmentsPage() {
     refetchOnWindowFocus: true,
   });
 
+  const vehicleClassesMeta = useQuery({
+    queryKey: ['jobs', 'meta', 'vehicle-classes'],
+    queryFn: () => getVehicleClassesMeta(),
+    enabled: role === AppRole.TRANSPORT_COMPANY,
+    staleTime: 60_000,
+  });
+  const dynamicRanks = vehicleClassesMeta.data?.ranks;
+
   const reassignMutation = useMutation({
     mutationFn: () =>
       reassignCarrierAssignment(reassignTarget!.id, {
@@ -372,6 +381,7 @@ export function CarrierAssignmentsPage() {
     isVehicleClassAdequate(
       vehicleOptions.find((v) => v.id === vehicleId)?.vehicleClass,
       reassignTarget.job.minVehicleClass,
+      dynamicRanks,
     );
 
   const openReassign = (a: CarrierAssignment) => {
@@ -580,6 +590,7 @@ export function CarrierAssignmentsPage() {
                 const ok = isVehicleClassAdequate(
                   v.vehicleClass,
                   reassignTarget.job.minVehicleClass,
+                  dynamicRanks,
                 );
                 return (
                   <option key={v.id} value={v.id} disabled={!ok}>

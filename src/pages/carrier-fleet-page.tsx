@@ -297,7 +297,7 @@ export function CarrierFleetPage() {
             capabilities: mergedCaps,
             serviceRegionCodes: companyQuery.data?.company.serviceRegionCodes?.length
               ? companyQuery.data.company.serviceRegionCodes
-              : ['VIC'],
+              : [companyQuery.data?.company.homeRegionCode || 'VIC'],
           });
         } catch {
           // Non-blocking best-effort sync
@@ -332,7 +332,7 @@ export function CarrierFleetPage() {
     mutationFn: async (capabilities: string[]) => {
       const serviceRegionCodes = companyQuery.data?.company.serviceRegionCodes?.length
         ? companyQuery.data.company.serviceRegionCodes
-        : ['VIC'];
+        : [companyQuery.data?.company.homeRegionCode || 'VIC'];
       return updateCarrierCapabilities({ capabilities, serviceRegionCodes });
     },
     onSuccess: async () => {

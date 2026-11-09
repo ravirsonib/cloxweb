@@ -45,6 +45,105 @@ export const AU_STATE_OPTIONS: ReadonlyArray<{
   label: `${code} — ${AU_STATE_NAMES[code]}`,
 }));
 
+export type StateStopDefaults = {
+  pickupAddressLine: string;
+  pickupSuburb: string;
+  pickupPostcode: string;
+  dropoffAddressLine: string;
+  dropoffSuburb: string;
+  dropoffPostcode: string;
+  lat: number;
+  lng: number;
+};
+
+export const STATE_STOP_DEFAULTS: Record<string, StateStopDefaults> = {
+  VIC: {
+    pickupAddressLine: '1 Collins St',
+    pickupSuburb: 'Melbourne',
+    pickupPostcode: '3000',
+    dropoffAddressLine: '100 Airport Dr',
+    dropoffSuburb: 'Tullamarine',
+    dropoffPostcode: '3045',
+    lat: -37.8136,
+    lng: 144.9631,
+  },
+  NSW: {
+    pickupAddressLine: '1 Martin Pl',
+    pickupSuburb: 'Sydney',
+    pickupPostcode: '2000',
+    dropoffAddressLine: '10 Keith Smith Ave',
+    dropoffSuburb: 'Mascot',
+    dropoffPostcode: '2020',
+    lat: -33.8688,
+    lng: 151.2093,
+  },
+  QLD: {
+    pickupAddressLine: '100 Queen St',
+    pickupSuburb: 'Brisbane City',
+    pickupPostcode: '4000',
+    dropoffAddressLine: '11 The Circuit',
+    dropoffSuburb: 'Brisbane Airport',
+    dropoffPostcode: '4008',
+    lat: -27.4705,
+    lng: 153.026,
+  },
+  SA: {
+    pickupAddressLine: '1 King William St',
+    pickupSuburb: 'Adelaide',
+    pickupPostcode: '5000',
+    dropoffAddressLine: '1 James Schofield Dr',
+    dropoffSuburb: 'Adelaide Airport',
+    dropoffPostcode: '5950',
+    lat: -34.9285,
+    lng: 138.6007,
+  },
+  WA: {
+    pickupAddressLine: '100 St Georges Tce',
+    pickupSuburb: 'Perth',
+    pickupPostcode: '6000',
+    dropoffAddressLine: '2 George Wiencke Dr',
+    dropoffSuburb: 'Perth Airport',
+    dropoffPostcode: '6105',
+    lat: -31.9523,
+    lng: 115.8613,
+  },
+  TAS: {
+    pickupAddressLine: '1 Elizabeth St',
+    pickupSuburb: 'Hobart',
+    pickupPostcode: '7000',
+    dropoffAddressLine: '60 Holyman Ave',
+    dropoffSuburb: 'Cambridge',
+    dropoffPostcode: '7170',
+    lat: -42.8821,
+    lng: 147.3272,
+  },
+  NT: {
+    pickupAddressLine: '1 Smith St',
+    pickupSuburb: 'Darwin City',
+    pickupPostcode: '0800',
+    dropoffAddressLine: '1 Fenton Ct',
+    dropoffSuburb: 'Eaton',
+    dropoffPostcode: '0820',
+    lat: -12.4634,
+    lng: 130.8456,
+  },
+  ACT: {
+    pickupAddressLine: '1 London Cct',
+    pickupSuburb: 'Canberra',
+    pickupPostcode: '2601',
+    dropoffAddressLine: '21 Brindabella Cct',
+    dropoffSuburb: 'Pialligo',
+    dropoffPostcode: '2609',
+    lat: -35.2809,
+    lng: 149.13,
+  },
+};
+
+export function getStateStopDefaults(stateCode?: string | null): StateStopDefaults {
+  const normalized = String(stateCode ?? '').trim().toUpperCase();
+  return STATE_STOP_DEFAULTS[normalized] ?? STATE_STOP_DEFAULTS.VIC!;
+}
+
 const AU_STATE_POSTCODE_RANGES: Record<string, ReadonlyArray<[number, number]>> = {
   NSW: [
     [1000, 2599],

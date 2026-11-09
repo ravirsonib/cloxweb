@@ -26,6 +26,7 @@ import {
   getErrorDetail,
   getSenderJob,
   getSenderOnboarding,
+  getRegionsMeta,
   getVehicleClassesMeta,
   listSenderJobs,
   openDocumentContent,
@@ -83,9 +84,11 @@ import {
   MAX_JOB_HEIGHT_CM,
   MAX_JOB_LENGTH_CM,
   MAX_JOB_WIDTH_CM,
+  STATE_STOP_DEFAULTS,
   VEHICLE_CLASS_RANK,
   auPostcodeErrorForState,
   chargeableWeightKg,
+  getStateStopDefaults,
   isChargeableOverLimit,
   isValidAuPostcodeForState,
   optionalPhoneSchema,
@@ -539,13 +542,15 @@ function buildStopsFromForm(
   >,
 ) {
   const pickupState = values.pickupState?.trim() || 'VIC';
-  const pickupPostcode = values.pickupPostcode?.trim() || '3000';
-  const pickupSuburb = values.pickupSuburb?.trim() || 'Melbourne';
+  const pickupDefaults = getStateStopDefaults(pickupState);
+  const pickupPostcode = values.pickupPostcode?.trim() || pickupDefaults.pickupPostcode;
+  const pickupSuburb = values.pickupSuburb?.trim() || pickupDefaults.pickupSuburb;
   const pickupCoords = computeStopCoords(pickupState, pickupPostcode, pickupSuburb, false);
 
-  const dropoffState = values.dropoffState?.trim() || 'VIC';
-  const dropoffPostcode = values.dropoffPostcode?.trim() || '3045';
-  const dropoffSuburb = values.dropoffSuburb?.trim() || 'Tullamarine';
+  const dropoffState = values.dropoffState?.trim() || pickupState;
+  const dropoffDefaults = getStateStopDefaults(dropoffState);
+  const dropoffPostcode = values.dropoffPostcode?.trim() || dropoffDefaults.dropoffPostcode;
+  const dropoffSuburb = values.dropoffSuburb?.trim() || dropoffDefaults.dropoffSuburb;
   const dropoffCoords = computeStopCoords(dropoffState, dropoffPostcode, dropoffSuburb, true);
 
   const rawStops: Array<{
@@ -561,7 +566,7 @@ function buildStopsFromForm(
   }> = [
     {
       stopType: 'PICKUP',
-      addressLine: values.pickupAddressLine?.trim() || '1 Collins St',
+      addressLine: values.pickupAddressLine?.trim() || pickupDefaults.pickupAddressLine,
       suburb: pickupSuburb,
       state: pickupState,
       postcode: pickupPostcode,
@@ -574,8 +579,9 @@ function buildStopsFromForm(
     values.extraPickups.forEach((p, idx) => {
       if (!p.addressLine?.trim() && !p.suburb?.trim()) return;
       const pState = p.state?.trim() || pickupState;
-      const pPostcode = p.postcode?.trim() || '3000';
-      const pSuburb = p.suburb?.trim() || pickupSuburb;
+      const pDefaults = getStateStopDefaults(pState);
+      const pPostcode = p.postcode?.trim() || pDefaults.pickupPostcode;
+      const pSuburb = p.suburb?.trim() || pDefaults.pickupSuburb;
       const pCoords = computeStopCoords(pState, pPostcode, pSuburb, false);
       const jitter = (idx + 1) * 0.02;
       rawStops.push({
@@ -592,7 +598,7 @@ function buildStopsFromForm(
 
   rawStops.push({
     stopType: 'DROPOFF',
-    addressLine: values.dropoffAddressLine?.trim() || '100 Airport Dr',
+    addressLine: values.dropoffAddressLine?.trim() || dropoffDefaults.dropoffAddressLine,
     suburb: dropoffSuburb,
     state: dropoffState,
     postcode: dropoffPostcode,
@@ -606,8 +612,9 @@ function buildStopsFromForm(
     values.extraDropoffs.forEach((d, idx) => {
       if (!d.addressLine?.trim() && !d.suburb?.trim()) return;
       const dState = d.state?.trim() || dropoffState;
-      const dPostcode = d.postcode?.trim() || '3000';
-      const dSuburb = d.suburb?.trim() || dropoffSuburb;
+      const dDefaults = getStateStopDefaults(dState);
+      const dPostcode = d.postcode?.trim() || dDefaults.dropoffPostcode;
+      const dSuburb = d.suburb?.trim() || dDefaults.dropoffSuburb;
       const dCoords = computeStopCoords(dState, dPostcode, dSuburb, true);
       const jitter = (idx + 1) * 0.025;
       rawStops.push({
@@ -1080,8 +1087,25 @@ function JobDraftForm({
     queryFn: getSenderOnboarding,
     enabled: role === AppRole.SENDER,
   });
+  const regionsMeta = useQuery({
+    queryKey: ['jobs', 'meta', 'regions'],
+    queryFn: getRegionsMeta,
+    enabled: role === AppRole.SENDER,
+    staleTime: 60_000,
+  });
   const senderCompanyId = senderOnboarding.data?.company.id;
   const company = senderOnboarding.data?.company;
+  const enabledStateCodes = useMemo(() => {
+    const codes = regionsMeta.data?.enabledCodes;
+    return codes && codes.length > 0 ? new Set(codes) : null;
+  }, [regionsMeta.data?.enabledCodes]);
+  const senderDefaultState = useMemo(() => {
+    const candidate = (company?.homeRegionCode || company?.invoiceState || '').trim().toUpperCase();
+    if (candidate && (!enabledStateCodes || enabledStateCodes.has(candidate))) {
+      return candidate;
+    }
+    return regionsMeta.data?.enabledCodes?.[0] || candidate || 'VIC';
+  }, [company?.homeRegionCode, company?.invoiceState, enabledStateCodes, regionsMeta.data?.enabledCodes]);
   const hasAbn = Boolean(company?.abn);
   const formattedCompanyAbn = useMemo(() => formatAbn(company?.abn), [company?.abn]);
 
@@ -1262,7 +1286,7 @@ function JobDraftForm({
               }),
             });
           }
-          const pState = p.state?.trim() || 'VIC';
+          const pState = p.state?.trim() || values.pickupState?.trim() || senderDefaultState;
           if (!isValidAuPostcodeForState(p.postcode, pState)) {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
@@ -1291,7 +1315,7 @@ function JobDraftForm({
               }),
             });
           }
-          const dState = d.state?.trim() || 'VIC';
+          const dState = d.state?.trim() || values.dropoffState?.trim() || senderDefaultState;
           if (!isValidAuPostcodeForState(d.postcode, dState)) {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
@@ -1313,20 +1337,21 @@ function JobDraftForm({
       }
     });
 
+  const initialStopDefaults = getStateStopDefaults(senderDefaultState);
   const form = useForm<JobCreateForm>({
     resolver: zodResolver(schema) as any,
     defaultValues: {
       pricingModel: 'PER_KM',
       distanceKm: undefined,
-      pickupAddressLine: '1 Collins St',
-      pickupSuburb: 'Melbourne',
-      pickupState: 'VIC',
-      pickupPostcode: '3000',
+      pickupAddressLine: initialStopDefaults.pickupAddressLine,
+      pickupSuburb: initialStopDefaults.pickupSuburb,
+      pickupState: senderDefaultState,
+      pickupPostcode: initialStopDefaults.pickupPostcode,
       extraPickups: [],
-      dropoffAddressLine: '100 Airport Dr',
-      dropoffSuburb: 'Tullamarine',
-      dropoffState: 'VIC',
-      dropoffPostcode: '3045',
+      dropoffAddressLine: initialStopDefaults.dropoffAddressLine,
+      dropoffSuburb: initialStopDefaults.dropoffSuburb,
+      dropoffState: senderDefaultState,
+      dropoffPostcode: initialStopDefaults.dropoffPostcode,
       extraDropoffs: [],
       deadWeightKg: 800,
       lengthCm: 120,
@@ -1382,18 +1407,22 @@ function JobDraftForm({
     const savedKm = Number(existing.data.route.distanceKm);
     const pickupStops = (existing.data.stops ?? []).filter((s) => s.stopType === 'PICKUP');
     const pickupStop = pickupStops[0];
+    const resolvedPickupState = pickupStop?.state || senderDefaultState;
+    const pickupDefaults = getStateStopDefaults(resolvedPickupState);
     const remainingPickups = pickupStops.slice(1).map((s) => ({
       addressLine: s.addressLine || '',
       suburb: s.suburb || '',
-      state: s.state || 'VIC',
+      state: s.state || resolvedPickupState,
       postcode: s.postcode || '',
     }));
     const dropoffStops = (existing.data.stops ?? []).filter((s) => s.stopType === 'DROPOFF');
     const drop1 = dropoffStops[0];
+    const resolvedDropoffState = drop1?.state || resolvedPickupState;
+    const dropoffDefaults = getStateStopDefaults(resolvedDropoffState);
     const remainingDropoffs = dropoffStops.slice(1).map((s) => ({
       addressLine: s.addressLine || '',
       suburb: s.suburb || '',
-      state: s.state || 'VIC',
+      state: s.state || resolvedDropoffState,
       postcode: s.postcode || '',
       receiverName: s.receiverName || '',
       receiverEmail: s.receiverEmail || '',
@@ -1406,15 +1435,15 @@ function JobDraftForm({
     form.reset({
       pricingModel: existing.data.pricingModel === 'HOURLY' ? 'HOURLY' : 'PER_KM',
       distanceKm: Number.isFinite(savedKm) && savedKm > 0 ? savedKm : undefined,
-      pickupAddressLine: pickupStop?.addressLine || '1 Collins St',
-      pickupSuburb: pickupStop?.suburb || 'Melbourne',
-      pickupState: pickupStop?.state || 'VIC',
-      pickupPostcode: pickupStop?.postcode || '3000',
+      pickupAddressLine: pickupStop?.addressLine || pickupDefaults.pickupAddressLine,
+      pickupSuburb: pickupStop?.suburb || pickupDefaults.pickupSuburb,
+      pickupState: resolvedPickupState,
+      pickupPostcode: pickupStop?.postcode || pickupDefaults.pickupPostcode,
       extraPickups: remainingPickups,
-      dropoffAddressLine: drop1?.addressLine || '100 Airport Dr',
-      dropoffSuburb: drop1?.suburb || 'Tullamarine',
-      dropoffState: drop1?.state || 'VIC',
-      dropoffPostcode: drop1?.postcode || '3045',
+      dropoffAddressLine: drop1?.addressLine || dropoffDefaults.dropoffAddressLine,
+      dropoffSuburb: drop1?.suburb || dropoffDefaults.dropoffSuburb,
+      dropoffState: resolvedDropoffState,
+      dropoffPostcode: drop1?.postcode || dropoffDefaults.dropoffPostcode,
       extraDropoffs: remainingDropoffs,
       deadWeightKg: Number(existing.data.deadWeightKg) || 800,
       lengthCm: Number(existing.data.lengthCm) || 120,
@@ -1474,6 +1503,71 @@ function JobDraftForm({
     extraPickups: (extraPickups ?? []).map((p) => [p.state, p.postcode, p.suburb, p.addressLine]),
     extraDropoffs: (extraDropoffs ?? []).map((d) => [d.state, d.postcode, d.suburb, d.addressLine]),
   });
+
+  useEffect(() => {
+    if (isEdit) return;
+    const isPresetPickup = Object.values(STATE_STOP_DEFAULTS).some(
+      (d) =>
+        d.pickupAddressLine === form.getValues('pickupAddressLine') &&
+        d.pickupSuburb === form.getValues('pickupSuburb') &&
+        d.pickupPostcode === form.getValues('pickupPostcode'),
+    );
+    if (!form.formState.dirtyFields.pickupState && isPresetPickup) {
+      const def = getStateStopDefaults(senderDefaultState);
+      form.setValue('pickupState', senderDefaultState);
+      form.setValue('pickupAddressLine', def.pickupAddressLine);
+      form.setValue('pickupSuburb', def.pickupSuburb);
+      form.setValue('pickupPostcode', def.pickupPostcode);
+    }
+    const isPresetDropoff = Object.values(STATE_STOP_DEFAULTS).some(
+      (d) =>
+        d.dropoffAddressLine === form.getValues('dropoffAddressLine') &&
+        d.dropoffSuburb === form.getValues('dropoffSuburb') &&
+        d.dropoffPostcode === form.getValues('dropoffPostcode'),
+    );
+    if (!form.formState.dirtyFields.dropoffState && isPresetDropoff) {
+      const def = getStateStopDefaults(senderDefaultState);
+      form.setValue('dropoffState', senderDefaultState);
+      form.setValue('dropoffAddressLine', def.dropoffAddressLine);
+      form.setValue('dropoffSuburb', def.dropoffSuburb);
+      form.setValue('dropoffPostcode', def.dropoffPostcode);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync initial default state when sender profile or regions load
+  }, [senderDefaultState, isEdit]);
+
+  useEffect(() => {
+    if (isEdit || !pickupState) return;
+    const isPresetPickup = Object.values(STATE_STOP_DEFAULTS).some(
+      (d) =>
+        d.pickupAddressLine === form.getValues('pickupAddressLine') &&
+        d.pickupSuburb === form.getValues('pickupSuburb') &&
+        d.pickupPostcode === form.getValues('pickupPostcode'),
+    );
+    if (isPresetPickup) {
+      const def = getStateStopDefaults(pickupState);
+      form.setValue('pickupAddressLine', def.pickupAddressLine, { shouldValidate: true });
+      form.setValue('pickupSuburb', def.pickupSuburb, { shouldValidate: true });
+      form.setValue('pickupPostcode', def.pickupPostcode, { shouldValidate: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- update untouched default pickup fields when state changes
+  }, [pickupState, isEdit]);
+
+  useEffect(() => {
+    if (isEdit || !dropoffState) return;
+    const isPresetDropoff = Object.values(STATE_STOP_DEFAULTS).some(
+      (d) =>
+        d.dropoffAddressLine === form.getValues('dropoffAddressLine') &&
+        d.dropoffSuburb === form.getValues('dropoffSuburb') &&
+        d.dropoffPostcode === form.getValues('dropoffPostcode'),
+    );
+    if (isPresetDropoff) {
+      const def = getStateStopDefaults(dropoffState);
+      form.setValue('dropoffAddressLine', def.dropoffAddressLine, { shouldValidate: true });
+      form.setValue('dropoffSuburb', def.dropoffSuburb, { shouldValidate: true });
+      form.setValue('dropoffPostcode', def.dropoffPostcode, { shouldValidate: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- update untouched default dropoff fields when state changes
+  }, [dropoffState, isEdit]);
 
   useEffect(() => {
     if (role !== AppRole.SENDER) return;
@@ -1870,7 +1964,7 @@ function JobDraftForm({
               <Field
                 label={t('jobs.addressLineLabel', { defaultValue: 'Street Address' })}
                 required
-                placeholder="1 Collins St"
+                placeholder={getStateStopDefaults(pickupState || senderDefaultState).pickupAddressLine}
                 error={form.formState.errors.pickupAddressLine?.message}
                 {...form.register('pickupAddressLine')}
               />
@@ -1878,7 +1972,7 @@ function JobDraftForm({
                 <Field
                   label={t('jobs.suburbLabel', { defaultValue: 'Suburb' })}
                   required
-                  placeholder="Melbourne"
+                  placeholder={getStateStopDefaults(pickupState || senderDefaultState).pickupSuburb}
                   error={form.formState.errors.pickupSuburb?.message}
                   {...form.register('pickupSuburb')}
                 />
@@ -1889,18 +1983,25 @@ function JobDraftForm({
                   value={pickupState}
                   {...form.register('pickupState')}
                 >
-                  {AU_STATE_OPTIONS.map((st) => (
-                    <option key={st.code} value={st.code}>
-                      {st.label}
-                    </option>
-                  ))}
+                  {AU_STATE_OPTIONS.map((st) => {
+                    const isDisabled =
+                      enabledStateCodes != null &&
+                      !enabledStateCodes.has(st.code) &&
+                      pickupState !== st.code;
+                    return (
+                      <option key={st.code} value={st.code} disabled={isDisabled}>
+                        {st.label}
+                        {isDisabled ? ' (Not active)' : ''}
+                      </option>
+                    );
+                  })}
                 </Select>
                 <Field
                   label={t('jobs.postcodeLabel', { defaultValue: 'Postcode' })}
                   required
                   inputMode="numeric"
                   maxLength={4}
-                  placeholder="3000"
+                  placeholder={getStateStopDefaults(pickupState || senderDefaultState).pickupPostcode}
                   error={form.formState.errors.pickupPostcode?.message}
                   {...form.register('pickupPostcode')}
                 />
@@ -1909,66 +2010,77 @@ function JobDraftForm({
 
             {pricingModel === 'HOURLY' ? (
               <div className="mb-4 space-y-3">
-                {extraPickupsArray.fields.map((field, index) => (
-                  <div
-                    key={field.id}
-                    className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-4"
-                  >
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                      <p className="font-display text-sm font-semibold text-clox-ink">
-                        {t('jobs.additionalPickupTitle', {
-                          defaultValue: `Pickup Location #${index + 2}`,
-                          num: index + 2,
-                        })}
-                      </p>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="text-xs text-[var(--status-danger)]"
-                        onClick={() => extraPickupsArray.remove(index)}
-                      >
-                        {t('jobs.removeStop', { defaultValue: 'Remove Pickup' })}
-                      </Button>
-                    </div>
-                    <Field
-                      label={t('jobs.addressLineLabel', { defaultValue: 'Street Address' })}
-                      required
-                      placeholder="50 Bourke St"
-                      error={form.formState.errors.extraPickups?.[index]?.addressLine?.message}
-                      {...form.register(`extraPickups.${index}.addressLine` as const)}
-                    />
-                    <div className="grid grid-cols-1 gap-0 sm:grid-cols-3 sm:gap-2">
+                {extraPickupsArray.fields.map((field, index) => {
+                  const extraState = extraPickups?.[index]?.state || pickupState || senderDefaultState;
+                  const extraDefaults = getStateStopDefaults(extraState);
+                  return (
+                    <div
+                      key={field.id}
+                      className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-4"
+                    >
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-display text-sm font-semibold text-clox-ink">
+                          {t('jobs.additionalPickupTitle', {
+                            defaultValue: `Pickup Location #${index + 2}`,
+                            num: index + 2,
+                          })}
+                        </p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="text-xs text-[var(--status-danger)]"
+                          onClick={() => extraPickupsArray.remove(index)}
+                        >
+                          {t('jobs.removeStop', { defaultValue: 'Remove Pickup' })}
+                        </Button>
+                      </div>
                       <Field
-                        label={t('jobs.suburbLabel', { defaultValue: 'Suburb' })}
+                        label={t('jobs.addressLineLabel', { defaultValue: 'Street Address' })}
                         required
-                        placeholder="Port Melbourne"
-                        error={form.formState.errors.extraPickups?.[index]?.suburb?.message}
-                        {...form.register(`extraPickups.${index}.suburb` as const)}
+                        placeholder={extraDefaults.pickupAddressLine}
+                        error={form.formState.errors.extraPickups?.[index]?.addressLine?.message}
+                        {...form.register(`extraPickups.${index}.addressLine` as const)}
                       />
-                      <Select
-                        label={t('jobs.stateLabel', { defaultValue: 'State' })}
-                        value={extraPickups?.[index]?.state ?? 'VIC'}
-                        error={form.formState.errors.extraPickups?.[index]?.state?.message}
-                        {...form.register(`extraPickups.${index}.state` as const)}
-                      >
-                        {AU_STATE_OPTIONS.map((st) => (
-                          <option key={st.code} value={st.code}>
-                            {st.label}
-                          </option>
-                        ))}
-                      </Select>
-                      <Field
-                        label={t('jobs.postcodeLabel', { defaultValue: 'Postcode' })}
-                        required
-                        inputMode="numeric"
-                        maxLength={4}
-                        placeholder="3207"
-                        error={form.formState.errors.extraPickups?.[index]?.postcode?.message}
-                        {...form.register(`extraPickups.${index}.postcode` as const)}
-                      />
+                      <div className="grid grid-cols-1 gap-0 sm:grid-cols-3 sm:gap-2">
+                        <Field
+                          label={t('jobs.suburbLabel', { defaultValue: 'Suburb' })}
+                          required
+                          placeholder={extraDefaults.pickupSuburb}
+                          error={form.formState.errors.extraPickups?.[index]?.suburb?.message}
+                          {...form.register(`extraPickups.${index}.suburb` as const)}
+                        />
+                        <Select
+                          label={t('jobs.stateLabel', { defaultValue: 'State' })}
+                          value={extraState}
+                          error={form.formState.errors.extraPickups?.[index]?.state?.message}
+                          {...form.register(`extraPickups.${index}.state` as const)}
+                        >
+                          {AU_STATE_OPTIONS.map((st) => {
+                            const isDisabled =
+                              enabledStateCodes != null &&
+                              !enabledStateCodes.has(st.code) &&
+                              extraState !== st.code;
+                            return (
+                              <option key={st.code} value={st.code} disabled={isDisabled}>
+                                {st.label}
+                                {isDisabled ? ' (Not active)' : ''}
+                              </option>
+                            );
+                          })}
+                        </Select>
+                        <Field
+                          label={t('jobs.postcodeLabel', { defaultValue: 'Postcode' })}
+                          required
+                          inputMode="numeric"
+                          maxLength={4}
+                          placeholder={extraDefaults.pickupPostcode}
+                          error={form.formState.errors.extraPickups?.[index]?.postcode?.message}
+                          {...form.register(`extraPickups.${index}.postcode` as const)}
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 <div>
                   <Button
                     type="button"
@@ -1977,7 +2089,7 @@ function JobDraftForm({
                       extraPickupsArray.append({
                         addressLine: '',
                         suburb: '',
-                        state: pickupState || 'VIC',
+                        state: pickupState || senderDefaultState,
                         postcode: '',
                       })
                     }
@@ -1998,7 +2110,7 @@ function JobDraftForm({
               <Field
                 label={t('jobs.addressLineLabel', { defaultValue: 'Street Address' })}
                 required
-                placeholder="100 Airport Dr"
+                placeholder={getStateStopDefaults(dropoffState || senderDefaultState).dropoffAddressLine}
                 error={form.formState.errors.dropoffAddressLine?.message}
                 {...form.register('dropoffAddressLine')}
               />
@@ -2006,7 +2118,7 @@ function JobDraftForm({
                 <Field
                   label={t('jobs.suburbLabel', { defaultValue: 'Suburb' })}
                   required
-                  placeholder="Tullamarine"
+                  placeholder={getStateStopDefaults(dropoffState || senderDefaultState).dropoffSuburb}
                   error={form.formState.errors.dropoffSuburb?.message}
                   {...form.register('dropoffSuburb')}
                 />
@@ -2017,18 +2129,25 @@ function JobDraftForm({
                   value={dropoffState}
                   {...form.register('dropoffState')}
                 >
-                  {AU_STATE_OPTIONS.map((st) => (
-                    <option key={st.code} value={st.code}>
-                      {st.label}
-                    </option>
-                  ))}
+                  {AU_STATE_OPTIONS.map((st) => {
+                    const isDisabled =
+                      enabledStateCodes != null &&
+                      !enabledStateCodes.has(st.code) &&
+                      dropoffState !== st.code;
+                    return (
+                      <option key={st.code} value={st.code} disabled={isDisabled}>
+                        {st.label}
+                        {isDisabled ? ' (Not active)' : ''}
+                      </option>
+                    );
+                  })}
                 </Select>
                 <Field
                   label={t('jobs.postcodeLabel', { defaultValue: 'Postcode' })}
                   required
                   inputMode="numeric"
                   maxLength={4}
-                  placeholder="3045"
+                  placeholder={getStateStopDefaults(dropoffState || senderDefaultState).dropoffPostcode}
                   error={form.formState.errors.dropoffPostcode?.message}
                   {...form.register('dropoffPostcode')}
                 />
@@ -2037,85 +2156,96 @@ function JobDraftForm({
 
             {pricingModel === 'HOURLY' ? (
               <div className="mb-4 space-y-3">
-                {extraDropoffsArray.fields.map((field, index) => (
-                  <div
-                    key={field.id}
-                    className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-4"
-                  >
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                      <p className="font-display text-sm font-semibold text-clox-ink">
-                        {t('jobs.additionalDropoffTitle', {
-                          defaultValue: `Dropoff Location #${index + 2}`,
-                          num: index + 2,
-                        })}
-                      </p>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="text-xs text-[var(--status-danger)]"
-                        onClick={() => extraDropoffsArray.remove(index)}
-                      >
-                        {t('jobs.removeDropoffStop', { defaultValue: 'Remove Dropoff' })}
-                      </Button>
-                    </div>
-                    <Field
-                      label={t('jobs.addressLineLabel', { defaultValue: 'Street Address' })}
-                      required
-                      placeholder="250 Flinders St"
-                      error={form.formState.errors.extraDropoffs?.[index]?.addressLine?.message}
-                      {...form.register(`extraDropoffs.${index}.addressLine` as const)}
-                    />
-                    <div className="grid grid-cols-1 gap-0 sm:grid-cols-3 sm:gap-2">
+                {extraDropoffsArray.fields.map((field, index) => {
+                  const extraDropState = extraDropoffs?.[index]?.state || dropoffState || senderDefaultState;
+                  const extraDropDefaults = getStateStopDefaults(extraDropState);
+                  return (
+                    <div
+                      key={field.id}
+                      className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-4"
+                    >
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-display text-sm font-semibold text-clox-ink">
+                          {t('jobs.additionalDropoffTitle', {
+                            defaultValue: `Dropoff Location #${index + 2}`,
+                            num: index + 2,
+                          })}
+                        </p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="text-xs text-[var(--status-danger)]"
+                          onClick={() => extraDropoffsArray.remove(index)}
+                        >
+                          {t('jobs.removeDropoffStop', { defaultValue: 'Remove Dropoff' })}
+                        </Button>
+                      </div>
                       <Field
-                        label={t('jobs.suburbLabel', { defaultValue: 'Suburb' })}
+                        label={t('jobs.addressLineLabel', { defaultValue: 'Street Address' })}
                         required
-                        placeholder="Docklands"
-                        error={form.formState.errors.extraDropoffs?.[index]?.suburb?.message}
-                        {...form.register(`extraDropoffs.${index}.suburb` as const)}
+                        placeholder={extraDropDefaults.dropoffAddressLine}
+                        error={form.formState.errors.extraDropoffs?.[index]?.addressLine?.message}
+                        {...form.register(`extraDropoffs.${index}.addressLine` as const)}
                       />
-                      <Select
-                        label={t('jobs.stateLabel', { defaultValue: 'State' })}
-                        value={extraDropoffs?.[index]?.state ?? 'VIC'}
-                        error={form.formState.errors.extraDropoffs?.[index]?.state?.message}
-                        {...form.register(`extraDropoffs.${index}.state` as const)}
-                      >
-                        {AU_STATE_OPTIONS.map((st) => (
-                          <option key={st.code} value={st.code}>
-                            {st.label}
-                          </option>
-                        ))}
-                      </Select>
-                      <Field
-                        label={t('jobs.postcodeLabel', { defaultValue: 'Postcode' })}
-                        required
-                        inputMode="numeric"
-                        maxLength={4}
-                        placeholder="3008"
-                        error={form.formState.errors.extraDropoffs?.[index]?.postcode?.message}
-                        {...form.register(`extraDropoffs.${index}.postcode` as const)}
-                      />
+                      <div className="grid grid-cols-1 gap-0 sm:grid-cols-3 sm:gap-2">
+                        <Field
+                          label={t('jobs.suburbLabel', { defaultValue: 'Suburb' })}
+                          required
+                          placeholder={extraDropDefaults.dropoffSuburb}
+                          error={form.formState.errors.extraDropoffs?.[index]?.suburb?.message}
+                          {...form.register(`extraDropoffs.${index}.suburb` as const)}
+                        />
+                        <Select
+                          label={t('jobs.stateLabel', { defaultValue: 'State' })}
+                          value={extraDropState}
+                          error={form.formState.errors.extraDropoffs?.[index]?.state?.message}
+                          {...form.register(`extraDropoffs.${index}.state` as const)}
+                        >
+                          {AU_STATE_OPTIONS.map((st) => {
+                            const isDisabled =
+                              enabledStateCodes != null &&
+                              !enabledStateCodes.has(st.code) &&
+                              extraDropState !== st.code;
+                            return (
+                              <option key={st.code} value={st.code} disabled={isDisabled}>
+                                {st.label}
+                                {isDisabled ? ' (Not active)' : ''}
+                              </option>
+                            );
+                          })}
+                        </Select>
+                        <Field
+                          label={t('jobs.postcodeLabel', { defaultValue: 'Postcode' })}
+                          required
+                          inputMode="numeric"
+                          maxLength={4}
+                          placeholder={extraDropDefaults.dropoffPostcode}
+                          error={form.formState.errors.extraDropoffs?.[index]?.postcode?.message}
+                          {...form.register(`extraDropoffs.${index}.postcode` as const)}
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 gap-0 sm:grid-cols-2 sm:gap-2">
+                        <Field
+                          label={t('jobs.dropoff2ReceiverNameLabel', {
+                            defaultValue: 'Stop Receiver Name (optional — defaults to primary)',
+                          })}
+                          placeholder={t('jobs.placeholderReceiverName')}
+                          error={form.formState.errors.extraDropoffs?.[index]?.receiverName?.message}
+                          {...form.register(`extraDropoffs.${index}.receiverName` as const)}
+                        />
+                        <Field
+                          type="email"
+                          label={t('jobs.dropoff2ReceiverEmailLabel', {
+                            defaultValue: 'Stop Receiver Email (optional — defaults to primary)',
+                          })}
+                          placeholder={t('jobs.placeholderReceiverEmail')}
+                          error={form.formState.errors.extraDropoffs?.[index]?.receiverEmail?.message}
+                          {...form.register(`extraDropoffs.${index}.receiverEmail` as const)}
+                        />
+                      </div>
                     </div>
-                    <div className="grid grid-cols-1 gap-0 sm:grid-cols-2 sm:gap-2">
-                      <Field
-                        label={t('jobs.dropoff2ReceiverNameLabel', {
-                          defaultValue: 'Stop Receiver Name (optional — defaults to primary)',
-                        })}
-                        placeholder={t('jobs.placeholderReceiverName')}
-                        error={form.formState.errors.extraDropoffs?.[index]?.receiverName?.message}
-                        {...form.register(`extraDropoffs.${index}.receiverName` as const)}
-                      />
-                      <Field
-                        type="email"
-                        label={t('jobs.dropoff2ReceiverEmailLabel', {
-                          defaultValue: 'Stop Receiver Email (optional — defaults to primary)',
-                        })}
-                        placeholder={t('jobs.placeholderReceiverEmail')}
-                        error={form.formState.errors.extraDropoffs?.[index]?.receiverEmail?.message}
-                        {...form.register(`extraDropoffs.${index}.receiverEmail` as const)}
-                      />
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
                 <div>
                   <Button
                     type="button"
@@ -2124,7 +2254,7 @@ function JobDraftForm({
                       extraDropoffsArray.append({
                         addressLine: '',
                         suburb: '',
-                        state: dropoffState || 'VIC',
+                        state: dropoffState || senderDefaultState,
                         postcode: '',
                         receiverName: '',
                         receiverEmail: '',

@@ -663,7 +663,9 @@ export function OpsDisputeDetailPage() {
             <div className="rounded-xl border border-clox-border bg-white p-5 shadow-sm">
               <h2 className="flex items-center gap-2 font-display text-base font-semibold text-clox-ink">
                 <Scale className="h-4 w-4 text-clox-accent" />
-                {role === AdminRole.SUPER_ADMIN ? 'National Adjudication (Super)' : 'State Adjudication (VIC)'}
+                {role === AdminRole.SUPER_ADMIN
+                  ? 'National Adjudication (Super)'
+                  : `State Adjudication (${dispute.region?.code || dispute.job?.originRegion?.code || dispute.job?.stops?.[0]?.state || 'State'})`}
               </h2>
               <p className="mt-1 text-xs text-clox-mute">
                 Issue a formal binding ruling and trigger automated financial adjustments.

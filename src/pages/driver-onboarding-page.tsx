@@ -10,6 +10,7 @@ import {
   getDriverAssignability,
   getDriverOnboarding,
   getErrorDetail,
+  getRegionsMeta,
   submitDriverProfile,
   uploadDocumentContent,
   type DriverOnboarding,
@@ -350,6 +351,17 @@ function LicenceStep({
     }
   });
 
+  const regionsMeta = useQuery({
+    queryKey: ['jobs', 'meta', 'regions'],
+    queryFn: () => getRegionsMeta(),
+    staleTime: 60_000,
+  });
+  const fallbackRegionState = (AU_STATES as readonly string[]).includes(
+    regionsMeta.data?.enabledCodes?.[0] ?? '',
+  )
+    ? (regionsMeta.data!.enabledCodes[0] as (typeof AU_STATES)[number])
+    : 'VIC';
+
   const licenceClassDefault = (LICENCE_CLASSES as readonly string[]).includes(
     data.driver.licenceClass ?? '',
   )
@@ -357,7 +369,7 @@ function LicenceStep({
     : 'C';
   const stateDefault = (AU_STATES as readonly string[]).includes(data.driver.state ?? '')
     ? (data.driver.state as (typeof AU_STATES)[number])
-    : 'VIC';
+    : fallbackRegionState;
   const expiryDefault = data.driver.licenceExpiry
     ? data.driver.licenceExpiry.slice(0, 10)
     : '';
@@ -386,7 +398,7 @@ function LicenceStep({
       : 'C';
     const nextState = (AU_STATES as readonly string[]).includes(data.driver.state ?? '')
       ? (data.driver.state as (typeof AU_STATES)[number])
-      : 'VIC';
+      : fallbackRegionState;
     form.reset({
       name: data.user.name || '',
       phone: data.user.phone || '',

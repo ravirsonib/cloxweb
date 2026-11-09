@@ -378,3 +378,25 @@ export type VehicleClassesMetaResponse = {
 export function getVehicleClassesMeta() {
   return http.get<VehicleClassesMetaResponse>('/jobs/meta/vehicle-classes').then((r) => r.data);
 }
+
+export type RegionMetaItem = {
+  id: string;
+  code: string;
+  name: string;
+  enabled: boolean;
+  territories: Array<{
+    id: string;
+    code: string;
+    name: string;
+    enabled: boolean;
+  }>;
+};
+
+export type RegionsMetaResponse = {
+  regions: RegionMetaItem[];
+  enabledCodes: string[];
+};
+
+export function getRegionsMeta() {
+  return http.get<RegionsMetaResponse>('/jobs/meta/regions').then((r) => r.data);
+}

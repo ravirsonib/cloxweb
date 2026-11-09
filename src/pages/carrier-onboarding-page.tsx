@@ -12,6 +12,7 @@ import {
   createUploadIntent,
   getCarrierOnboarding,
   getErrorDetail,
+  getRegionsMeta,
   getVehicleClassesMeta,
   inviteCarrierDriver,
   openDocumentContent,
@@ -321,6 +322,13 @@ function ProfileStep({
   onSaved: () => Promise<CarrierOnboarding | void>;
 }) {
   const { t } = useTranslation();
+  const regionsMeta = useQuery({
+    queryKey: ['jobs', 'meta', 'regions'],
+    queryFn: () => getRegionsMeta(),
+    staleTime: 60_000,
+  });
+  const defaultRegionCode =
+    data.company.homeRegionCode || regionsMeta.data?.enabledCodes?.[0] || 'VIC';
   const schema = z.object({
     legalName: z.string().trim().min(1, t('validation.legalNameRequired')),
     abn: abnSchema(t('validation.abnRequired'), t('validation.abnInvalid')),
@@ -343,7 +351,7 @@ function ProfileStep({
       updateCarrierProfile({
         legalName: values.legalName,
         abn: values.abn,
-        homeRegionCode: data.company.homeRegionCode || 'VIC',
+        homeRegionCode: defaultRegionCode,
       }),
     onSuccess: () => onSaved(),
   });
@@ -1282,6 +1290,16 @@ function CapabilitiesStep({
   onSaved: (next?: CarrierOnboarding) => Promise<void>;
 }) {
   const { t } = useTranslation();
+  const regionsMeta = useQuery({
+    queryKey: ['jobs', 'meta', 'regions'],
+    queryFn: () => getRegionsMeta(),
+    staleTime: 60_000,
+  });
+  const enabledRegionSet = regionsMeta.data?.enabledCodes
+    ? new Set(regionsMeta.data.enabledCodes.map((c) => c.toUpperCase()))
+    : null;
+  const defaultRegionCode =
+    data.company.homeRegionCode || regionsMeta.data?.enabledCodes?.[0] || 'VIC';
   const existingDg = (data.uploadedDocs ?? []).find(
     (d) =>
       d.docType === 'DG_LICENCE' &&
@@ -1299,7 +1317,7 @@ function CapabilitiesStep({
       new Set([
         ...(data.company.serviceRegionCodes?.length
           ? data.company.serviceRegionCodes
-          : [data.company.homeRegionCode || 'VIC']),
+          : [defaultRegionCode]),
         ...(data.company.homeRegionCode ? [data.company.homeRegionCode] : []),
       ]),
     ),
@@ -1322,7 +1340,7 @@ function CapabilitiesStep({
         new Set([
           ...(data.company.serviceRegionCodes?.length
             ? data.company.serviceRegionCodes
-            : [data.company.homeRegionCode || 'VIC']),
+            : [defaultRegionCode]),
           ...(data.company.homeRegionCode ? [data.company.homeRegionCode] : []),
         ]),
       ),
@@ -1339,6 +1357,7 @@ function CapabilitiesStep({
     data.company.capabilities,
     data.company.serviceRegionCodes,
     data.company.homeRegionCode,
+    defaultRegionCode,
     data.uploadedDocs,
     t,
   ]);
@@ -1374,7 +1393,7 @@ function CapabilitiesStep({
         serviceRegionCodes:
           serviceRegions.length > 0
             ? serviceRegions
-            : [data.company.homeRegionCode || 'VIC'],
+            : [defaultRegionCode],
       });
     },
     onSuccess: async (next) => {
@@ -1465,25 +1484,31 @@ function CapabilitiesStep({
         <div className="flex flex-wrap gap-2">
           {AU_STATES.map((code) => {
             const on = serviceRegions.includes(code);
+            const disabled = enabledRegionSet != null && !enabledRegionSet.has(code) && !on;
             return (
               <button
                 key={code}
                 type="button"
                 aria-pressed={on}
+                disabled={disabled}
+                title={disabled ? 'Region not active on platform' : undefined}
                 className={
                   on
                     ? 'rounded-clox-md border border-clox-orange bg-clox-orange/10 px-3 py-1.5 text-xs font-semibold text-clox-orange shadow-sm transition'
-                    : 'rounded-clox-md border border-clox-border bg-clox-canvas px-3 py-1.5 text-xs font-medium text-clox-mute hover:border-clox-ink hover:text-clox-ink transition'
+                    : disabled
+                      ? 'cursor-not-allowed rounded-clox-md border border-clox-border/50 bg-clox-surface-alt px-3 py-1.5 text-xs font-medium text-clox-faint opacity-50'
+                      : 'rounded-clox-md border border-clox-border bg-clox-canvas px-3 py-1.5 text-xs font-medium text-clox-mute hover:border-clox-ink hover:text-clox-ink transition'
                 }
-                onClick={() =>
+                onClick={() => {
+                  if (disabled) return;
                   setServiceRegions((prev) =>
                     prev.includes(code)
                       ? prev.length > 1
                         ? prev.filter((c) => c !== code)
                         : prev
                       : [...prev, code],
-                  )
-                }
+                  );
+                }}
               >
                 {code}
               </button>

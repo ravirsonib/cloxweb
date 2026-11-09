@@ -9,6 +9,7 @@ import {
   confirmDocument,
   createUploadIntent,
   getErrorDetail,
+  getRegionsMeta,
   getSenderOnboarding,
   submitSenderVerification,
   updateSenderProfile,
@@ -248,6 +249,13 @@ function AccountStep({
   onSaved: (next?: SenderOnboarding) => Promise<unknown>;
 }) {
   const { t } = useTranslation();
+  const regionsMeta = useQuery({
+    queryKey: ['jobs', 'meta', 'regions'],
+    queryFn: () => getRegionsMeta(),
+    staleTime: 60_000,
+  });
+  const defaultRegionCode =
+    data.company.homeRegionCode || regionsMeta.data?.enabledCodes?.[0] || 'VIC';
 
   const schema = z
     .object({
@@ -300,7 +308,7 @@ function AccountStep({
         accountType: values.accountType,
         legalName: values.legalName,
         abn: values.accountType === 'BUSINESS' ? values.abn.replace(/\s/g, '') : undefined,
-        homeRegionCode: data.company.homeRegionCode || 'VIC',
+        homeRegionCode: defaultRegionCode,
       }),
     onSuccess: (next) => void onSaved(next),
   });
@@ -366,6 +374,13 @@ function InvoiceStep({
   onSaved: (next?: SenderOnboarding) => Promise<unknown>;
 }) {
   const { t } = useTranslation();
+  const regionsMeta = useQuery({
+    queryKey: ['jobs', 'meta', 'regions'],
+    queryFn: () => getRegionsMeta(),
+    staleTime: 60_000,
+  });
+  const defaultRegionCode =
+    data.company.homeRegionCode || regionsMeta.data?.enabledCodes?.[0] || 'VIC';
 
   const isBusiness = (data.company.senderAccountType ?? 'BUSINESS') === 'BUSINESS';
 
@@ -415,7 +430,7 @@ function InvoiceStep({
       invoiceLegalName: data.company.invoiceLegalName || data.company.legalName || '',
       invoiceAddressLine1: data.company.invoiceAddressLine1 || '',
       invoiceSuburb: data.company.invoiceSuburb || '',
-      invoiceState: data.company.invoiceState || data.company.homeRegionCode || 'VIC',
+      invoiceState: data.company.invoiceState || defaultRegionCode,
       invoicePostcode: data.company.invoicePostcode || '',
       gstRegistered: data.company.gstRegistered,
     },
@@ -427,7 +442,7 @@ function InvoiceStep({
       invoiceLegalName: data.company.invoiceLegalName || data.company.legalName || '',
       invoiceAddressLine1: data.company.invoiceAddressLine1 || '',
       invoiceSuburb: data.company.invoiceSuburb || '',
-      invoiceState: data.company.invoiceState || data.company.homeRegionCode || 'VIC',
+      invoiceState: data.company.invoiceState || defaultRegionCode,
       invoicePostcode: data.company.invoicePostcode || '',
       gstRegistered: data.company.gstRegistered,
     });
@@ -438,7 +453,7 @@ function InvoiceStep({
     data.company.invoiceAddressLine1,
     data.company.invoiceSuburb,
     data.company.invoiceState,
-    data.company.homeRegionCode,
+    defaultRegionCode,
     data.company.invoicePostcode,
     data.company.gstRegistered,
     form,
@@ -448,6 +463,13 @@ function InvoiceStep({
     mutationFn: (values: InvoiceForm) => {
       const accountType = data.company.senderAccountType ?? 'BUSINESS';
       const nextAbn = values.abn.replace(/\s/g, '');
+      const enabledSet = regionsMeta.data?.enabledCodes
+        ? new Set(regionsMeta.data.enabledCodes.map((c) => c.toUpperCase()))
+        : null;
+      const nextHomeRegion =
+        values.invoiceState && (!enabledSet || enabledSet.has(values.invoiceState.toUpperCase()))
+          ? values.invoiceState.toUpperCase()
+          : defaultRegionCode;
       return updateSenderProfile({
         accountType,
         legalName: data.company.legalName || values.invoiceLegalName,
@@ -457,7 +479,7 @@ function InvoiceStep({
           : accountType === 'BUSINESS' && !data.company.abn
             ? { abn: '' }
             : {}),
-        homeRegionCode: data.company.homeRegionCode || 'VIC',
+        homeRegionCode: nextHomeRegion,
         invoiceLegalName: values.invoiceLegalName,
         invoiceAddressLine1: values.invoiceAddressLine1,
         invoiceSuburb: values.invoiceSuburb,

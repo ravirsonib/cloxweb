@@ -66,7 +66,10 @@ export function PlatformSettingsPage() {
           defaultValue: `Region ${data.code} is now ${data.enabled ? 'Active' : 'Inactive'}.`,
         }),
       );
-      await qc.invalidateQueries({ queryKey: ['ops', 'geography'] });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['ops', 'geography'] }),
+        qc.invalidateQueries({ queryKey: ['jobs', 'meta', 'regions'] }),
+      ]);
     },
     onError: (err) => toast.error(getErrorDetail(err)),
   });

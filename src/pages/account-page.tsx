@@ -6,6 +6,7 @@ import {
   getCarrierCompanyProfile,
   getErrorDetail,
   getIdentityMe,
+  getRegionsMeta,
   getSenderCompanyProfile,
   listSessions,
   requestCarrierCompanyProfileChange,
@@ -44,17 +45,27 @@ function CompanyProfileSection({
     queryFn: () => (kind === 'carrier' ? getCarrierCompanyProfile() : getSenderCompanyProfile()),
   });
 
+  const regionsMeta = useQuery({
+    queryKey: ['jobs', 'meta', 'regions'],
+    queryFn: () => getRegionsMeta(),
+    staleTime: 60_000,
+  });
+  const enabledRegionSet = regionsMeta.data?.enabledCodes
+    ? new Set(regionsMeta.data.enabledCodes.map((c) => c.toUpperCase()))
+    : null;
+  const fallbackRegionCode = regionsMeta.data?.enabledCodes?.[0] || 'VIC';
+
   const [tradingName, setTradingName] = useState('');
   const [phone, setPhone] = useState('');
   const [serviceRegions, setServiceRegions] = useState<string[]>([]);
   const [legalName, setLegalName] = useState('');
   const [abn, setAbn] = useState('');
   const [acn, setAcn] = useState('');
-  const [homeRegionCode, setHomeRegionCode] = useState('VIC');
+  const [homeRegionCode, setHomeRegionCode] = useState(fallbackRegionCode);
   const [invoiceLegalName, setInvoiceLegalName] = useState('');
   const [invoiceAddressLine1, setInvoiceAddressLine1] = useState('');
   const [invoiceSuburb, setInvoiceSuburb] = useState('');
-  const [invoiceState, setInvoiceState] = useState('VIC');
+  const [invoiceState, setInvoiceState] = useState(fallbackRegionCode);
   const [invoicePostcode, setInvoicePostcode] = useState('');
   const [gstRegistered, setGstRegistered] = useState(false);
   const [changeNote, setChangeNote] = useState('');
@@ -68,14 +79,14 @@ function CompanyProfileSection({
     setLegalName(c.legalName);
     setAbn(c.abn ?? '');
     setAcn(c.acn ?? '');
-    setHomeRegionCode(c.homeRegionCode ?? 'VIC');
+    setHomeRegionCode(c.homeRegionCode ?? fallbackRegionCode);
     setInvoiceLegalName(c.invoiceLegalName ?? '');
     setInvoiceAddressLine1(c.invoiceAddressLine1 ?? '');
     setInvoiceSuburb(c.invoiceSuburb ?? '');
-    setInvoiceState(c.invoiceState ?? 'VIC');
+    setInvoiceState(c.invoiceState ?? c.homeRegionCode ?? fallbackRegionCode);
     setInvoicePostcode(c.invoicePostcode ?? '');
     setGstRegistered(c.gstRegistered);
-  }, [profile.data]);
+  }, [profile.data, fallbackRegionCode]);
 
   const saveSelf = useMutation({
     mutationFn: () => {
@@ -241,18 +252,31 @@ function CompanyProfileSection({
             <div className="flex flex-wrap gap-2">
               {AU_STATES.map((code) => {
                 const on = serviceRegions.includes(code);
+                const disabled = enabledRegionSet != null && !enabledRegionSet.has(code) && !on;
                 return (
                   <button
                     key={code}
                     type="button"
                     aria-pressed={on}
-                    title={on ? t('account.regionActive') : t('account.regionInactive')}
+                    disabled={disabled}
+                    title={
+                      disabled
+                        ? 'Region not active on platform'
+                        : on
+                          ? t('account.regionActive')
+                          : t('account.regionInactive')
+                    }
                     className={
                       on
                         ? 'rounded-clox-md border border-clox-orange bg-clox-orange/10 px-3 py-1.5 text-xs font-semibold text-clox-orange shadow-sm transition'
-                        : 'rounded-clox-md border border-clox-border bg-clox-canvas px-3 py-1.5 text-xs font-medium text-clox-mute hover:border-clox-ink hover:text-clox-ink transition'
+                        : disabled
+                          ? 'cursor-not-allowed rounded-clox-md border border-clox-border/50 bg-clox-surface-alt px-3 py-1.5 text-xs font-medium text-clox-faint opacity-50'
+                          : 'rounded-clox-md border border-clox-border bg-clox-canvas px-3 py-1.5 text-xs font-medium text-clox-mute hover:border-clox-ink hover:text-clox-ink transition'
                     }
-                    onClick={() => toggleRegion(code)}
+                    onClick={() => {
+                      if (disabled) return;
+                      toggleRegion(code);
+                    }}
                   >
                     {code}
                   </button>
@@ -303,11 +327,16 @@ function CompanyProfileSection({
             disabled={Boolean(pending)}
             onChange={(e) => setHomeRegionCode(e.target.value)}
           >
-            {AU_STATES.map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
+            {AU_STATES.map((code) => {
+              const disabled =
+                enabledRegionSet != null && !enabledRegionSet.has(code) && homeRegionCode !== code;
+              return (
+                <option key={code} value={code} disabled={disabled}>
+                  {code}
+                  {disabled ? ' (Not active)' : ''}
+                </option>
+              );
+            })}
           </Select>
         </div>
         {kind === 'sender' ? (

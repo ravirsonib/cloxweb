@@ -3130,6 +3130,8 @@ export function JobDetailPage() {
   const [scaChallenge, setScaChallenge] = useState<{
     clientSecret: string;
     publishableKey: string;
+    stripeStatus?: string;
+    amountIncGstCents?: number;
   } | null>(null);
 
   const publish = useMutation({
@@ -3144,14 +3146,26 @@ export function JobDetailPage() {
         `${res.mock ? t('jobs.paidAndLockedMock') : t('jobs.paidAndLocked')}${res.idempotentReplay ? ` · ${t('jobs.idempotentReplay')}` : ''}`,
       );
     } else if (
-      res.stripeStatus === 'requires_action' &&
+      (res.stripeStatus === 'requires_action' ||
+        res.stripeStatus === 'requires_payment_method' ||
+        res.stripeStatus === 'requires_confirmation' ||
+        res.paymentStatus === 'PENDING' ||
+        res.paymentStatus === 'REQUIRES_ACTION') &&
       res.clientSecret &&
       res.publishableKey
     ) {
-      setAcceptMsg(t('jobs.scaRequired'));
+      setAcceptMsg(
+        res.stripeStatus === 'requires_action'
+          ? t('jobs.scaRequired')
+          : t('jobs.paymentMethodRequired', {
+              defaultValue: 'Complete card payment to lock this assignment.',
+            }),
+      );
       setScaChallenge({
         clientSecret: res.clientSecret,
         publishableKey: res.publishableKey,
+        stripeStatus: res.stripeStatus,
+        amountIncGstCents: res.amountIncGstCents,
       });
     } else if (res.clientSecret && !res.publishableKey) {
       setScaChallenge(null);
@@ -3191,6 +3205,17 @@ export function JobDetailPage() {
 
   const accept = useMutation({
     mutationFn: (proposalId: string) => acceptProposal(id, proposalId),
+    onError: (err) => {
+      setScaChallenge(null);
+      setAcceptMsg(getErrorDetail(err));
+    },
+    onSuccess: (res) => {
+      void applyAcceptResult(res);
+    },
+  });
+
+  const resumePayment = useMutation({
+    mutationFn: () => syncJobPayment(id),
     onError: (err) => {
       setScaChallenge(null);
       setAcceptMsg(getErrorDetail(err));
@@ -3489,9 +3514,26 @@ export function JobDetailPage() {
 
           {(j.assignment || j.payment) && (
             <section className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-4">
-              <h2 className="font-display text-sm font-semibold text-clox-ink">
-                {t('jobs.view.sectionAssignment')}
-              </h2>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-display text-sm font-semibold text-clox-ink">
+                  {t('jobs.view.sectionAssignment')}
+                </h2>
+                {j.assignment &&
+                !j.assignment.paidAndConfirmed &&
+                j.assignment.status !== 'CANCELLED' ? (
+                  <Button
+                    type="button"
+                    variant="cta"
+                    size="sm"
+                    disabled={resumePayment.isPending}
+                    onClick={() => resumePayment.mutate()}
+                  >
+                    {resumePayment.isPending
+                      ? t('loading')
+                      : t('jobs.completePayment', { defaultValue: 'Complete payment' })}
+                  </Button>
+                ) : null}
+              </div>
               <dl className="mt-3 space-y-2">
                 {j.assignment
                   ? detailRow(
@@ -3522,6 +3564,16 @@ export function JobDetailPage() {
                     )
                   : null}
               </dl>
+              {j.assignment &&
+              !j.assignment.paidAndConfirmed &&
+              j.assignment.status !== 'CANCELLED' ? (
+                <p className="mt-3 text-xs text-clox-mute">
+                  {t('jobs.pendingPaymentResumeHint', {
+                    defaultValue:
+                      'Bid accepted — complete card payment to lock this assignment so the carrier can begin the trip.',
+                  })}
+                </p>
+              ) : null}
             </section>
           )}
 
@@ -3758,13 +3810,20 @@ export function JobDetailPage() {
                       <StatusPill
                         tone={
                           p.status === 'ACCEPTED'
-                            ? 'ok'
+                            ? j.assignment?.paidAndConfirmed
+                              ? 'ok'
+                              : 'warn'
                             : p.status === 'SUBMITTED'
                               ? 'warn'
                               : 'neutral'
                         }
                       >
-                        {p.status}
+                        {p.status === 'ACCEPTED' &&
+                        j.assignment &&
+                        !j.assignment.paidAndConfirmed &&
+                        j.assignment.status !== 'CANCELLED'
+                          ? `${p.status} ${t('jobs.assignmentPendingPayment')}`
+                          : p.status}
                       </StatusPill>
                     </div>
                     {p.status === 'SUBMITTED' && (!j.assignment || j.assignment.status === 'CANCELLED') ? (
@@ -3784,6 +3843,20 @@ export function JobDetailPage() {
                         }}
                       >
                         {t('jobs.acceptAndCharge')}
+                      </Button>
+                    ) : p.status === 'ACCEPTED' &&
+                      j.assignment &&
+                      !j.assignment.paidAndConfirmed &&
+                      j.assignment.status !== 'CANCELLED' ? (
+                      <Button
+                        variant="cta"
+                        className="mt-3"
+                        disabled={resumePayment.isPending}
+                        onClick={() => resumePayment.mutate()}
+                      >
+                        {resumePayment.isPending
+                          ? t('loading')
+                          : t('jobs.completePayment', { defaultValue: 'Complete payment' })}
                       </Button>
                     ) : null}
                   </li>
@@ -3807,6 +3880,8 @@ export function JobDetailPage() {
             <ScaPaymentConfirm
               clientSecret={scaChallenge.clientSecret}
               publishableKey={scaChallenge.publishableKey}
+              stripeStatus={scaChallenge.stripeStatus}
+              amountIncGstCents={scaChallenge.amountIncGstCents}
               onCancel={() => setScaChallenge(null)}
               onSucceeded={async () => {
                 const synced = await syncJobPayment(id);

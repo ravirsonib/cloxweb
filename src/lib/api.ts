@@ -150,6 +150,7 @@ export {
   updateSenderCompanyProfileSelf,
   requestSenderCompanyProfileChange,
   type CompanyProfileResponse,
+  type CompanyProfileHistoryItem,
 } from '@/lib/api/company-profile';
 export {
   peekDriverInvite,

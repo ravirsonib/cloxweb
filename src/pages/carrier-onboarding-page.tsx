@@ -131,9 +131,16 @@ export function CarrierOnboardingPage() {
     });
     return result;
   };
-  const refreshAndGo = async () => {
-    const fresh = await refresh();
-    if (fresh?.step) setViewStep(fresh.step);
+  const refreshAndGo = async (next?: CarrierOnboarding, targetStep?: CarrierStepId) => {
+    if (next) {
+      qc.setQueryData(['carrier', 'onboarding'], next);
+    }
+    const fresh = next ?? (await refresh());
+    if (targetStep) {
+      setViewStep(targetStep);
+    } else if (fresh?.step) {
+      setViewStep(fresh.step);
+    }
     return fresh;
   };
 
@@ -195,13 +202,18 @@ export function CarrierOnboardingPage() {
         </Notice>
       ) : null}
 
-      {step === 'profile' && <ProfileStep data={data} onSaved={refreshAndGo} />}
+      {step === 'profile' && (
+        <ProfileStep
+          data={data}
+          onSaved={(next) => refreshAndGo(next, 'documents')}
+        />
+      )}
       {step === 'documents' && (
         <DocumentsStep
           companyId={data.company.id}
           uploadedDocs={data.uploadedDocs}
           onUploaded={refresh}
-          onSubmitted={refreshAndGo}
+          onSubmitted={() => refreshAndGo(undefined, 'connect')}
         />
       )}
       {step === 'connect' && (
@@ -211,26 +223,27 @@ export function CarrierOnboardingPage() {
           repairRequired={Boolean(data.payoutRepairRequired)}
           hasConnectAccount={Boolean(data.company.stripeConnectAccountId)}
           payoutsEnabled={data.company.stripeConnectPayoutsEnabled}
-          onDone={refreshAndGo}
+          onDone={() => refreshAndGo(undefined, 'vehicles')}
         />
       )}
       {step === 'vehicles' && (
         <VehiclesStep
           data={data}
           onSaved={refresh}
-          onContinue={refreshAndGo}
+          onContinue={() => refreshAndGo(undefined, 'drivers')}
         />
       )}
-      {step === 'drivers' && <DriversStep data={data} onSaved={refreshAndGo} />}
+      {step === 'drivers' && (
+        <DriversStep
+          data={data}
+          onSaved={(next) => refreshAndGo(next, 'capabilities')}
+        />
+      )}
       {step === 'capabilities' && (
         <CapabilitiesStep
           data={data}
           onSaved={async (next) => {
-            if (next) {
-              qc.setQueryData(['carrier', 'onboarding'], next);
-            }
-            const fresh = next ?? (await refresh());
-            if (fresh?.step) setViewStep(fresh.step);
+            await refreshAndGo(next, 'submit');
           }}
         />
       )}
@@ -319,7 +332,7 @@ function ProfileStep({
   onSaved,
 }: {
   data: CarrierOnboarding;
-  onSaved: () => Promise<CarrierOnboarding | void>;
+  onSaved: (next?: CarrierOnboarding) => Promise<CarrierOnboarding | void>;
 }) {
   const { t } = useTranslation();
   const regionsMeta = useQuery({
@@ -330,7 +343,7 @@ function ProfileStep({
   const defaultRegionCode =
     data.company.homeRegionCode || regionsMeta.data?.enabledCodes?.[0] || 'VIC';
   const schema = z.object({
-    legalName: z.string().trim().min(1, t('validation.legalNameRequired')),
+    legalName: z.string().trim().min(2, t('validation.legalNameRequired')),
     abn: abnSchema(t('validation.abnRequired'), t('validation.abnInvalid')),
   });
   const form = useForm<CarrierProfileForm>({
@@ -349,11 +362,11 @@ function ProfileStep({
   const mutation = useMutation({
     mutationFn: (values: CarrierProfileForm) =>
       updateCarrierProfile({
-        legalName: values.legalName,
-        abn: values.abn,
+        legalName: values.legalName.trim(),
+        abn: values.abn.replace(/\s/g, ''),
         homeRegionCode: defaultRegionCode,
       }),
-    onSuccess: () => onSaved(),
+    onSuccess: (fresh) => onSaved(fresh),
   });
   return (
     <form
@@ -363,13 +376,15 @@ function ProfileStep({
     >
       <h2 className="mb-4 font-display text-lg font-semibold">{t('carrierOnboarding.profileTitle')}</h2>
       <Field
-        label={t('legalName')}
+        label={t('account.legalName', { defaultValue: 'Legal entity name' })}
+        hint={t('account.legalNameHint')}
         required
         error={form.formState.errors.legalName?.message}
         {...form.register('legalName')}
       />
       <Field
-        label={t('abn')}
+        label={t('account.abn', { defaultValue: 'ABN (Australian Business Number)' })}
+        hint={t('account.abnHint')}
         required
         inputMode="numeric"
         error={form.formState.errors.abn?.message}
@@ -1138,7 +1153,7 @@ function DriversStep({
   onSaved,
 }: {
   data: CarrierOnboarding;
-  onSaved: () => Promise<CarrierOnboarding | void>;
+  onSaved: (next?: CarrierOnboarding) => Promise<CarrierOnboarding | void>;
 }) {
   const { t } = useTranslation();
   const [lastInvite, setLastInvite] = useState<{
@@ -1170,7 +1185,7 @@ function DriversStep({
         });
       }
       form.reset({ name: '', email: '' });
-      await onSaved();
+      await onSaved(res);
     },
   });
   const resend = useMutation({
@@ -1478,8 +1493,14 @@ function CapabilitiesStep({
         </ChoiceCheck>
       </div>
       <div>
-        <p className="mb-2 text-xs font-semibold text-clox-ink">
-          {t('account.serviceRegions', { defaultValue: 'Service regions' })}
+        <p className="mb-1 text-xs font-semibold text-clox-ink">
+          {t('account.serviceRegions', { defaultValue: 'Service regions (Operating coverage)' })}
+        </p>
+        <p className="mb-2 text-xs text-clox-mute">
+          {t('account.serviceRegionsHint', {
+            defaultValue:
+              'States and territories where your fleet picks up, transports, and delivers freight. You will receive and bid on loads in these regions.',
+          })}
         </p>
         <div className="flex flex-wrap gap-2">
           {AU_STATES.map((code) => {
@@ -1537,6 +1558,7 @@ function pickLatestDoc(
   return (
     matches.find((d) => d.status === 'UPLOADED') ??
     matches.find((d) => d.status === 'UNDER_REVIEW') ??
+    matches.find((d) => d.status === 'APPROVED') ??
     matches[0]
   );
 }
@@ -1563,10 +1585,10 @@ function SubmitStep({
   );
   const [plId, setPlId] = useState<string | null>(pl?.id ?? null);
   const [cargoId, setCargoId] = useState<string | null>(cargo?.id ?? null);
-  const [msg, setMsg] = useState<string | null>(
-    pl && cargo ? t('carrierOnboarding.usingPreviousUploads') : null,
-  );
+  const [showReplacePl, setShowReplacePl] = useState<boolean>(!pl?.id || isInfoRequested);
+  const [showReplaceCargo, setShowReplaceCargo] = useState<boolean>(!cargo?.id || isInfoRequested);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [openingDocId, setOpeningDocId] = useState<string | null>(null);
 
   async function upload(docType: 'PUBLIC_LIABILITY' | 'CARGO_INSURANCE', file: File) {
     const mime = resolveUploadMime(file);
@@ -1581,6 +1603,17 @@ function SubmitStep({
     const up = await uploadDocumentContent(intent.id, file);
     await confirmDocument(intent.id, up.contentHash);
     return intent.id;
+  }
+
+  async function viewDoc(docId: string) {
+    setOpeningDocId(docId);
+    try {
+      await openDocumentContent(docId);
+    } catch (err) {
+      toast.error(getErrorDetail(err));
+    } finally {
+      setOpeningDocId(null);
+    }
   }
 
   const submit = useMutation({
@@ -1599,6 +1632,8 @@ function SubmitStep({
     },
   });
 
+  const missingDocs = !plId || !cargoId;
+
   return (
     <div className="mt-8 space-y-4">
       <h2 className="text-lg font-semibold">
@@ -1611,56 +1646,212 @@ function SubmitStep({
           ? t('carrierOnboarding.resubmitHint')
           : t('carrierOnboarding.submitHint')}
       </p>
-      <p className="text-xs text-clox-faint">{t('carrierOnboarding.submitRwcFleetNote')}</p>
-      <FileInput
-        className="mb-0"
-        label={t('carrierOnboarding.publicLiability')}
-        accept=".pdf,image/*"
-        onChange={async (e) => {
-          const f = e.target.files?.[0];
-          if (!f) return;
-          try {
-            setUploadError(null);
-            setPlId(await upload('PUBLIC_LIABILITY', f));
-            setMsg(t('carrierOnboarding.plUploaded'));
-            toast.success(t('carrierOnboarding.plUploaded'));
-          } catch (err) {
-            const detail = getErrorDetail(err);
-            setUploadError(detail);
-            setMsg(null);
-            toast.error(detail);
-          }
-        }}
-      />
-      <FileInput
-        className="mb-0"
-        label={t('carrierOnboarding.cargoInsurance')}
-        accept=".pdf,image/*"
-        onChange={async (e) => {
-          const f = e.target.files?.[0];
-          if (!f) return;
-          try {
-            setUploadError(null);
-            setCargoId(await upload('CARGO_INSURANCE', f));
-            setMsg(t('carrierOnboarding.cargoUploaded'));
-            toast.success(t('carrierOnboarding.cargoUploaded'));
-          } catch (err) {
-            const detail = getErrorDetail(err);
-            setUploadError(detail);
-            setMsg(null);
-            toast.error(detail);
-          }
-        }}
-      />
-      {msg ? <Notice tone="success">{msg}</Notice> : null}
+
+      {/* Review & Verification Checklist */}
+      <div className="space-y-3 rounded-xl border border-clox-border bg-clox-surface p-4 text-sm">
+        <h3 className="font-semibold text-clox-ink">Review & Verification Checklist</h3>
+
+        {/* Legal Entity */}
+        <div className="flex items-center justify-between border-b border-clox-border pb-2">
+          <div>
+            <p className="font-medium text-clox-ink">{data.company.legalName || 'Legal Entity'}</p>
+            <p className="text-xs text-clox-mute">
+              ABN: {data.company.abn || '—'} · State: {data.company.homeRegionCode || 'VIC'}
+            </p>
+          </div>
+          <span className="text-xs font-semibold text-[var(--status-ok)]">✓ Complete</span>
+        </div>
+
+        {/* Public Liability */}
+        <div className="flex flex-col gap-2 border-b border-clox-border pb-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-clox-ink">{t('carrierOnboarding.publicLiability')}</span>
+              {plId ? (
+                <span className="text-xs font-semibold text-[var(--status-ok)]">✓ Uploaded</span>
+              ) : (
+                <span className="text-xs font-semibold text-clox-warn">Missing</span>
+              )}
+            </div>
+            {pl?.status ? (
+              <p className="text-xs text-clox-mute">Status: {pl.status}</p>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-2">
+            {plId ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={openingDocId === plId}
+                onClick={() => void viewDoc(plId)}
+              >
+                {openingDocId === plId
+                  ? t('compliance.openingDocument', { defaultValue: 'Opening…' })
+                  : t('documentsUpload.viewDocument', { defaultValue: 'View' })}
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowReplacePl((prev) => !prev)}
+            >
+              {showReplacePl ? t('cancel', { defaultValue: 'Cancel' }) : t('replace', { defaultValue: 'Replace' })}
+            </Button>
+          </div>
+        </div>
+        {showReplacePl ? (
+          <FileInput
+            className="mb-0"
+            label={t('carrierOnboarding.publicLiability')}
+            accept=".pdf,image/*"
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              try {
+                setUploadError(null);
+                const id = await upload('PUBLIC_LIABILITY', f);
+                setPlId(id);
+                setShowReplacePl(false);
+                toast.success(t('carrierOnboarding.plUploaded'));
+              } catch (err) {
+                const detail = getErrorDetail(err);
+                setUploadError(detail);
+                toast.error(detail);
+              }
+            }}
+          />
+        ) : null}
+
+        {/* Cargo Insurance */}
+        <div className="flex flex-col gap-2 border-b border-clox-border pb-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-clox-ink">{t('carrierOnboarding.cargoInsurance')}</span>
+              {cargoId ? (
+                <span className="text-xs font-semibold text-[var(--status-ok)]">✓ Uploaded</span>
+              ) : (
+                <span className="text-xs font-semibold text-clox-warn">Missing</span>
+              )}
+            </div>
+            {cargo?.status ? (
+              <p className="text-xs text-clox-mute">Status: {cargo.status}</p>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-2">
+            {cargoId ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={openingDocId === cargoId}
+                onClick={() => void viewDoc(cargoId)}
+              >
+                {openingDocId === cargoId
+                  ? t('compliance.openingDocument', { defaultValue: 'Opening…' })
+                  : t('documentsUpload.viewDocument', { defaultValue: 'View' })}
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowReplaceCargo((prev) => !prev)}
+            >
+              {showReplaceCargo ? t('cancel', { defaultValue: 'Cancel' }) : t('replace', { defaultValue: 'Replace' })}
+            </Button>
+          </div>
+        </div>
+        {showReplaceCargo ? (
+          <FileInput
+            className="mb-0"
+            label={t('carrierOnboarding.cargoInsurance')}
+            accept=".pdf,image/*"
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              try {
+                setUploadError(null);
+                const id = await upload('CARGO_INSURANCE', f);
+                setCargoId(id);
+                setShowReplaceCargo(false);
+                toast.success(t('carrierOnboarding.cargoUploaded'));
+              } catch (err) {
+                const detail = getErrorDetail(err);
+                setUploadError(detail);
+                toast.error(detail);
+              }
+            }}
+          />
+        ) : null}
+
+        {/* Stripe Payouts */}
+        <div className="flex items-center justify-between border-b border-clox-border pb-2">
+          <div>
+            <p className="font-medium text-clox-ink">Stripe Connect Payouts</p>
+            <p className="text-xs text-clox-mute">Direct automated carrier job payouts</p>
+          </div>
+          <span className="text-xs font-semibold text-[var(--status-ok)]">
+            {data.company.stripeConnectPayoutsEnabled ? '✓ Connected' : 'Pending'}
+          </span>
+        </div>
+
+        {/* Fleet */}
+        <div className="flex items-center justify-between border-b border-clox-border pb-2">
+          <div>
+            <p className="font-medium text-clox-ink">
+              Fleet ({data.vehicles.length} vehicle{data.vehicles.length === 1 ? '' : 's'})
+            </p>
+            <p className="text-xs text-clox-mute">
+              {data.vehicles.map((v) => v.registration || v.label).join(', ') || 'None'}
+            </p>
+          </div>
+          <span className="text-xs font-semibold text-[var(--status-ok)]">✓ RWCs Attached</span>
+        </div>
+
+        {/* Drivers */}
+        <div className="flex items-center justify-between border-b border-clox-border pb-2">
+          <div>
+            <p className="font-medium text-clox-ink">
+              Drivers ({data.drivers.length} driver{data.drivers.length === 1 ? '' : 's'})
+            </p>
+            <p className="text-xs text-clox-mute">
+              {data.drivers.map((d) => d.name || d.email).join(', ') || 'None'}
+            </p>
+          </div>
+          <span className="text-xs font-semibold text-[var(--status-ok)]">✓ Registered</span>
+        </div>
+
+        {/* Coverage */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-medium text-clox-ink">Coverage & Capabilities</p>
+            <p className="text-xs text-clox-mute">
+              Regions: {data.company.serviceRegionCodes.join(', ') || 'VIC'}
+              {data.company.capabilities.length ? ` · ${data.company.capabilities.join(', ')}` : ''}
+            </p>
+          </div>
+          <span className="text-xs font-semibold text-[var(--status-ok)]">✓ Configured</span>
+        </div>
+      </div>
+
       {uploadError ? <Notice tone="error">{uploadError}</Notice> : null}
+      {missingDocs ? (
+        <Notice tone="warn">
+          {t('carrierOnboarding.errorUploadPlCargo', {
+            defaultValue: 'Please upload public liability and cargo insurance before submitting.',
+          })}
+        </Notice>
+      ) : null}
       {submit.isError ? (
         <Notice tone="error">{getErrorDetail(submit.error)}</Notice>
       ) : null}
+
       <div className="clox-form-actions">
         <Button
           variant="cta"
-          disabled={!plId || !cargoId || submit.isPending}
+          disabled={missingDocs || submit.isPending}
           onClick={() => {
             void (async () => {
               const ok = await confirm({

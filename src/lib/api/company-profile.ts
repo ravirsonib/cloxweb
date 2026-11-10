@@ -1,5 +1,15 @@
 import { http } from '@/lib/http';
 
+export type CompanyProfileHistoryItem = {
+  id: string;
+  category: 'PROFILE_CHANGE_REQUEST' | 'SELF_SERVE_UPDATE';
+  status: string;
+  proposedChanges: Record<string, unknown> | null;
+  note: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+};
+
 export type CompanyProfileResponse = {
   company: {
     id: string;
@@ -33,6 +43,7 @@ export type CompanyProfileResponse = {
     note: string | null;
     createdAt: string;
   } | null;
+  history?: CompanyProfileHistoryItem[];
 };
 
 export function getCarrierCompanyProfile() {

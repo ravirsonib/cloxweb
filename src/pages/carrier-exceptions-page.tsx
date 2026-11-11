@@ -8,11 +8,13 @@ import {
   DataCardList,
   Notice,
   PaginationBar,
+  RadioCardGroup,
   Select,
   StatusPill,
   dataCardClassName,
   useClientPagination,
   useToast,
+  type RadioCardOption,
 } from '@/components/ui';
 import {
   continueTripException,
@@ -40,6 +42,41 @@ function exceptionTone(status: string): 'ok' | 'warn' | 'danger' | 'info' | 'neu
   if (status === 'AWAITING_SENDER_APPROVAL') return 'info';
   if (status === 'AWAITING_CARRIER' || status === 'OPEN') return 'warn';
   return 'info';
+}
+
+type ExceptionResolvePath = 'reassign' | 'continue' | 'escalate' | 'release';
+
+function replacementRequirements(kind: TripExceptionRow['kind']): {
+  mustReplaceVehicle: boolean;
+  mustReplaceDriver: boolean;
+  mustChangeAtLeastOne: boolean;
+} {
+  switch (kind) {
+    case 'VEHICLE_BREAKDOWN':
+      return {
+        mustReplaceVehicle: true,
+        mustReplaceDriver: false,
+        mustChangeAtLeastOne: false,
+      };
+    case 'DRIVER_UNAVAILABLE':
+      return {
+        mustReplaceVehicle: false,
+        mustReplaceDriver: true,
+        mustChangeAtLeastOne: false,
+      };
+    case 'ACCIDENT':
+      return {
+        mustReplaceVehicle: true,
+        mustReplaceDriver: true,
+        mustChangeAtLeastOne: false,
+      };
+    default:
+      return {
+        mustReplaceVehicle: false,
+        mustReplaceDriver: false,
+        mustChangeAtLeastOne: true,
+      };
+  }
 }
 
 export function CarrierExceptionsPage() {
@@ -99,8 +136,8 @@ function ExceptionCard({ row }: { row: TripExceptionRow }) {
           <p className="truncate font-medium text-clox-ink">
             {row.job?.title ?? row.jobId.slice(0, 8)}
           </p>
-          <p className="mt-0.5 font-mono text-xs text-clox-faint">
-            {row.kind} · {row.phase}
+          <p className="mt-0.5 text-xs text-clox-faint">
+            {t(`trips.exceptionKinds.${row.kind}`, { defaultValue: row.kind })} · {row.phase}
           </p>
         </div>
         <StatusPill tone={exceptionTone(row.status)}>{row.status}</StatusPill>
@@ -127,6 +164,7 @@ export function CarrierExceptionDetailPage() {
   const [escalateNote, setEscalateNote] = useState('');
   const [releaseNote, setReleaseNote] = useState('');
   const [prefilledSuggested, setPrefilledSuggested] = useState(false);
+  const [resolvePath, setResolvePath] = useState<ExceptionResolvePath>('reassign');
 
   const detail = useQuery({
     queryKey: ['exceptions', id],
@@ -175,12 +213,36 @@ export function CarrierExceptionDetailPage() {
   });
 
   useEffect(() => {
+    if (detail.data?.status === 'AWAITING_SENDER_APPROVAL') {
+      setResolvePath('reassign');
+    }
+  }, [detail.data?.status]);
+
+  useEffect(() => {
+    if (prefilledSuggested || !detail.data) return;
     const recommended = candidates.data?.recommended;
-    if (!recommended || prefilledSuggested) return;
-    setVehicleId(recommended.vehicleId);
-    setDriverId(recommended.driverId);
+    if (recommended) {
+      setVehicleId(recommended.vehicleId);
+      setDriverId(recommended.driverId);
+      setPrefilledSuggested(true);
+      return;
+    }
+    if (candidates.isLoading || candidates.isFetching) return;
+    const req = replacementRequirements(detail.data.kind);
+    if (!req.mustReplaceVehicle && detail.data.vehicle?.id) {
+      setVehicleId(detail.data.vehicle.id);
+    }
+    if (!req.mustReplaceDriver && detail.data.driver?.id) {
+      setDriverId(detail.data.driver.id);
+    }
     setPrefilledSuggested(true);
-  }, [candidates.data, prefilledSuggested]);
+  }, [
+    candidates.data,
+    candidates.isFetching,
+    candidates.isLoading,
+    detail.data,
+    prefilledSuggested,
+  ]);
 
   async function refreshExceptionQueries() {
     await Promise.all([
@@ -275,6 +337,9 @@ export function CarrierExceptionDetailPage() {
     escalateMut.isPending ||
     releaseMut.isPending;
   const recommended = candidates.data?.recommended ?? null;
+  const replaceReq = replacementRequirements(row.kind);
+  const excludedVehicleId = replaceReq.mustReplaceVehicle ? (row.vehicle?.id ?? null) : null;
+  const excludedDriverId = replaceReq.mustReplaceDriver ? (row.driver?.id ?? null) : null;
   const vehicleOptions: Array<{
     id: string;
     registration: string | null;
@@ -282,17 +347,32 @@ export function CarrierExceptionDetailPage() {
     vehicleClass: string | null;
   }> = (() => {
     const byId = new Map(
-      activeVehicles.map((v) => [
-        v.id,
-        {
-          id: v.id,
-          registration: v.registration,
-          label: v.label,
-          vehicleClass: v.vehicleClass,
-        },
-      ]),
+      activeVehicles
+        .filter((v) => v.id !== excludedVehicleId)
+        .map((v) => [
+          v.id,
+          {
+            id: v.id,
+            registration: v.registration,
+            label: v.label,
+            vehicleClass: v.vehicleClass,
+          },
+        ]),
     );
+    if (
+      row.vehicle &&
+      !replaceReq.mustReplaceVehicle &&
+      !byId.has(row.vehicle.id)
+    ) {
+      byId.set(row.vehicle.id, {
+        id: row.vehicle.id,
+        registration: row.vehicle.registration,
+        label: null,
+        vehicleClass: row.vehicle.vehicleClass,
+      });
+    }
     for (const c of candidates.data?.items ?? []) {
+      if (c.vehicleId === excludedVehicleId) continue;
       if (!byId.has(c.vehicleId)) {
         byId.set(c.vehicleId, {
           id: c.vehicleId,
@@ -311,16 +391,26 @@ export function CarrierExceptionDetailPage() {
   };
   const driverOptions: DriverOption[] = (() => {
     const byId = new Map<string, DriverOption>(
-      activeDrivers.map((d) => [
-        d.id,
-        {
-          id: d.id,
-          licenceClass: d.licenceClass,
-          user: { name: d.user.name, email: d.user.email },
-        },
-      ]),
+      activeDrivers
+        .filter((d) => d.id !== excludedDriverId)
+        .map((d) => [
+          d.id,
+          {
+            id: d.id,
+            licenceClass: d.licenceClass,
+            user: { name: d.user.name, email: d.user.email },
+          },
+        ]),
     );
+    if (row.driver && !replaceReq.mustReplaceDriver && !byId.has(row.driver.id)) {
+      byId.set(row.driver.id, {
+        id: row.driver.id,
+        licenceClass: null,
+        user: { name: row.driver.name, email: row.driver.email },
+      });
+    }
     for (const c of candidates.data?.items ?? []) {
+      if (c.driverId === excludedDriverId) continue;
       if (!byId.has(c.driverId)) {
         byId.set(c.driverId, {
           id: c.driverId,
@@ -331,6 +421,26 @@ export function CarrierExceptionDetailPage() {
     }
     return [...byId.values()];
   })();
+  const reassignHintKey =
+    row.kind === 'VEHICLE_BREAKDOWN'
+      ? 'exceptions.reassignHintVehicle'
+      : row.kind === 'DRIVER_UNAVAILABLE'
+        ? 'exceptions.reassignHintDriver'
+        : row.kind === 'ACCIDENT'
+          ? 'exceptions.reassignHintAccident'
+          : 'exceptions.reassignHintFlexible';
+  const sameCrewSelected =
+    Boolean(row.vehicle?.id) &&
+    Boolean(row.driver?.id) &&
+    vehicleId === row.vehicle?.id &&
+    driverId === row.driver?.id;
+  const reassignBlocked =
+    !vehicleId ||
+    !driverId ||
+    actionBusy ||
+    (replaceReq.mustReplaceVehicle && vehicleId === row.vehicle?.id) ||
+    (replaceReq.mustReplaceDriver && driverId === row.driver?.id) ||
+    (replaceReq.mustChangeAtLeastOne && sameCrewSelected);
 
   return (
     <div>
@@ -345,8 +455,8 @@ export function CarrierExceptionDetailPage() {
           <h1 className="font-display text-2xl font-bold text-clox-ink">
             {row.job?.title ?? row.jobId.slice(0, 8)}
           </h1>
-          <p className="mt-1 font-mono text-sm text-clox-mute">
-            {row.kind} · {row.phase}
+          <p className="mt-1 text-sm text-clox-mute">
+            {t(`trips.exceptionKinds.${row.kind}`, { defaultValue: row.kind })} · {row.phase}
           </p>
         </div>
         <StatusPill tone={exceptionTone(row.status)}>{row.status}</StatusPill>
@@ -443,7 +553,17 @@ export function CarrierExceptionDetailPage() {
 
       {awaitingSender ? (
         <Notice tone="info" className="mt-6" title={t('exceptions.awaitingSenderTitle')}>
-          <p className="text-sm text-clox-mute">{t('exceptions.awaitingSenderHint')}</p>
+          <p className="text-sm font-medium text-clox-ink">
+            {t('exceptions.awaitingSenderStatusLine', {
+              exceptionStatus: row.status,
+              tripStatus: row.tripStatus ?? t('dash'),
+            })}
+          </p>
+          <p className="mt-1 text-sm text-clox-mute">
+            {t('exceptions.awaitingSenderHint', {
+              tripStatus: row.tripStatus ?? t('dash'),
+            })}
+          </p>
           {row.proposedVehicle || row.proposedDriver ? (
             <p className="mt-1 text-sm font-medium text-clox-ink">
               {t('exceptions.awaitingSenderCrew', {
@@ -462,194 +582,238 @@ export function CarrierExceptionDetailPage() {
       ) : null}
 
       {open ? (
-        <div className="mt-6 grid max-w-3xl gap-4 lg:grid-cols-1">
-          {canPropose ? (
-          <form
-            className="clox-card space-y-3 p-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!vehicleId || !driverId || actionBusy) return;
-              reassign.mutate();
-            }}
-            noValidate
-          >
-            <h2 className="font-display text-lg font-semibold text-clox-ink">
-              {t('exceptions.reassignTitle')}
-            </h2>
-            <p className="text-sm text-clox-mute">{t('exceptions.reassignHint')}</p>
-            <Select
-              label={t('market.assignVehicle')}
-              required
-              value={vehicleId}
-              onChange={(event) => setVehicleId(event.target.value)}
-            >
-              <option value="">{t('market.selectVehicle')}</option>
-              {vehicleOptions.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {carrierVehicleSelectLabel(v, t('dash'))}
-                </option>
-              ))}
-            </Select>
-            <Select
-              label={t('market.assignDriver')}
-              required
-              value={driverId}
-              onChange={(event) => setDriverId(event.target.value)}
-            >
-              <option value="">{t('market.selectDriver')}</option>
-              {driverOptions.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {carrierDriverSelectLabel(d)}
-                </option>
-              ))}
-            </Select>
-            <label className="block">
-              <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
-                {t('exceptions.reassignNote')}
-              </span>
-              <textarea
-                className="clox-field-control min-h-[3.5rem]"
-                value={note}
-                onChange={(event) => setNote(event.target.value)}
-                maxLength={2000}
-              />
-            </label>
-            {reassign.isError ? (
-              <Notice tone="error">{getErrorDetail(reassign.error)}</Notice>
-            ) : null}
-            <Button
-              type="submit"
-              variant="cta"
-              disabled={!vehicleId || !driverId || actionBusy}
-            >
-              {reassign.isPending ? t('loading') : t('exceptions.reassignConfirm')}
-            </Button>
-          </form>
-          ) : null}
+        <div className="mt-6 grid max-w-3xl gap-4">
+          {(() => {
+            const pathOptions: RadioCardOption<ExceptionResolvePath>[] = [
+              {
+                value: 'reassign',
+                title: t('exceptions.resolvePathReassign'),
+                description: t('exceptions.resolvePathReassignDesc'),
+              },
+            ];
+            if (canActWithoutSender) {
+              pathOptions.push({
+                value: 'continue',
+                title: t('exceptions.resolvePathContinue'),
+                description: t('exceptions.resolvePathContinueDesc'),
+              });
+              if (canEscalate) {
+                pathOptions.push({
+                  value: 'escalate',
+                  title: t('exceptions.resolvePathEscalate'),
+                  description: t('exceptions.resolvePathEscalateDesc'),
+                });
+              }
+              pathOptions.push({
+                value: 'release',
+                title: t('exceptions.resolvePathRelease'),
+                description: t('exceptions.resolvePathReleaseDesc'),
+              });
+            }
+            const activePath = pathOptions.some((o) => o.value === resolvePath)
+              ? resolvePath
+              : 'reassign';
 
-          {canActWithoutSender ? (
-            <>
-              <form
-                className="clox-card space-y-3 p-4"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (continueNote.trim().length < 3 || actionBusy) return;
-                  continueMut.mutate();
-                }}
-                noValidate
-              >
-                <h2 className="font-display text-lg font-semibold text-clox-ink">
-                  {t('exceptions.continueTitle')}
-                </h2>
-                <p className="text-sm text-clox-mute">{t('exceptions.continueHint')}</p>
-                <label className="block">
-                  <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
-                    {t('exceptions.continueNote')}
-                  </span>
-                  <textarea
-                    className="clox-field-control min-h-[3.5rem]"
-                    value={continueNote}
-                    onChange={(event) => setContinueNote(event.target.value)}
-                    maxLength={2000}
-                    required
+            return (
+              <>
+                <div className="clox-card space-y-3 p-4">
+                  <RadioCardGroup
+                    label={t('exceptions.resolvePathLabel')}
+                    hint={t('exceptions.resolvePathHint')}
+                    name={`exception-resolve-${row.id}`}
+                    value={activePath}
+                    onChange={setResolvePath}
+                    options={pathOptions}
+                    columns={2}
                   />
-                </label>
-                <label className="block">
-                  <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
-                    {t('exceptions.continueEta')}
-                  </span>
-                  <input
-                    className="clox-field-control"
-                    value={etaNote}
-                    onChange={(event) => setEtaNote(event.target.value)}
-                    placeholder={t('exceptions.continueEtaPlaceholder')}
-                    maxLength={500}
-                  />
-                </label>
-                {continueMut.isError ? (
-                  <Notice tone="error">{getErrorDetail(continueMut.error)}</Notice>
+                </div>
+
+                {canPropose && activePath === 'reassign' ? (
+                  <form
+                    className="clox-card space-y-3 p-4"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (reassignBlocked) return;
+                      reassign.mutate();
+                    }}
+                    noValidate
+                  >
+                    <h2 className="font-display text-lg font-semibold text-clox-ink">
+                      {t('exceptions.reassignTitle')}
+                    </h2>
+                    <p className="text-sm text-clox-mute">{t(reassignHintKey)}</p>
+                    <Select
+                      label={t('market.assignVehicle')}
+                      required
+                      value={vehicleId}
+                      onChange={(event) => setVehicleId(event.target.value)}
+                    >
+                      <option value="">{t('market.selectVehicle')}</option>
+                      {vehicleOptions.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {carrierVehicleSelectLabel(v, t('dash'))}
+                        </option>
+                      ))}
+                    </Select>
+                    <Select
+                      label={t('market.assignDriver')}
+                      required
+                      value={driverId}
+                      onChange={(event) => setDriverId(event.target.value)}
+                    >
+                      <option value="">{t('market.selectDriver')}</option>
+                      {driverOptions.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {carrierDriverSelectLabel(d)}
+                        </option>
+                      ))}
+                    </Select>
+                    <label className="block">
+                      <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
+                        {t('exceptions.reassignNote')}
+                      </span>
+                      <textarea
+                        className="clox-field-control min-h-[3.5rem]"
+                        value={note}
+                        onChange={(event) => setNote(event.target.value)}
+                        maxLength={2000}
+                      />
+                    </label>
+                    {reassign.isError ? (
+                      <Notice tone="error">{getErrorDetail(reassign.error)}</Notice>
+                    ) : null}
+                    <Button type="submit" variant="cta" disabled={reassignBlocked}>
+                      {reassign.isPending ? t('loading') : t('exceptions.reassignConfirm')}
+                    </Button>
+                  </form>
                 ) : null}
-                <Button
-                  type="submit"
-                  variant="secondary"
-                  disabled={continueNote.trim().length < 3 || actionBusy}
-                >
-                  {continueMut.isPending ? t('loading') : t('exceptions.continueConfirm')}
-                </Button>
-              </form>
 
-              {canEscalate ? (
-                <form
-                  className="clox-card space-y-3 p-4"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    if (actionBusy) return;
-                    escalateMut.mutate();
-                  }}
-                  noValidate
-                >
-                  <h2 className="font-display text-lg font-semibold text-clox-ink">
-                    {t('exceptions.escalateTitle')}
-                  </h2>
-                  <p className="text-sm text-clox-mute">{t('exceptions.escalateHint')}</p>
-                  <label className="block">
-                    <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
-                      {t('exceptions.escalateNote')}
-                    </span>
-                    <textarea
-                      className="clox-field-control min-h-[3.5rem]"
-                      value={escalateNote}
-                      onChange={(event) => setEscalateNote(event.target.value)}
-                      maxLength={2000}
-                    />
-                  </label>
-                  {escalateMut.isError ? (
-                    <Notice tone="error">{getErrorDetail(escalateMut.error)}</Notice>
-                  ) : null}
-                  <Button type="submit" variant="destructive" disabled={actionBusy}>
-                    {escalateMut.isPending ? t('loading') : t('exceptions.escalateConfirm')}
-                  </Button>
-                </form>
-              ) : null}
-
-              <form
-                className="clox-card space-y-3 p-4"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (releaseNote.trim().length < 3 || actionBusy) return;
-                  releaseMut.mutate();
-                }}
-                noValidate
-              >
-                <h2 className="font-display text-lg font-semibold text-clox-ink">
-                  {t('exceptions.releaseTitle')}
-                </h2>
-                <p className="text-sm text-clox-mute">{t('exceptions.releaseHint')}</p>
-                <label className="block">
-                  <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
-                    {t('exceptions.releaseNote')}
-                  </span>
-                  <textarea
-                    className="clox-field-control min-h-[3.5rem]"
-                    value={releaseNote}
-                    onChange={(event) => setReleaseNote(event.target.value)}
-                    maxLength={2000}
-                    required
-                  />
-                </label>
-                {releaseMut.isError ? (
-                  <Notice tone="error">{getErrorDetail(releaseMut.error)}</Notice>
+                {canActWithoutSender && activePath === 'continue' ? (
+                  <form
+                    className="clox-card space-y-3 p-4"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (continueNote.trim().length < 3 || actionBusy) return;
+                      continueMut.mutate();
+                    }}
+                    noValidate
+                  >
+                    <h2 className="font-display text-lg font-semibold text-clox-ink">
+                      {t('exceptions.continueTitle')}
+                    </h2>
+                    <p className="text-sm text-clox-mute">{t('exceptions.continueHint')}</p>
+                    <label className="block">
+                      <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
+                        {t('exceptions.continueNote')}
+                      </span>
+                      <textarea
+                        className="clox-field-control min-h-[3.5rem]"
+                        value={continueNote}
+                        onChange={(event) => setContinueNote(event.target.value)}
+                        maxLength={2000}
+                        required
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
+                        {t('exceptions.continueEta')}
+                      </span>
+                      <input
+                        className="clox-field-control"
+                        value={etaNote}
+                        onChange={(event) => setEtaNote(event.target.value)}
+                        placeholder={t('exceptions.continueEtaPlaceholder')}
+                        maxLength={500}
+                      />
+                    </label>
+                    {continueMut.isError ? (
+                      <Notice tone="error">{getErrorDetail(continueMut.error)}</Notice>
+                    ) : null}
+                    <Button
+                      type="submit"
+                      variant="secondary"
+                      disabled={continueNote.trim().length < 3 || actionBusy}
+                    >
+                      {continueMut.isPending ? t('loading') : t('exceptions.continueConfirm')}
+                    </Button>
+                  </form>
                 ) : null}
-                <Button
-                  type="submit"
-                  variant="destructive"
-                  disabled={releaseNote.trim().length < 3 || actionBusy}
-                >
-                  {releaseMut.isPending ? t('loading') : t('exceptions.releaseConfirm')}
-                </Button>
-              </form>
-            </>
-          ) : null}
+
+                {canActWithoutSender && canEscalate && activePath === 'escalate' ? (
+                  <form
+                    className="clox-card space-y-3 p-4"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (actionBusy) return;
+                      escalateMut.mutate();
+                    }}
+                    noValidate
+                  >
+                    <h2 className="font-display text-lg font-semibold text-clox-ink">
+                      {t('exceptions.escalateTitle')}
+                    </h2>
+                    <p className="text-sm text-clox-mute">{t('exceptions.escalateHint')}</p>
+                    <label className="block">
+                      <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
+                        {t('exceptions.escalateNote')}
+                      </span>
+                      <textarea
+                        className="clox-field-control min-h-[3.5rem]"
+                        value={escalateNote}
+                        onChange={(event) => setEscalateNote(event.target.value)}
+                        maxLength={2000}
+                      />
+                    </label>
+                    {escalateMut.isError ? (
+                      <Notice tone="error">{getErrorDetail(escalateMut.error)}</Notice>
+                    ) : null}
+                    <Button type="submit" variant="destructive" disabled={actionBusy}>
+                      {escalateMut.isPending ? t('loading') : t('exceptions.escalateConfirm')}
+                    </Button>
+                  </form>
+                ) : null}
+
+                {canActWithoutSender && activePath === 'release' ? (
+                  <form
+                    className="clox-card space-y-3 p-4"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (releaseNote.trim().length < 3 || actionBusy) return;
+                      releaseMut.mutate();
+                    }}
+                    noValidate
+                  >
+                    <h2 className="font-display text-lg font-semibold text-clox-ink">
+                      {t('exceptions.releaseTitle')}
+                    </h2>
+                    <p className="text-sm text-clox-mute">{t('exceptions.releaseHint')}</p>
+                    <label className="block">
+                      <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
+                        {t('exceptions.releaseNote')}
+                      </span>
+                      <textarea
+                        className="clox-field-control min-h-[3.5rem]"
+                        value={releaseNote}
+                        onChange={(event) => setReleaseNote(event.target.value)}
+                        maxLength={2000}
+                        required
+                      />
+                    </label>
+                    {releaseMut.isError ? (
+                      <Notice tone="error">{getErrorDetail(releaseMut.error)}</Notice>
+                    ) : null}
+                    <Button
+                      type="submit"
+                      variant="destructive"
+                      disabled={releaseNote.trim().length < 3 || actionBusy}
+                    >
+                      {releaseMut.isPending ? t('loading') : t('exceptions.releaseConfirm')}
+                    </Button>
+                  </form>
+                ) : null}
+              </>
+            );
+          })()}
         </div>
       ) : null}
     </div>

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Navigate } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { LoadingBlock } from '@/components/status-blocks';
 import {
   Button,
@@ -493,6 +493,18 @@ export function CarrierAssignmentsPage() {
                             >
                               {t('assignments.reassign')}
                             </Button>
+                          </div>
+                        ) : a.openTripExceptionId ? (
+                          <div className="mt-3 space-y-2">
+                            <p className="text-xs text-clox-mute">
+                              {t('assignments.reassignBlockedByException')}
+                            </p>
+                            <Link
+                              to={`/carrier/exceptions/${a.openTripExceptionId}`}
+                              className="inline-flex text-sm font-medium text-clox-ink underline underline-offset-2"
+                            >
+                              {t('assignments.reassignViaException')}
+                            </Link>
                           </div>
                         ) : null}
                       </div>

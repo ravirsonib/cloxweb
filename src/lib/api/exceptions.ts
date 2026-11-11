@@ -12,6 +12,8 @@ export type TripExceptionRow = {
   jobId: string;
   assignmentId: string;
   tripId: string | null;
+  /** Live trip status when linked (e.g. BREAKDOWN while awaiting sender). */
+  tripStatus?: string | null;
   companyId: string;
   reportedByUserId: string;
   kind: TripExceptionKind;

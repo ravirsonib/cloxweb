@@ -150,6 +150,10 @@ export type CarrierAssignment = {
   paidAndConfirmed: boolean;
   tripBlockedUntilPaid: boolean;
   canReassign: boolean;
+  /** Present when a trip exception blocks direct reassign (use Exceptions → sender approve). */
+  openTripExceptionId?: string | null;
+  openTripExceptionStatus?: string | null;
+  openTripExceptionKind?: string | null;
   amountIncGstCents: number;
   etaMinutes: number | null;
   job: {

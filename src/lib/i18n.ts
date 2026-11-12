@@ -4,18 +4,20 @@ import {
   defaultLocale,
   enCommon,
   hiCommon,
+  isAppLocale,
+  paCommon,
   LOCALE_STORAGE_KEY,
+  normalizeAppLocale,
   type AppLocale,
 } from '@/locales';
 
 function readStoredLocale(): AppLocale {
   if (typeof localStorage === 'undefined') return defaultLocale;
-  const stored = localStorage.getItem(LOCALE_STORAGE_KEY);
-  return stored === 'hi' || stored === 'en' ? stored : defaultLocale;
+  return normalizeAppLocale(localStorage.getItem(LOCALE_STORAGE_KEY));
 }
 
-const initialLocale =
-  (import.meta.env.VITE_DEFAULT_LOCALE as AppLocale | undefined) || readStoredLocale();
+const envLocale = import.meta.env.VITE_DEFAULT_LOCALE as string | undefined;
+const initialLocale = isAppLocale(envLocale) ? envLocale : readStoredLocale();
 
 void i18n.use(initReactI18next).init({
   lng: initialLocale,
@@ -25,6 +27,7 @@ void i18n.use(initReactI18next).init({
   resources: {
     en: { common: enCommon },
     hi: { common: hiCommon },
+    pa: { common: paCommon },
   },
   interpolation: {
     escapeValue: false,

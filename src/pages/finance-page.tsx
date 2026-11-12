@@ -43,7 +43,7 @@ import {
   type SettlementCycleStatus,
 } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { CURRENCY_SYMBOL, formatCompactDollars, formatDollars } from '@/lib/currency';
+import { CURRENCY_SYMBOL, formatDollars } from '@/lib/currency';
 import { formatDate, formatDateTime } from '@/lib/datetime';
 import { AdminRole, type FinanceQuery } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
@@ -209,19 +209,19 @@ export function FinancePage() {
         },
         {
           id: 'split-hq',
-          label: t('finance.charts.splitHq', { defaultValue: 'Clox Platform HQ (15%)' }),
+          label: t('finance.charts.splitHq', { defaultValue: 'Clox HQ (15%)' }),
           value: data.summary.hqShareCents / 100,
           color: '#f97316',
         },
         {
           id: 'split-state',
-          label: t('finance.charts.splitState', { defaultValue: 'State Masters (10%)' }),
+          label: t('finance.charts.splitState', { defaultValue: 'State masters (10%)' }),
           value: data.summary.stateCommissionsCents / 100,
           color: '#0284c7',
         },
         {
           id: 'split-local',
-          label: t('finance.charts.splitLocal', { defaultValue: 'Local BDEs (5%)' }),
+          label: t('finance.charts.splitLocal', { defaultValue: 'Local partners (5%)' }),
           value: data.summary.localCommissionsCents / 100,
           color: '#fb923c',
         },
@@ -265,13 +265,13 @@ export function FinancePage() {
             </h1>
             <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-500/20">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              {t('finance.liveLedger', { defaultValue: 'Live Ledger' })}
+              {t('finance.liveLedger', { defaultValue: 'Live figures' })}
             </span>
           </div>
           <p className="mt-1 max-w-3xl text-sm text-clox-mute">
             {t('finance.subtitle', {
               defaultValue:
-                'National GMV, automated settlement disbursement cycles, carrier 7-day clearing pipeline, partner commissions, and daily reconciliation.',
+                'See what shippers paid, what carriers and partners earn, and what still needs to go to the bank.',
             })}
           </p>
         </div>
@@ -325,7 +325,7 @@ export function FinancePage() {
             )}
           >
             <TrendingUp className="h-4 w-4" />
-            <span>{t('finance.tabs.overview', { defaultValue: 'Overview & Matrix' })}</span>
+            <span>{t('finance.tabs.overview', { defaultValue: 'Overview' })}</span>
           </button>
           <button
             type="button"
@@ -338,7 +338,7 @@ export function FinancePage() {
             )}
           >
             <Clock className="h-4 w-4" />
-            <span>{t('finance.tabs.cycles', { defaultValue: 'Settlement Cycles & Disbursement' })}</span>
+            <span>{t('finance.tabs.cycles', { defaultValue: 'Payout cycles' })}</span>
           </button>
           <button
             type="button"
@@ -351,7 +351,7 @@ export function FinancePage() {
             )}
           >
             <ShieldCheck className="h-4 w-4" />
-            <span>{t('finance.tabs.reconciliation', { defaultValue: 'Daily Ledger Reconciliation' })}</span>
+            <span>{t('finance.tabs.reconciliation', { defaultValue: 'Daily bank check' })}</span>
           </button>
         </nav>
       </div>
@@ -425,124 +425,153 @@ export function FinancePage() {
 
           {/* Master KPI Cards */}
           {data?.summary ? (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {/* 1. Gross Freight Volume (GMV) */}
-              <div className="rounded-clox-md border border-clox-border bg-clox-surface p-5 shadow-clox-1 transition hover:shadow-clox-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-clox-mute">
-                    {t('finance.kpi.gmv', { defaultValue: 'Gross Freight Volume (GMV)' })}
-                  </span>
-                  <div className="rounded-full bg-orange-50 p-2 text-clox-orange">
-                    <DollarSign className="h-4 w-4" />
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {/* 1. Total freight paid */}
+                <div className="rounded-clox-md border border-clox-border bg-clox-surface p-5 shadow-clox-1 transition hover:shadow-clox-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-clox-mute">
+                      {t('finance.kpi.gmv', { defaultValue: 'Total freight paid' })}
+                    </span>
+                    <div className="rounded-full bg-orange-50 p-2 text-clox-orange">
+                      <DollarSign className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <div className="mt-3 font-display text-2xl font-bold text-clox-ink sm:text-3xl">
+                    <AnimatedNumber
+                      value={data.summary.gmvCents / 100}
+                      prefix={CURRENCY_SYMBOL}
+                      formatter={formatExactDollars}
+                    />
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-xs text-clox-mute">
+                    <span>
+                      {t('finance.kpi.gmvSub', {
+                        count: data.summary.completedJobsCount,
+                        defaultValue: `${data.summary.completedJobsCount} deliveries completed`,
+                      })}
+                    </span>
+                    <span className="font-semibold text-emerald-700">
+                      {t('finance.kpi.gmvTag', { defaultValue: 'Marketplace total' })}
+                    </span>
                   </div>
                 </div>
-                <div className="mt-3 font-display text-2xl font-bold text-clox-ink sm:text-3xl">
-                  <AnimatedNumber
-                    value={data.summary.gmvCents / 100}
-                    prefix={CURRENCY_SYMBOL}
-                    formatter={formatExactDollars}
-                  />
-                </div>
-                <div className="mt-2 flex items-center justify-between text-xs text-clox-mute">
-                  <span>
-                    {t('finance.kpi.gmvSub', {
-                      count: data.summary.completedJobsCount,
-                      defaultValue: `${data.summary.completedJobsCount} deliveries completed`,
-                    })}
-                  </span>
-                  <span className="font-semibold text-emerald-700">
-                    {t('finance.kpi.gmvTag', { defaultValue: '100% upfront' })}
-                  </span>
-                </div>
-              </div>
 
-              {/* 2. Clox Platform Net Profit */}
-              <div className="rounded-clox-md border border-clox-border bg-clox-surface p-5 shadow-clox-1 transition hover:shadow-clox-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-clox-mute">
-                    {t('finance.kpi.platformRevenue', { defaultValue: 'Clox Platform Profit' })}
-                  </span>
-                  <div className="rounded-full bg-sky-50 p-2 text-sky-600">
-                    <TrendingUp className="h-4 w-4" />
+                {/* 2. Clox share */}
+                <div className="rounded-clox-md border border-clox-border bg-clox-surface p-5 shadow-clox-1 transition hover:shadow-clox-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-clox-mute">
+                      {t('finance.kpi.platformRevenue', { defaultValue: "Clox's share" })}
+                    </span>
+                    <div className="rounded-full bg-sky-50 p-2 text-sky-600">
+                      <TrendingUp className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <div className="mt-3 font-display text-2xl font-bold text-sky-900 sm:text-3xl">
+                    <AnimatedNumber
+                      value={data.summary.platformRevenueCents / 100}
+                      prefix={CURRENCY_SYMBOL}
+                      formatter={formatExactDollars}
+                    />
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2 text-xs text-clox-mute">
+                    <span>
+                      {t('finance.kpi.platformRevenueSub', {
+                        percent: data.summary.netMarginPercent,
+                        defaultValue: `About ${data.summary.netMarginPercent}% of freight paid`,
+                      })}
+                    </span>
+                    <span className="shrink-0 font-semibold text-clox-orange">
+                      {t('finance.kpi.hqShare', {
+                        amount: formatDollars(data.summary.hqShareCents),
+                        defaultValue: `HQ ${formatDollars(data.summary.hqShareCents)}`,
+                      })}
+                      {data.summary.hqHoldingCents > 0
+                        ? ` · ${t('finance.kpi.hqHold', {
+                            amount: formatDollars(data.summary.hqHoldingCents),
+                            defaultValue: `Holding ${formatDollars(data.summary.hqHoldingCents)}`,
+                          })}`
+                        : ''}
+                    </span>
                   </div>
                 </div>
-                <div className="mt-3 font-display text-2xl font-bold text-sky-900 sm:text-3xl">
-                  <AnimatedNumber
-                    value={data.summary.platformRevenueCents / 100}
-                    prefix={CURRENCY_SYMBOL}
-                    formatter={formatExactDollars}
-                  />
-                </div>
-                <div className="mt-2 flex items-center justify-between text-xs text-clox-mute">
-                  <span>
-                    {t('finance.kpi.platformRevenueSub', {
-                      percent: data.summary.netMarginPercent,
-                      defaultValue: `Margin: ${data.summary.netMarginPercent}%`,
-                    })}
-                  </span>
-                  <span className="font-semibold text-clox-orange">
-                    HQ {formatCompactDollars(data.summary.hqShareCents)}
-                    {data.summary.hqHoldingCents > 0
-                      ? ` + Hold ${formatCompactDollars(data.summary.hqHoldingCents)}`
-                      : ''}
-                  </span>
-                </div>
-              </div>
 
-              {/* 3. Carrier Disbursements */}
-              <div className="rounded-clox-md border border-clox-border bg-clox-surface p-5 shadow-clox-1 transition hover:shadow-clox-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-clox-mute">
-                    {t('finance.kpi.carrierOutflows', { defaultValue: 'Carrier Outflows (70%)' })}
-                  </span>
-                  <div className="rounded-full bg-blue-50 p-2 text-blue-600">
-                    <Truck className="h-4 w-4" />
+                {/* 3. Carrier payouts */}
+                <div className="rounded-clox-md border border-clox-border bg-clox-surface p-5 shadow-clox-1 transition hover:shadow-clox-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-clox-mute">
+                      {t('finance.kpi.carrierOutflows', {
+                        defaultValue: 'Paid / owed to carriers',
+                      })}
+                    </span>
+                    <div className="rounded-full bg-blue-50 p-2 text-blue-600">
+                      <Truck className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <div className="mt-3 font-display text-2xl font-bold text-clox-ink sm:text-3xl">
+                    <AnimatedNumber
+                      value={data.summary.carrierPayoutsCents / 100}
+                      prefix={CURRENCY_SYMBOL}
+                      formatter={formatExactDollars}
+                    />
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2 text-xs text-clox-mute">
+                    <span>
+                      {t('finance.kpi.carrierPaid', {
+                        amount: formatDollars(data.summary.carrierPaidCents),
+                        defaultValue: `Paid to bank: ${formatDollars(data.summary.carrierPaidCents)}`,
+                      })}
+                    </span>
+                    <span className="shrink-0 font-semibold text-amber-700">
+                      {t('finance.kpi.carrierPending', {
+                        amount: formatDollars(data.summary.carrierPendingCents),
+                        defaultValue: `Waiting payout: ${formatDollars(data.summary.carrierPendingCents)}`,
+                      })}
+                    </span>
                   </div>
                 </div>
-                <div className="mt-3 font-display text-2xl font-bold text-clox-ink sm:text-3xl">
-                  <AnimatedNumber
-                    value={data.summary.carrierPayoutsCents / 100}
-                    prefix={CURRENCY_SYMBOL}
-                    formatter={formatExactDollars}
-                  />
-                </div>
-                <div className="mt-2 flex items-center justify-between text-xs text-clox-mute">
-                  <span>
-                    {t('finance.carrier.paidOut', { defaultValue: 'Paid' })}: {formatCompactDollars(data.summary.carrierPaidCents)}
-                  </span>
-                  <span className="font-semibold text-amber-700">
-                    {clearingDays === 0
-                      ? t('finance.carrier.inInstantHold', { defaultValue: 'Payout Processing' })
-                      : t('finance.carrier.inHold', {
-                          days: clearingDays,
-                          defaultValue: `In ${clearingDays}-Day Hold`,
-                        })}: {formatCompactDollars(data.summary.carrierPendingCents)}
-                  </span>
-                </div>
-              </div>
 
-              {/* 4. Partner Commissions */}
-              <div className="rounded-clox-md border border-clox-border bg-clox-surface p-5 shadow-clox-1 transition hover:shadow-clox-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-clox-mute">
-                    {t('finance.kpi.partnerCommissions', { defaultValue: 'Partner Commissions (15%)' })}
-                  </span>
-                  <div className="rounded-full bg-purple-50 p-2 text-purple-600">
-                    <Users className="h-4 w-4" />
+                {/* 4. Partner earnings */}
+                <div className="rounded-clox-md border border-clox-border bg-clox-surface p-5 shadow-clox-1 transition hover:shadow-clox-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-clox-mute">
+                      {t('finance.kpi.partnerCommissions', {
+                        defaultValue: 'Partner earnings',
+                      })}
+                    </span>
+                    <div className="rounded-full bg-purple-50 p-2 text-purple-600">
+                      <Users className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <div className="mt-3 font-display text-2xl font-bold text-clox-ink sm:text-3xl">
+                    <AnimatedNumber
+                      value={data.summary.partnerCommissionsCents / 100}
+                      prefix={CURRENCY_SYMBOL}
+                      formatter={formatExactDollars}
+                    />
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2 text-xs text-clox-mute">
+                    <span>
+                      {t('finance.kpi.stateShare', {
+                        amount: formatDollars(data.summary.stateCommissionsCents),
+                        defaultValue: `State masters: ${formatDollars(data.summary.stateCommissionsCents)}`,
+                      })}
+                    </span>
+                    <span>
+                      {t('finance.kpi.localShare', {
+                        amount: formatDollars(data.summary.localCommissionsCents),
+                        defaultValue: `Local partners: ${formatDollars(data.summary.localCommissionsCents)}`,
+                      })}
+                    </span>
                   </div>
                 </div>
-                <div className="mt-3 font-display text-2xl font-bold text-clox-ink sm:text-3xl">
-                  <AnimatedNumber
-                    value={data.summary.partnerCommissionsCents / 100}
-                    prefix={CURRENCY_SYMBOL}
-                    formatter={formatExactDollars}
-                  />
-                </div>
-                <div className="mt-2 flex items-center justify-between text-xs text-clox-mute">
-                  <span>State (10%): {formatCompactDollars(data.summary.stateCommissionsCents)}</span>
-                  <span>Local (5%): {formatCompactDollars(data.summary.localCommissionsCents)}</span>
-                </div>
               </div>
+              <p className="rounded-clox-md border border-clox-border-soft bg-clox-surface-alt/50 px-4 py-3 text-xs leading-relaxed text-clox-mute">
+                {t('finance.kpi.moneyFlowHelp', {
+                  defaultValue:
+                    'Where the money goes: most of each freight payment goes to the carrier; the rest is shared by Clox and partners. Carrier payouts may wait a few days before reaching their bank.',
+                })}
+              </p>
             </div>
           ) : null}
 
@@ -552,7 +581,11 @@ export function FinancePage() {
               <div className="space-y-0.5">
                 <div className="flex items-center gap-1.5 text-xs text-clox-mute">
                   <Clock className="h-3.5 w-3.5 text-amber-500" />
-                  <span>{t('finance.pipeline.escrow', { defaultValue: 'In Escrow (Transit)' })}</span>
+                  <span>
+                    {t('finance.pipeline.escrow', {
+                      defaultValue: 'Money held for trips in progress',
+                    })}
+                  </span>
                 </div>
                 <div className="font-display text-lg font-bold text-clox-ink">
                   {formatDollars(data.cashflowPipeline.escrowCents)}
@@ -563,10 +596,12 @@ export function FinancePage() {
                   <CreditCard className="h-3.5 w-3.5 text-sky-500" />
                   <span>
                     {clearingDays === 0
-                      ? t('finance.carrier.clearingImmediate', { defaultValue: 'Immediate Settlement' })
+                      ? t('finance.carrier.clearingImmediate', {
+                          defaultValue: 'Immediate Settlement',
+                        })
                       : t('finance.pipeline.clearing', {
                           days: clearingDays,
-                          defaultValue: `${clearingDays}-Day Clearing Hold`,
+                          defaultValue: `Waiting before bank payout (${clearingDays} days)`,
                         })}
                   </span>
                 </div>
@@ -577,7 +612,11 @@ export function FinancePage() {
               <div className="space-y-0.5">
                 <div className="flex items-center gap-1.5 text-xs text-clox-mute">
                   <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                  <span>{t('finance.pipeline.disbursed', { defaultValue: 'Disbursed to Bank' })}</span>
+                  <span>
+                    {t('finance.pipeline.disbursed', {
+                      defaultValue: 'Already paid to bank',
+                    })}
+                  </span>
                 </div>
                 <div className="font-display text-lg font-bold text-emerald-800">
                   {formatDollars(data.cashflowPipeline.disbursedCents)}
@@ -586,7 +625,11 @@ export function FinancePage() {
               <div className="space-y-0.5">
                 <div className="flex items-center gap-1.5 text-xs text-clox-mute">
                   <AlertTriangle className="h-3.5 w-3.5 text-rose-500" />
-                  <span>{t('finance.pipeline.refunds', { defaultValue: 'Refunds & Adjustments' })}</span>
+                  <span>
+                    {t('finance.pipeline.refunds', {
+                      defaultValue: 'Refunds & adjustments',
+                    })}
+                  </span>
                 </div>
                 <div className="font-display text-lg font-bold text-rose-700">
                   {formatDollars(data.cashflowPipeline.refundedCents)}
@@ -598,9 +641,12 @@ export function FinancePage() {
           {/* Interactive Charts Row */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <InteractiveChart
-              title={t('finance.charts.gmvTrendTitle', { defaultValue: 'Gross Freight Volume (GMV) Trend' })}
+              title={t('finance.charts.gmvTrendTitle', {
+                defaultValue: 'Freight paid over time',
+              })}
               subtitle={t('finance.charts.gmvTrendSubtitle', {
-                defaultValue: 'Timeline throughput of gross freight booked across the marketplace',
+                defaultValue:
+                  'How much shippers paid across the marketplace in this period',
               })}
               items={timelineGmvItems}
               defaultVisual="area"
@@ -609,9 +655,12 @@ export function FinancePage() {
               formatValue={(v: number) => `${CURRENCY_SYMBOL}${v.toLocaleString()}`}
             />
             <InteractiveChart
-              title={t('finance.charts.splitTitle', { defaultValue: 'Revenue Split Allocation' })}
+              title={t('finance.charts.splitTitle', {
+                defaultValue: 'How freight money is shared',
+              })}
               subtitle={t('finance.charts.splitSubtitle', {
-                defaultValue: 'Fixed 70% Carrier share vs 30% Platform pool (HQ 15%, State 10%, Local 5%)',
+                defaultValue:
+                  'Carriers get most of each payment; Clox and partners share the rest (default 70% / 15% / 10% / 5%)',
               })}
               items={splitItems}
               defaultVisual="pie"
@@ -627,11 +676,14 @@ export function FinancePage() {
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-clox-border-soft pb-4">
                 <div>
                   <h2 className="font-display text-lg font-bold text-clox-ink">
-                    {t('finance.surcharges.title', { defaultValue: 'Surcharges Intelligence & Gate Audits' })}
+                    {t('finance.surcharges.title', {
+                      defaultValue: 'Extra fees & weight checks',
+                    })}
                   </h2>
                   <p className="mt-0.5 text-xs text-clox-mute">
                     {t('finance.surcharges.subtitle', {
-                      defaultValue: 'Mass discrepancy at Gate B checks vs Waiting detention timers at pickup/drop-off',
+                      defaultValue:
+                        'Fees for overweight loads and waiting time at pickup or drop-off',
                     })}
                   </p>
                 </div>
@@ -647,8 +699,12 @@ export function FinancePage() {
               <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
                 <div className="lg:col-span-2">
                   <InteractiveChart
-                    title={t('finance.charts.surchargesTitle', { defaultValue: 'Surcharges Breakdown by Gate Type' })}
-                    subtitle={t('finance.charts.surchargesSubtitle', { defaultValue: 'Paid vs Pending collections' })}
+                    title={t('finance.charts.surchargesTitle', {
+                      defaultValue: 'Extra fees by type',
+                    })}
+                    subtitle={t('finance.charts.surchargesSubtitle', {
+                      defaultValue: 'Collected vs still unpaid',
+                    })}
                     items={surchargesItems}
                     defaultVisual="bar"
                     allowedVisuals={['bar', 'pie']}
@@ -687,10 +743,15 @@ export function FinancePage() {
                   </div>
 
                   <div className="rounded bg-sky-50 p-3 text-xs text-sky-900 ring-1 ring-sky-200">
-                    <p className="font-semibold">{t('finance.surcharges.gateBNoticeTitle', { defaultValue: 'Automatic Gate B Enforcement' })}</p>
+                    <p className="font-semibold">
+                      {t('finance.surcharges.gateBNoticeTitle', {
+                        defaultValue: 'Automatic weight check',
+                      })}
+                    </p>
                     <p className="mt-1 text-sky-800">
                       {t('finance.surcharges.gateBNoticeDesc', {
-                        defaultValue: 'When actual scale weight exceeds declared weight, a mass surcharge is issued instantly via Stripe before trip start.',
+                        defaultValue:
+                          'When the actual scale weight is higher than declared, an extra fee is charged before the trip can start.',
                       })}
                     </p>
                   </div>
@@ -704,11 +765,12 @@ export function FinancePage() {
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-clox-border-soft pb-4">
               <div>
                 <h2 className="font-display text-lg font-bold text-clox-ink">
-                  {t('finance.leaderboard.title', { defaultValue: 'Company Financial Matrix & Leaderboard' })}
+                  {t('finance.leaderboard.title', { defaultValue: 'Top companies' })}
                 </h2>
                 <p className="mt-0.5 text-xs text-clox-mute">
                   {t('finance.leaderboard.subtitle', {
-                    defaultValue: 'Ranking by freight expenditure (Senders) and net earnings (Carriers)',
+                    defaultValue:
+                      'Who spent the most (shippers) and who earned the most (carriers)',
                   })}
                 </p>
               </div>
@@ -831,11 +893,12 @@ export function FinancePage() {
           {/* Regional Performance Matrix */}
           <div className="rounded-clox-md border border-clox-border bg-clox-surface p-6 shadow-clox-1">
             <h2 className="font-display text-lg font-bold text-clox-ink">
-              {t('finance.regional.title', { defaultValue: 'State & Regional Performance Matrix' })}
+              {t('finance.regional.title', { defaultValue: 'Results by state' })}
             </h2>
             <p className="mt-0.5 text-xs text-clox-mute">
               {t('finance.regional.subtitle', {
-                defaultValue: 'Gross volume, platform net margin, and regional partner shares by origin state',
+                defaultValue:
+                  'Freight paid, partner shares, and active partners in each state',
               })}
             </p>
 
@@ -843,13 +906,33 @@ export function FinancePage() {
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-clox-border-soft text-xs text-clox-mute">
-                    <th className="pb-3 font-medium">{t('finance.regional.stateCode', { defaultValue: 'State Code' })}</th>
-                    <th className="pb-3 font-medium">{t('finance.regional.state', { defaultValue: 'Region Name' })}</th>
-                    <th className="pb-3 font-medium">{t('finance.regional.jobs', { defaultValue: 'Deliveries' })}</th>
-                    <th className="pb-3 font-medium">{t('finance.regional.gmv', { defaultValue: 'Gross Freight (GMV)' })}</th>
-                    <th className="pb-3 font-medium">{t('finance.regional.platformShare', { defaultValue: 'Platform HQ Share' })}</th>
-                    <th className="pb-3 font-medium">{t('finance.regional.stateShare', { defaultValue: 'State Master (10%)' })}</th>
-                    <th className="pb-3 font-medium">{t('finance.regional.localShare', { defaultValue: 'Local BDE (5%)' })}</th>
+                    <th className="pb-3 font-medium">
+                      {t('finance.regional.stateCode', { defaultValue: 'State code' })}
+                    </th>
+                    <th className="pb-3 font-medium">
+                      {t('finance.regional.state', { defaultValue: 'State' })}
+                    </th>
+                    <th className="pb-3 font-medium">
+                      {t('finance.regional.jobs', { defaultValue: 'Deliveries' })}
+                    </th>
+                    <th className="pb-3 font-medium">
+                      {t('finance.regional.gmv', { defaultValue: 'Freight paid' })}
+                    </th>
+                    <th className="pb-3 font-medium">
+                      {t('finance.regional.platformShare', {
+                        defaultValue: "Clox's share",
+                      })}
+                    </th>
+                    <th className="pb-3 font-medium">
+                      {t('finance.regional.stateShare', {
+                        defaultValue: 'State master share',
+                      })}
+                    </th>
+                    <th className="pb-3 font-medium">
+                      {t('finance.regional.localShare', {
+                        defaultValue: 'Local partner share',
+                      })}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-clox-border-soft">

@@ -9,18 +9,24 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { updateIdentityLocale } from '@/lib/api/auth';
 import { setAppLocale } from '@/lib/i18n';
 import { cn } from '@/lib/cn';
-import type { AppLocale } from '@/locales';
+import { normalizeAppLocale, type AppLocale } from '@/locales';
+import { useAuthStore } from '@/stores/auth-store';
 
-const options: { locale: AppLocale; label: string }[] = [
-  { locale: 'en', label: 'English' },
-  { locale: 'hi', label: 'हिन्दी (Hindi)' },
+const options: { locale: AppLocale; label: string; short: string }[] = [
+  { locale: 'en', label: 'English', short: 'EN' },
+  { locale: 'hi', label: 'हिन्दी (Hindi)', short: 'HI' },
+  { locale: 'pa', label: 'ਪੰਜਾਬੀ (Punjabi)', short: 'PA' },
 ];
 
 export function LanguageSwitcher({ className = '' }: { className?: string }) {
   const { i18n, t } = useTranslation('common');
-  const current = (i18n.language?.startsWith('hi') ? 'hi' : 'en') as AppLocale;
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const qc = useQueryClient();
+  const current = normalizeAppLocale(i18n.language);
   const listboxId = useId();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -28,10 +34,20 @@ export function LanguageSwitcher({ className = '' }: { className?: string }) {
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const [popoverStyle, setPopoverStyle] = useState<CSSProperties>({});
 
+  const persistLocale = useMutation({
+    mutationFn: (locale: AppLocale) => updateIdentityLocale(locale),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['identity', 'me'] });
+    },
+  });
+
   function switchTo(locale: AppLocale) {
     setOpen(false);
     if (locale === current) return;
     setAppLocale(locale);
+    if (accessToken) {
+      persistLocale.mutate(locale);
+    }
   }
 
   const updatePopoverPosition = useCallback(() => {
@@ -94,6 +110,8 @@ export function LanguageSwitcher({ className = '' }: { className?: string }) {
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [open]);
+
+  const shortLabel = options.find((o) => o.locale === current)?.short ?? 'EN';
 
   const listbox =
     open && typeof document !== 'undefined'
@@ -161,7 +179,7 @@ export function LanguageSwitcher({ className = '' }: { className?: string }) {
           <line x1="2" y1="12" x2="22" y2="12" />
           <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
         </svg>
-        <span>{current === 'hi' ? 'HI' : 'EN'}</span>
+        <span>{shortLabel}</span>
         <svg
           width="14"
           height="14"

@@ -9,6 +9,7 @@ export {
   listSessions,
   revokeSession,
   getIdentityMe,
+  updateIdentityLocale,
 } from '@/lib/api/auth';
 export {
   addLeadNote,
@@ -306,3 +307,7 @@ export {
   type BdeTeamMemberDetail,
   type BdeTeamMemberSummary,
 } from '@/lib/api/ops-team';
+export {
+  previewTranslation,
+  type TranslationPreviewResult,
+} from '@/lib/api/translations';

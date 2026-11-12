@@ -2329,9 +2329,16 @@
   },
   "finance": {
     "title": "Finance & Settlements",
-    "superTitle": "Executive Financial Overview",
-    "superSubtitle": "End-to-end platform gross freight volume, Clox net margin, partner allocations, gate audit collections, and cashflow pipeline",
+    "subtitle": "See what shippers paid, what carriers and partners earn, and what still needs to go to the bank.",
+    "liveLedger": "Live figures",
+    "superTitle": "Financial overview",
+    "superSubtitle": "Freight paid on the marketplace, Clox and partner shares, extra fees, and money waiting for bank payout.",
     "refresh": "Refresh",
+    "tabs": {
+      "overview": "Overview",
+      "cycles": "Payout cycles",
+      "reconciliation": "Daily bank check"
+    },
     "periods": {
       "today": "Today",
       "week": "This Week",
@@ -2350,48 +2357,59 @@
     "from": "From",
     "to": "To",
     "apply": "Apply",
-    "loading": "Aggregating financial metrics...",
+    "loading": "Loading money totals…",
     "errorTitle": "Unable to load financial overview",
     "kpi": {
-      "gmv": "Gross Freight Volume (GMV)",
-      "gmvSub": "{{count}} booked freight shipments",
-      "gmvTag": "Marketplace Total",
-      "platformRevenue": "Clox Platform Revenue (15% HQ + Hold)",
-      "platformRevenueSub": "Margin: {{percent}}%",
-      "carrierOutflows": "Carrier Outflows (70%)",
-      "carrierOutflowsSub": "Paid: {{paid}} · Clearing: {{pending}}",
-      "partnerCommissions": "Partner Commissions (15%)",
-      "partnerCommissionsSub": "State (10%): {{state}} · Local (5%): {{local}}"
+      "gmv": "Total freight paid",
+      "gmvSub": "{{count}} deliveries completed",
+      "gmvTag": "Marketplace total",
+      "platformRevenue": "Clox’s share",
+      "platformRevenueSub": "About {{percent}}% of freight paid",
+      "hqShare": "HQ {{amount}}",
+      "hqHold": "Holding {{amount}}",
+      "carrierOutflows": "Paid / owed to carriers",
+      "carrierOutflowsSub": "Paid: {{paid}} · Waiting: {{pending}}",
+      "carrierPaid": "Paid to bank: {{amount}}",
+      "carrierPending": "Waiting payout: {{amount}}",
+      "partnerCommissions": "Partner earnings",
+      "partnerCommissionsSub": "State: {{state}} · Local: {{local}}",
+      "stateShare": "State masters: {{amount}}",
+      "localShare": "Local partners: {{amount}}",
+      "moneyFlowHelp": "Where the money goes: most of each freight payment goes to the carrier; the rest is shared by Clox and partners. Carrier payouts may wait a few days before reaching their bank."
     },
     "pipeline": {
-      "escrow": "In Escrow (Transit)",
-      "clearing": "{{days}}-Day Clearing Hold",
-      "disbursed": "Disbursed to Bank",
-      "refunds": "Refunds & Adjustments"
+      "escrow": "Money held for trips in progress",
+      "clearing": "Waiting before bank payout ({{days}} days)",
+      "disbursed": "Already paid to bank",
+      "refunds": "Refunds & adjustments"
     },
     "charts": {
-      "gmvTrendTitle": "Gross Freight Volume (GMV) Trend",
-      "gmvTrendSubtitle": "Timeline throughput of gross freight booked across the marketplace",
-      "splitTitle": "Revenue Split Allocation",
-      "splitSubtitle": "Fixed 70% Carrier share vs 30% Platform pool (HQ 15%, State 10%, Local 5%)",
-      "surchargesTitle": "Surcharges Breakdown by Gate Type",
-      "surchargesSubtitle": "Paid vs Pending collections"
+      "gmvTrendTitle": "Freight paid over time",
+      "gmvTrendSubtitle": "How much shippers paid across the marketplace in this period",
+      "splitTitle": "How freight money is shared",
+      "splitSubtitle": "Carriers get most of each payment; Clox and partners share the rest (default 70% / 15% / 10% / 5%)",
+      "splitCarrier": "Carriers (70%)",
+      "splitHq": "Clox HQ (15%)",
+      "splitState": "State masters (10%)",
+      "splitLocal": "Local partners (5%)",
+      "surchargesTitle": "Extra fees by type",
+      "surchargesSubtitle": "Collected vs still unpaid"
     },
     "surcharges": {
-      "title": "Surcharges Intelligence & Gate Audits",
-      "subtitle": "Mass discrepancy at Gate B checks vs Waiting detention timers at pickup/drop-off",
+      "title": "Extra fees & weight checks",
+      "subtitle": "Fees for overweight loads and waiting time at pickup or drop-off",
       "manage": "Manage Surcharges",
       "collectionRates": "Collection Rates",
       "totalIncurred": "Total Incurred",
       "paidCleared": "Paid & Cleared",
       "pendingPayment": "Pending Payment",
       "waivedAdmin": "Waived by Admin",
-      "gateBNoticeTitle": "Automatic Gate B Enforcement",
-      "gateBNoticeDesc": "When actual scale weight exceeds declared weight, a mass surcharge is issued instantly via Stripe before trip start."
+      "gateBNoticeTitle": "Automatic weight check",
+      "gateBNoticeDesc": "When the actual scale weight is higher than declared, an extra fee is charged before the trip can start."
     },
     "leaderboard": {
-      "title": "Company Financial Matrix & Leaderboard",
-      "subtitle": "Ranking by freight expenditure (Senders) and net earnings (Carriers)",
+      "title": "Top companies",
+      "subtitle": "Who spent the most (shippers) and who earned the most (carriers)",
       "topSenders": "Top Senders (Spend)",
       "topCarriers": "Top Carriers (Earnings)",
       "company": "Company",
@@ -2406,15 +2424,18 @@
       "noCarriers": "No carrier payouts recorded for this period."
     },
     "regional": {
-      "title": "State & Regional Performance Matrix",
-      "subtitle": "Freight throughput, partner revenue splits, and active regional partner coverage",
+      "title": "Results by state",
+      "subtitle": "Freight paid, partner shares, and active partners in each state",
+      "stateCode": "State code",
       "state": "State",
-      "gmv": "Regional GMV",
-      "stateShare": "State Master (10%)",
-      "localShare": "Local BDE (5%)",
+      "gmv": "Freight paid",
+      "platformShare": "Clox’s share",
+      "stateShare": "State master share",
+      "localShare": "Local partner share",
       "partners": "Active Partners",
-      "jobs": "Jobs Done",
-      "vacantSeat": "Vacant seat — Accruing to Clox Holding"
+      "jobs": "Deliveries",
+      "empty": "No regional data recorded.",
+      "vacantSeat": "No partner seated — amount held by Clox"
     },
     "carrier": {
       "title": "Carrier Earnings & Payouts",
@@ -2543,5 +2564,11 @@
       "accrued": "Accrued",
       "noSettlements": "No commission settlement lines found for the selected period."
     }
+  },
+  "ugc": {
+    "translate": "Translate",
+    "translating": "Translating…",
+    "showOriginal": "Show original",
+    "translateFailed": "Translation unavailable. Showing original."
   }
 }

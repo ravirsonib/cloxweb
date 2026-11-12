@@ -3650,7 +3650,7 @@ export function JobDetailPage() {
                 </h2>
                 {j.assignment &&
                 !j.assignment.paidAndConfirmed &&
-                j.assignment.status !== 'CANCELLED' ? (
+                j.assignment.status === 'PENDING' ? (
                   <Button
                     type="button"
                     variant="cta"
@@ -3678,7 +3678,9 @@ export function JobDetailPage() {
                         {j.assignment.status}
                         {j.assignment.paidAndConfirmed
                           ? ` ${t('jobs.assignmentPaid')}`
-                          : ` ${t('jobs.assignmentPendingPayment')}`}
+                          : j.assignment.status === 'PENDING'
+                            ? ` ${t('jobs.assignmentPendingPayment')}`
+                            : ''}
                       </span>,
                     )
                   : null}
@@ -3696,7 +3698,7 @@ export function JobDetailPage() {
               </dl>
               {j.assignment &&
               !j.assignment.paidAndConfirmed &&
-              j.assignment.status !== 'CANCELLED' ? (
+              j.assignment.status === 'PENDING' ? (
                 <p className="mt-3 text-xs text-clox-mute">
                   {t('jobs.pendingPaymentResumeHint', {
                     defaultValue:
@@ -3951,7 +3953,7 @@ export function JobDetailPage() {
                         {p.status === 'ACCEPTED' &&
                         j.assignment &&
                         !j.assignment.paidAndConfirmed &&
-                        j.assignment.status !== 'CANCELLED'
+                        j.assignment.status === 'PENDING'
                           ? `${p.status} ${t('jobs.assignmentPendingPayment')}`
                           : p.status}
                       </StatusPill>
@@ -3977,7 +3979,7 @@ export function JobDetailPage() {
                     ) : p.status === 'ACCEPTED' &&
                       j.assignment &&
                       !j.assignment.paidAndConfirmed &&
-                      j.assignment.status !== 'CANCELLED' ? (
+                      j.assignment.status === 'PENDING' ? (
                       <Button
                         variant="cta"
                         className="mt-3"

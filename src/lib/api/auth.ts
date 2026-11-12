@@ -69,3 +69,9 @@ export function revokeSession(id: string) {
 export function getIdentityMe() {
   return http.get<IdentityMe>('/identity/me').then((r) => r.data);
 }
+
+export function updateIdentityLocale(locale: 'en' | 'hi' | 'pa') {
+  return http
+    .patch<{ locale: 'en' | 'hi' | 'pa' }>('/identity/me/locale', { locale })
+    .then((r) => r.data);
+}

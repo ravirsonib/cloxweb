@@ -61,6 +61,11 @@ export function isAdminRole(role: string): role is AdminRole {
   return (ADMIN_ROLES as string[]).includes(role);
 }
 
+/** Logged-in product locales (admin). Keep in sync with api SUPPORTED_LOCALES. */
+export const SUPPORTED_LOCALES = ['en', 'hi', 'pa'] as const;
+export type AppLocaleCode = (typeof SUPPORTED_LOCALES)[number];
+export const DEFAULT_LOCALE: AppLocaleCode = 'en';
+
 export const Locale = {
   en: 'en',
   hi: 'hi',
@@ -68,6 +73,10 @@ export const Locale = {
 } as const;
 
 export type Locale = (typeof Locale)[keyof typeof Locale];
+
+export function isAppLocaleCode(value: string | null | undefined): value is AppLocaleCode {
+  return !!value && (SUPPORTED_LOCALES as readonly string[]).includes(value);
+}
 
 export const AuditAction = {
   LEAD_CREATED: 'lead.created',
@@ -184,7 +193,7 @@ export const AuditAction = {
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
 const honeypotField = z.string().max(200).optional();
-const localeField = z.enum(['en', 'hi', 'pa', 'ru']).default('en');
+const localeField = z.enum(SUPPORTED_LOCALES).default(DEFAULT_LOCALE);
 const abnField = z
   .string()
   .trim()

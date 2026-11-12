@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
+import { TranslatedUgc } from '@/components/translated-ugc';
 import {
   Button,
   DataCardList,
@@ -486,7 +487,11 @@ export function CarrierExceptionDetailPage() {
           })}
         </li>
         {row.reasonCode ? <li>{t('exceptions.reasonCode')}: {row.reasonCode}</li> : null}
-        {row.note ? <li>{row.note}</li> : null}
+        {row.note ? (
+          <li>
+            <TranslatedUgc text={row.note} />
+          </li>
+        ) : null}
         {row.photoDocumentId ? (
           <li className="font-mono text-xs">
             {t('exceptions.photoAttached')}: {row.photoDocumentId.slice(0, 8)}…

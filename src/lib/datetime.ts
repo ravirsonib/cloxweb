@@ -21,7 +21,9 @@ export const AU_STATE_TIMEZONES: Record<string, string> = {
 export const PLATFORM_TIMEZONE = 'Australia/Sydney';
 
 function resolveLocale(): string {
-  return i18n.language?.startsWith('hi') ? 'hi-IN' : 'en-AU';
+  if (i18n.language?.startsWith('hi')) return 'hi-IN';
+  if (i18n.language?.startsWith('pa')) return 'pa-IN';
+  return 'en-AU';
 }
 
 /**

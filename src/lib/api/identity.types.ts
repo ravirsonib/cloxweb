@@ -4,6 +4,8 @@ export type IdentityMe = {
   email: string;
   name?: string | null;
   phone?: string | null;
+  /** Preferred UI / notification locale: en | hi | pa */
+  locale?: 'en' | 'hi' | 'pa';
   role: string;
   active?: boolean;
   status?: string;

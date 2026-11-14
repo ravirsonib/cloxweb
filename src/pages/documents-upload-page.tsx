@@ -4,18 +4,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  confirmDocument,
-  createUploadIntent,
   getErrorDetail,
   getIdentityMe,
   listDocuments,
   openDocumentContent,
   submitCompliance,
-  uploadDocumentContent,
+  uploadAndConfirmDocument,
 } from '@/lib/api';
 import { Button, FileInput, Notice, Select, StatusPill, useConfirm, useToast } from '@/components/ui';
 import type { ComplianceDocumentListItem } from '@/lib/api';
-import { resolveUploadMime } from '@/lib/upload-mime';
 import { formatDate, formatDateTime } from '@/lib/datetime';
 import { complianceDocStatusTone } from '@/lib/status-tone';
 import { AppRole } from '@/shared/types';
@@ -98,21 +95,16 @@ export function DocumentsUploadPage() {
     mutationFn: async () => {
       if (!file) throw new Error(t('documentsUpload.errorChooseFile'));
       if (!companyId) throw new Error(t('documentsUpload.errorNoCompany'));
-      const mime = resolveUploadMime(file);
-      const intent = await createUploadIntent({
+      const uploaded = await uploadAndConfirmDocument({
         companyId,
         docType,
-        originalFilename:
-          file.name || `capture.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
-        mimeType: mime,
-        sizeBytes: file.size,
+        file,
+        filenameFallback: 'capture',
       });
-      const uploadedRes = await uploadDocumentContent(intent.id, file);
-      await confirmDocument(intent.id, uploadedRes.contentHash);
       return {
-        id: intent.id,
+        id: uploaded.id,
         docType,
-        contentHash: uploadedRes.contentHash,
+        contentHash: uploaded.contentHash,
       };
     },
     onSuccess: async (doc) => {

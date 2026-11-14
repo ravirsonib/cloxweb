@@ -8,8 +8,6 @@ import { z } from 'zod';
 import {
   addCarrierVehicle,
   confirmCarrierConnect,
-  confirmDocument,
-  createUploadIntent,
   getCarrierOnboarding,
   getErrorDetail,
   getRegionsMeta,
@@ -21,7 +19,7 @@ import {
   submitCarrierVerification,
   updateCarrierCapabilities,
   updateCarrierProfile,
-  uploadDocumentContent,
+  uploadAndConfirmDocument,
   type CarrierOnboarding,
 } from '@/lib/api';
 import {
@@ -36,7 +34,6 @@ import {
   useToast,
 } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
-import { resolveUploadMime } from '@/lib/upload-mime';
 import {
   abnSchema,
   AU_STATES,
@@ -446,18 +443,13 @@ function DocumentsStep({
   }, [uploadedDocs, t]);
 
   async function upload(docType: 'PUBLIC_LIABILITY' | 'CARGO_INSURANCE', file: File) {
-    const mime = resolveUploadMime(file);
-    const intent = await createUploadIntent({
+    const uploaded = await uploadAndConfirmDocument({
       companyId,
       docType,
-      originalFilename:
-        file.name || `capture.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
-      mimeType: mime,
-      sizeBytes: file.size,
+      file,
+      filenameFallback: 'capture',
     });
-    const up = await uploadDocumentContent(intent.id, file);
-    await confirmDocument(intent.id, up.contentHash);
-    return intent.id;
+    return uploaded.id;
   }
 
   const uploadPl = useMutation({
@@ -923,18 +915,13 @@ function VehiclesStep({
   }, [watchedClass, setValue, vehicleClassesQuery.data]);
 
   async function uploadRwcForVehicle(vehicleId: string, file: File) {
-    const mime = resolveUploadMime(file);
-    const intent = await createUploadIntent({
+    await uploadAndConfirmDocument({
       companyId: data.company.id,
       docType: 'RWC',
-      originalFilename:
-        file.name || `rwc.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
-      mimeType: mime,
-      sizeBytes: file.size,
+      file,
       vehicleId,
+      filenameFallback: 'rwc',
     });
-    const up = await uploadDocumentContent(intent.id, file);
-    await confirmDocument(intent.id, up.contentHash);
   }
 
   const mutation = useMutation({
@@ -1378,18 +1365,13 @@ function CapabilitiesStep({
   ]);
 
   async function uploadDgLicence(file: File) {
-    const mime = resolveUploadMime(file);
-    const intent = await createUploadIntent({
+    const uploaded = await uploadAndConfirmDocument({
       companyId: data.company.id,
       docType: 'DG_LICENCE',
-      originalFilename:
-        file.name || `dg.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
-      mimeType: mime,
-      sizeBytes: file.size,
+      file,
+      filenameFallback: 'dg',
     });
-    const up = await uploadDocumentContent(intent.id, file);
-    await confirmDocument(intent.id, up.contentHash);
-    return intent.id;
+    return uploaded.id;
   }
 
   const mutation = useMutation({
@@ -1591,18 +1573,13 @@ function SubmitStep({
   const [openingDocId, setOpeningDocId] = useState<string | null>(null);
 
   async function upload(docType: 'PUBLIC_LIABILITY' | 'CARGO_INSURANCE', file: File) {
-    const mime = resolveUploadMime(file);
-    const intent = await createUploadIntent({
+    const uploaded = await uploadAndConfirmDocument({
       companyId: data.company.id,
       docType,
-      originalFilename:
-        file.name || `capture.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
-      mimeType: mime,
-      sizeBytes: file.size,
+      file,
+      filenameFallback: 'capture',
     });
-    const up = await uploadDocumentContent(intent.id, file);
-    await confirmDocument(intent.id, up.contentHash);
-    return intent.id;
+    return uploaded.id;
   }
 
   async function viewDoc(docId: string) {

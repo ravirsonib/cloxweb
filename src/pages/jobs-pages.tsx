@@ -20,9 +20,7 @@ import {
   acceptProposal,
   approveTripExceptionReplacement,
   cancelJob,
-  confirmDocument,
   createJob,
-  createUploadIntent,
   getErrorDetail,
   getSenderJob,
   getSenderOnboarding,
@@ -37,7 +35,7 @@ import {
   syncJobPayment,
   updateJob,
   updateJobReceiver,
-  uploadDocumentContent,
+  uploadAndConfirmDocument,
   type AcceptProposalResult,
   type JobRouteEstimate,
   type JobSummary,
@@ -67,7 +65,6 @@ import {
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import { cn } from '@/lib/cn';
 import { formatDollars } from '@/lib/currency';
-import { resolveUploadMime } from '@/lib/upload-mime';
 import {
   countByBucket,
   filterAndSortByBucket,
@@ -1629,19 +1626,13 @@ function JobDraftForm({
     }
     setDgUploading(true);
     try {
-      const mime = resolveUploadMime(file);
-      const intent = await createUploadIntent({
+      const uploaded = await uploadAndConfirmDocument({
         companyId: senderCompanyId,
         docType: 'DG_LICENCE',
-        originalFilename:
-          file.name ||
-          `dg-declaration.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
-        mimeType: mime,
-        sizeBytes: file.size,
+        file,
+        filenameFallback: 'dg-declaration',
       });
-      const up = await uploadDocumentContent(intent.id, file);
-      await confirmDocument(intent.id, up.contentHash);
-      form.setValue('dgDocumentId', intent.id, {
+      form.setValue('dgDocumentId', uploaded.id, {
         shouldValidate: true,
         shouldDirty: true,
       });

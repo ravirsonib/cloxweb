@@ -26,8 +26,6 @@ import {
 } from '@/components/ui';
 import {
   addCarrierVehicle,
-  confirmDocument,
-  createUploadIntent,
   deleteCarrierVehicle,
   disableCarrierVehicle,
   getCarrierOnboarding,
@@ -37,12 +35,11 @@ import {
   reactivateCarrierVehicle,
   retireCarrierVehicle,
   updateCarrierCapabilities,
-  uploadDocumentContent,
+  uploadAndConfirmDocument,
   getVehicleClassesMeta,
   type CarrierVehicleListItem,
 } from '@/lib/api';
 import { formatCalendarDate } from '@/lib/datetime';
-import { resolveUploadMime } from '@/lib/upload-mime';
 import { cn } from '@/lib/cn';
 import {
   suggestedGvmKgForClass,
@@ -59,33 +56,23 @@ type VehicleForm = {
 };
 
 async function uploadVehicleRwc(companyId: string, vehicleId: string, file: File) {
-  const mime = resolveUploadMime(file);
-  const intent = await createUploadIntent({
+  await uploadAndConfirmDocument({
     companyId,
-    docType: 'RWC',
-    originalFilename:
-      file.name || `rwc.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
-    mimeType: mime,
-    sizeBytes: file.size,
     vehicleId,
+    docType: 'RWC',
+    file,
+    filenameFallback: 'rwc',
   });
-  const up = await uploadDocumentContent(intent.id, file);
-  await confirmDocument(intent.id, up.contentHash);
 }
 
 async function uploadVehicleDgDoc(companyId: string, vehicleId: string, file: File) {
-  const mime = resolveUploadMime(file);
-  const intent = await createUploadIntent({
+  await uploadAndConfirmDocument({
     companyId,
-    docType: 'DG_LICENCE',
-    originalFilename:
-      file.name || `dg-licence.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
-    mimeType: mime,
-    sizeBytes: file.size,
     vehicleId,
+    docType: 'DG_LICENCE',
+    file,
+    filenameFallback: 'dg-licence',
   });
-  const up = await uploadDocumentContent(intent.id, file);
-  await confirmDocument(intent.id, up.contentHash);
 }
 
 type ReasonAction = 'disable' | 'retire';

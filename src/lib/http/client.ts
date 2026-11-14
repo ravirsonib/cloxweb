@@ -63,13 +63,16 @@ export function getErrorDetail(error: unknown): string {
     if (typeof data?.title === 'string') return humanizeApiMessage(data.title);
     if (error.code === 'ECONNABORTED' || /timeout/i.test(error.message)) {
       return i18n.t('errors.requestTimeout', {
-        defaultValue: 'Request timed out. Please check your connection and try again.',
+        defaultValue:
+          'Request timed out. If uploading a photo, try a smaller JPEG/PNG under 10 MB.',
       });
     }
+    // Mobile Safari often reports oversized / aborted multipart uploads as
+    // axios "Network Error" with no response body (not always true offline).
     if (!error.response && /Network Error/i.test(error.message)) {
-      return i18n.t('errors.networkError', {
+      return i18n.t('errors.networkOrTooLarge', {
         defaultValue:
-          'Network connection error. Please check your internet connection and try again.',
+          'Could not complete the request. If uploading a photo, use a JPEG/PNG under 10 MB, or check your connection.',
       });
     }
     return humanizeApiMessage(error.message);

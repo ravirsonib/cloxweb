@@ -89,6 +89,7 @@ export {
   listDocuments,
   createUploadIntent,
   uploadDocumentContent,
+  uploadAndConfirmDocument,
   openDocumentContent,
   confirmDocument,
   submitCompliance,

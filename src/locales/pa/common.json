@@ -107,8 +107,8 @@
   "goHome": "Go home",
   "unexpectedError": "Unexpected error",
   "errors": {
-    "uploadTimeout": "Upload timed out. Try a smaller photo or check your connection.",
-    "networkOrTooLarge": "Upload failed (network or file too large). Use a JPEG/PNG under 10 MB.",
+    "requestTimeout": "ਬੇਨਤੀ ਸਮਾਂ ਸਮਾਪਤ। ਫੋਟੋ ਅੱਪਲੋਡ ਕਰਦੇ ਹੋਏ ਤਾਂ 10 MB ਤੋਂ ਛੋਟੀ JPEG/PNG ਅਜ਼ਮਾਓ।",
+    "networkOrTooLarge": "ਬੇਨਤੀ ਪੂਰੀ ਨਹੀਂ ਹੋਈ। ਫੋਟੋ ਅੱਪਲੋਡ ਕਰਦੇ ਹੋਏ ਤਾਂ 10 MB ਤੋਂ ਘੱਟ JPEG/PNG ਵਰਤੋ, ਜਾਂ ਕਨੈਕਸ਼ਨ ਚੈੱਕ ਕਰੋ।",
     "fileTooLarge": "This file is too large. Please choose a document or photo under 10 MB.",
     "unsupportedFileType": "Unsupported file type. Please use PDF, JPEG, PNG, or WebP.",
     "uploadMissingFile": "No file was received. Please try uploading again."

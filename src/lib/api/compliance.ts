@@ -1,6 +1,7 @@
 import { ApiError } from '@/lib/http/client';
 import { http } from '@/lib/http';
 import { i18n } from '@/lib/i18n';
+import { prepareDocumentUploadFile } from '@/lib/prepare-document-upload';
 
 export type ComplianceCaseListItem = {
   id: string;
@@ -246,6 +247,55 @@ export function confirmDocument(documentId: string, contentHash: string) {
   return http
     .post<{ id: string; status: string }>(`/documents/${documentId}/confirm`, { contentHash })
     .then((r) => r.data);
+}
+
+export type UploadAndConfirmResult = {
+  id: string;
+  contentHash: string;
+  sizeBytes: number;
+  mimeType: 'application/pdf' | 'image/jpeg' | 'image/png' | 'image/webp';
+  originalFilename: string;
+};
+
+/**
+ * Single choke-point for compliance document uploads (all roles / mobile+desktop).
+ * Compresses camera/gallery images under the 10 MB ceiling before intent+PUT so
+ * Safari does not surface oversized uploads as a fake "Network Error".
+ */
+export async function uploadAndConfirmDocument(input: {
+  companyId: string;
+  docType: string;
+  file: File;
+  vehicleId?: string;
+  driverId?: string;
+  expiresAt?: string;
+  /** Fallback name stem when the File has no usable name */
+  filenameFallback?: string;
+}): Promise<UploadAndConfirmResult> {
+  const prepared = await prepareDocumentUploadFile(input.file);
+  const ext = prepared.mimeType === 'application/pdf' ? 'pdf' : 'jpg';
+  const originalFilename =
+    prepared.file.name ||
+    `${input.filenameFallback ?? 'capture'}.${ext}`;
+  const intent = await createUploadIntent({
+    companyId: input.companyId,
+    docType: input.docType,
+    originalFilename,
+    mimeType: prepared.mimeType,
+    sizeBytes: prepared.file.size,
+    vehicleId: input.vehicleId,
+    driverId: input.driverId,
+    expiresAt: input.expiresAt,
+  });
+  const up = await uploadDocumentContent(intent.id, prepared.file);
+  await confirmDocument(intent.id, up.contentHash);
+  return {
+    id: intent.id,
+    contentHash: up.contentHash,
+    sizeBytes: up.sizeBytes,
+    mimeType: prepared.mimeType,
+    originalFilename,
+  };
 }
 
 export function submitCompliance(payload: {

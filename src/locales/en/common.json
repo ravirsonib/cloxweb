@@ -107,8 +107,8 @@
   "goHome": "Go home",
   "unexpectedError": "Unexpected error",
   "errors": {
-    "uploadTimeout": "Upload timed out. Try a smaller photo or check your connection.",
-    "networkOrTooLarge": "Upload failed (network or file too large). Use a JPEG/PNG under 10 MB.",
+    "requestTimeout": "Request timed out. If uploading a photo, try a smaller JPEG/PNG under 10 MB.",
+    "networkOrTooLarge": "Could not complete the request. If uploading a photo, use a JPEG/PNG under 10 MB, or check your connection.",
     "fileTooLarge": "This file is too large. Please choose a document or photo under 10 MB.",
     "unsupportedFileType": "Unsupported file type. Please use PDF, JPEG, PNG, or WebP.",
     "uploadMissingFile": "No file was received. Please try uploading again."

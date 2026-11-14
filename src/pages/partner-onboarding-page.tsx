@@ -6,13 +6,11 @@ import { useTranslation } from 'react-i18next';
 import { Navigate } from 'react-router-dom';
 import { z } from 'zod';
 import {
-  confirmDocument,
-  createUploadIntent,
   getErrorDetail,
   getPartnerOnboarding,
   submitPartnerOnboarding,
   updatePartnerOnboarding,
-  uploadDocumentContent,
+  uploadAndConfirmDocument,
   type PartnerOnboarding,
 } from '@/lib/api';
 import { LoadingBlock } from '@/components/status-blocks';
@@ -177,16 +175,12 @@ export function PartnerOnboardingPage() {
     if (!data?.companyId) return;
     setUploading(docType);
     try {
-      const mime = file.type as 'application/pdf' | 'image/jpeg' | 'image/png' | 'image/webp';
-      const intent = await createUploadIntent({
+      await uploadAndConfirmDocument({
         companyId: data.companyId,
         docType,
-        originalFilename: file.name,
-        mimeType: mime,
-        sizeBytes: file.size,
+        file,
+        filenameFallback: docType.toLowerCase(),
       });
-      const up = await uploadDocumentContent(intent.id, file);
-      await confirmDocument(intent.id, up.contentHash);
       toast.success(t('partnerOnboarding.uploadSuccess'));
       await qc.invalidateQueries({ queryKey: ['ops', 'partner-onboarding'] });
     } catch (err) {

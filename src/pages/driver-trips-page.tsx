@@ -3,8 +3,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import {
-  confirmDocument,
-  createUploadIntent,
   downloadBlob,
   fetchTripDocumentBlob,
   fetchTripPodArtifactBlob,
@@ -22,7 +20,7 @@ import {
   tripPodSignature,
   tripSafetyCheck,
   tripStart,
-  uploadDocumentContent,
+  uploadAndConfirmDocument,
   type TripDocumentKind,
   type TripExceptionKind,
 } from '@/lib/api';
@@ -43,11 +41,7 @@ import {
 import { LoadingBlock } from '@/components/status-blocks';
 import { cn } from '@/lib/cn';
 import { formatDollars } from '@/lib/currency';
-import {
-  fileToCompressedJpegDataUrl,
-  fileToCompressedJpegFile,
-  maxDocumentUploadBytes,
-} from '@/lib/image-data-url';
+import { fileToCompressedJpegDataUrl } from '@/lib/image-data-url';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -312,20 +306,13 @@ export function DriverTripDetailPage() {
     setPhotoError(null);
     setPhotoDocumentId(null);
     try {
-      // Compress first so phone camera shots do not hit the 10 MB multer ceiling as Network Error.
-      const compressed = await fileToCompressedJpegFile(file, {
-        maxBytes: maxDocumentUploadBytes(),
-      });
-      const intent = await createUploadIntent({
+      const uploaded = await uploadAndConfirmDocument({
         companyId,
         docType: 'OTHER',
-        originalFilename: compressed.name,
-        mimeType: 'image/jpeg',
-        sizeBytes: compressed.size,
+        file,
+        filenameFallback: 'breakdown',
       });
-      const uploadedRes = await uploadDocumentContent(intent.id, compressed);
-      await confirmDocument(intent.id, uploadedRes.contentHash);
-      setPhotoDocumentId(intent.id);
+      setPhotoDocumentId(uploaded.id);
     } catch (err) {
       setPhotoError(getErrorDetail(err));
     } finally {

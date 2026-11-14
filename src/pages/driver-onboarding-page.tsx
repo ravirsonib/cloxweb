@@ -5,14 +5,12 @@ import { useTranslation } from 'react-i18next';
 import { Link, Navigate } from 'react-router-dom';
 import { z } from 'zod';
 import {
-  confirmDocument,
-  createUploadIntent,
   getDriverAssignability,
   getDriverOnboarding,
   getErrorDetail,
   getRegionsMeta,
   submitDriverProfile,
-  uploadDocumentContent,
+  uploadAndConfirmDocument,
   type DriverOnboarding,
 } from '@/lib/api';
 import {
@@ -27,7 +25,6 @@ import {
 } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
 import { formatCalendarDate } from '@/lib/datetime';
-import { resolveUploadMime } from '@/lib/upload-mime';
 import {
   AU_STATES,
   AU_STATE_OPTIONS,
@@ -439,22 +436,16 @@ function LicenceStep({
       if (!licenceFile) {
         throw new Error(t('driverOnboarding.errorLicenceFileRequired'));
       }
-      const mime = resolveUploadMime(licenceFile);
-      const intent = await createUploadIntent({
+      const uploaded = await uploadAndConfirmDocument({
         companyId,
         driverId,
         docType: 'DRIVER_LICENCE',
-        originalFilename:
-          licenceFile.name ||
-          `licence.${mime === 'image/png' ? 'png' : mime === 'application/pdf' ? 'pdf' : 'jpg'}`,
-        mimeType: mime,
-        sizeBytes: licenceFile.size,
+        file: licenceFile,
+        filenameFallback: 'licence',
       });
-      if (!intent?.id) {
+      if (!uploaded?.id) {
         throw new Error(t('driverOnboarding.errorLicenceFileRequired'));
       }
-      const uploadedRes = await uploadDocumentContent(intent.id, licenceFile);
-      await confirmDocument(intent.id, uploadedRes.contentHash);
       return submitDriverProfile({
         name: values.name.trim(),
         phone: values.phone.trim(),
@@ -468,7 +459,7 @@ function LicenceStep({
         licenceClass: values.licenceClass,
         licenceExpiry: values.licenceExpiry,
         nhvrAcknowledged: true,
-        licenceDocumentId: intent.id,
+        licenceDocumentId: uploaded.id,
       });
     },
     onSuccess: async () => {

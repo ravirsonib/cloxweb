@@ -6,14 +6,12 @@ import { useTranslation } from 'react-i18next';
 import { Link, Navigate } from 'react-router-dom';
 import { z } from 'zod';
 import {
-  confirmDocument,
-  createUploadIntent,
   getErrorDetail,
   getRegionsMeta,
   getSenderOnboarding,
   submitSenderVerification,
   updateSenderProfile,
-  uploadDocumentContent,
+  uploadAndConfirmDocument,
   type SenderOnboarding,
 } from '@/lib/api';
 import {
@@ -29,7 +27,6 @@ import {
   useToast,
 } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
-import { resolveUploadMime } from '@/lib/upload-mime';
 import {
   abnSchema,
   AU_STATES,
@@ -585,17 +582,13 @@ function DocumentsStep({
   const upload = useMutation({
     mutationFn: async () => {
       if (!file) throw new Error(t('senderOnboarding.errorChooseFile'));
-      const mime = resolveUploadMime(file);
-      const intent = await createUploadIntent({
+      const uploaded = await uploadAndConfirmDocument({
         companyId,
         docType,
-        originalFilename: file.name || `capture.${mime === 'image/png' ? 'png' : 'jpg'}`,
-        mimeType: mime,
-        sizeBytes: file.size,
+        file,
+        filenameFallback: 'capture',
       });
-      const up = await uploadDocumentContent(intent.id, file);
-      await confirmDocument(intent.id, up.contentHash);
-      return intent.id;
+      return uploaded.id;
     },
     onSuccess: (id) => {
       setDocId(id);

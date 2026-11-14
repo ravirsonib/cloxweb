@@ -16,6 +16,7 @@ import {
   Truck,
 } from 'lucide-react';
 import { BrandLogo } from '@/components/brand-logo';
+import { PageErrorBoundary } from '@/components/error-boundary';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { NotificationBell } from '@/components/notification-bell';
 import { Button, RoleBadge, useConfirm } from '@/components/ui';
@@ -556,7 +557,9 @@ function DriverCabShell({ children }: { children?: ReactNode }) {
         below main so it never covers CTAs and never blocks scroll.
       */}
       <main className="cab-main">
-        <div className="cab-main-inner">{children ?? <Outlet />}</div>
+        <div className="cab-main-inner">
+          <PageErrorBoundary>{children ?? <Outlet />}</PageErrorBoundary>
+        </div>
       </main>
 
       <nav className="cab-tabbar" aria-label={t('nav.main')}>
@@ -709,7 +712,7 @@ function OpsShell({ children }: { children?: ReactNode }) {
         </header>
 
         <main className="mx-auto min-w-0 max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
-          {children ?? <Outlet />}
+          <PageErrorBoundary>{children ?? <Outlet />}</PageErrorBoundary>
         </main>
       </div>
     </div>

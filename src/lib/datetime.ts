@@ -27,6 +27,40 @@ function resolveLocale(): string {
 }
 
 /**
+ * Some locales (notably `pa-IN`) reject `dateStyle`/`timeStyle` in Chromium
+ * with `RangeError: Invalid option : option`. Prefer discrete fields + fallback.
+ */
+function safeDateTimeFormat(options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const locales = [resolveLocale(), 'en-AU', 'en'];
+  for (const locale of locales) {
+    try {
+      return new Intl.DateTimeFormat(locale, options);
+    } catch {
+      // try next locale
+    }
+  }
+  // Last resort: no locale-sensitive styles that can fail.
+  return new Intl.DateTimeFormat('en-AU', {
+    timeZone: options.timeZone || PLATFORM_TIMEZONE,
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+/** Formatters must never throw into React render. */
+function formatOrDash(run: () => string): string {
+  try {
+    return run();
+  } catch {
+    return i18n.t('dash', { defaultValue: '—' });
+  }
+}
+
+/**
  * Formats a pure calendar date (date-only: e.g. Driver Licence Expiry, RWC expiry, DOB)
  * in Australian format (DD/MM/YYYY).
  *
@@ -52,12 +86,14 @@ export function formatDate(
   if (!value) return i18n.t('dash', { defaultValue: '—' });
   const date = typeof value === 'string' ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) return i18n.t('dash', { defaultValue: '—' });
-  return new Intl.DateTimeFormat(resolveLocale(), {
-    timeZone,
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(date);
+  return formatOrDash(() =>
+    safeDateTimeFormat({
+      timeZone,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(date),
+  );
 }
 
 /**
@@ -70,10 +106,13 @@ export function formatTime(
   if (!value) return i18n.t('dash', { defaultValue: '—' });
   const date = typeof value === 'string' ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) return i18n.t('dash', { defaultValue: '—' });
-  return new Intl.DateTimeFormat(resolveLocale(), {
-    timeZone,
-    timeStyle: 'short',
-  }).format(date);
+  return formatOrDash(() =>
+    safeDateTimeFormat({
+      timeZone,
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date),
+  );
 }
 
 /**
@@ -88,11 +127,21 @@ export function formatDateTime(
   const date = typeof value === 'string' ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) return i18n.t('dash', { defaultValue: '—' });
   const timeZone = options?.timeZone || PLATFORM_TIMEZONE;
-  return new Intl.DateTimeFormat(resolveLocale(), {
-    timeZone,
-    dateStyle: 'medium',
-    timeStyle: options?.showTime === false ? undefined : 'short',
-  }).format(date);
+  const showTime = options?.showTime !== false;
+  return formatOrDash(() =>
+    safeDateTimeFormat({
+      timeZone,
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      ...(showTime
+        ? {
+            hour: '2-digit',
+            minute: '2-digit',
+          }
+        : {}),
+    }).format(date),
+  );
 }
 
 export function resolveStateTimeZone(state?: string | null): string {
@@ -113,12 +162,28 @@ export function formatLocationDateTime(
   const date = typeof value === 'string' ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) return i18n.t('dash', { defaultValue: '—' });
   const timeZone = resolveStateTimeZone(state);
-  return new Intl.DateTimeFormat(resolveLocale(), {
-    timeZone,
-    dateStyle: 'medium',
-    timeStyle: 'short',
-    timeZoneName: 'short',
-  }).format(date);
+  return formatOrDash(() => {
+    try {
+      return safeDateTimeFormat({
+        timeZone,
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZoneName: 'short',
+      }).format(date);
+    } catch {
+      return safeDateTimeFormat({
+        timeZone,
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(date);
+    }
+  });
 }
 
 function pad2(n: number): string {
@@ -144,26 +209,24 @@ export function toDatetimeLocalValue(
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    hourCycle: 'h23',
+    hour12: false,
   }).formatToParts(date);
   const get = (type: Intl.DateTimeFormatPartTypes) =>
     parts.find((p) => p.type === type)?.value ?? '';
-  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
+  // Some engines still emit "24" for midnight with hour12:false — normalize.
+  const hourRaw = get('hour');
+  const hour = hourRaw === '24' ? '00' : hourRaw.padStart(2, '0');
+  return `${get('year')}-${get('month')}-${get('day')}T${hour}:${get('minute')}`;
 }
 
+/** Offset for `timeZone` at `date`, without `timeZoneName: 'longOffset'` (poor Safari support). */
 function offsetIsoForInstant(date: Date, timeZone: string): string {
-  const raw =
-    new Intl.DateTimeFormat('en-US', {
-      timeZone,
-      timeZoneName: 'longOffset',
-      hour: '2-digit',
-    })
-      .formatToParts(date)
-      .find((p) => p.type === 'timeZoneName')?.value ?? 'GMT';
-  if (raw === 'GMT' || raw === 'UTC') return '+00:00';
-  const match = raw.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/i);
-  if (!match) return '+00:00';
-  return `${match[1]}${pad2(Number(match[2]))}:${pad2(Number(match[3] ?? 0))}`;
+  const utcWall = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
+  const zonedWall = new Date(date.toLocaleString('en-US', { timeZone }));
+  const diffMin = Math.round((zonedWall.getTime() - utcWall.getTime()) / 60_000);
+  const sign = diffMin >= 0 ? '+' : '-';
+  const abs = Math.abs(diffMin);
+  return `${sign}${pad2(Math.floor(abs / 60))}:${pad2(abs % 60)}`;
 }
 
 /**

@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { PanelErrorBoundary } from '@/components/error-boundary';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import {
   decideCompliance,
@@ -10,7 +11,15 @@ import {
   listComplianceCases,
   openDocumentContent,
   type ComplianceCaseDocument,
+  type ComplianceCaseListItem,
 } from '@/lib/api';
+import {
+  caseFilterForQueueTab,
+  COMPLIANCE_QUEUE_TABS,
+  complianceCaseTypeLabelKey,
+  pendingFleetVehicleCount,
+  type ComplianceQueueTab,
+} from '@/lib/compliance-queue';
 import { formatDateTime } from '@/lib/leads';
 import { cn } from '@/lib/cn';
 import { statusAccentClass } from '@/lib/status-list';
@@ -27,6 +36,7 @@ import {
   PaginationBar,
   ResponsiveDataView,
   Select,
+  StatusFilterChips,
   StatusPill,
   TextArea,
   ViewModeToggle,
@@ -40,21 +50,73 @@ import { AdminRole } from '@/shared/types';
 
 const COMPLIANCE_PAGE_SIZE = 10;
 
+function caseTypeLabel(
+  t: (key: string, opts?: { defaultValue?: string }) => string,
+  caseType: string,
+) {
+  return t(complianceCaseTypeLabelKey(caseType), { defaultValue: caseType });
+}
+
+function caseStatusLabel(
+  t: (key: string, opts?: { defaultValue?: string }) => string,
+  status: string,
+) {
+  const keyByStatus: Record<string, string> = {
+    OPEN: 'compliance.statusOpen',
+    ESCALATED: 'compliance.statusEscalated',
+    INFO_REQUESTED: 'compliance.statusInfoRequested',
+    APPROVED: 'compliance.statusApproved',
+    REJECTED: 'compliance.statusRejected',
+    CLOSED: 'compliance.statusClosed',
+  };
+  return t(keyByStatus[status] ?? 'compliance.statusOpen', { defaultValue: status });
+}
+
+function fleetPendingHint(
+  t: (key: string, opts?: Record<string, unknown>) => string,
+  row: ComplianceCaseListItem,
+) {
+  const n = pendingFleetVehicleCount(row);
+  if (n == null) return null;
+  if (n === 0) {
+    return t('compliance.fleetPendingNone', {
+      defaultValue: 'No vehicles waiting',
+    });
+  }
+  return t('compliance.fleetPendingCount', {
+    count: n,
+    defaultValue: '{{count}} vehicle(s) waiting',
+  });
+}
+
 export function ComplianceQueuePage() {
   const { t } = useTranslation('common');
   const [viewMode, setViewMode] = useDataViewMode('compliance', 'list');
-  const [status, setStatus] = useState('');
-  const [caseType, setCaseType] = useState('');
+  const [queueTab, setQueueTab] = useState<ComplianceQueueTab>('all');
+  const [status, setStatus] = useState('OPEN');
   const [regionCode, setRegionCode] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
 
+  const typeFilter = useMemo(() => caseFilterForQueueTab(queueTab), [queueTab]);
+
   const query = useQuery({
-    queryKey: ['compliance', 'cases', status, caseType, regionCode, search, page],
+    queryKey: [
+      'compliance',
+      'cases',
+      status,
+      queueTab,
+      typeFilter.caseType,
+      typeFilter.caseTypes,
+      regionCode,
+      search,
+      page,
+    ],
     queryFn: ({ signal }) =>
       listComplianceCases({
         status: status || undefined,
-        caseType: caseType || undefined,
+        caseType: typeFilter.caseType,
+        caseTypes: typeFilter.caseTypes,
         regionCode: regionCode || undefined,
         search: search.trim() || undefined,
         page,
@@ -69,6 +131,7 @@ export function ComplianceQueuePage() {
 
   const renderCaseCard = (row: (typeof rows)[number]) => {
     const caseTone = complianceCaseStatusTone(row.status);
+    const fleetHint = fleetPendingHint(t, row);
     return (
       <Link
         to={`/compliance/${row.id}`}
@@ -91,14 +154,17 @@ export function ComplianceQueuePage() {
               </div>
             </div>
             <StatusPill tone={caseTone} className="shrink-0">
-              {row.status}
+              {caseStatusLabel(t, row.status)}
             </StatusPill>
           </div>
-          <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs text-clox-mute">
-            <span>{row.caseType}</span>
-            <span>{row.region?.code ?? t('dash')}</span>
+          <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-clox-mute">
+            <span className="font-medium text-clox-ink">{caseTypeLabel(t, row.caseType)}</span>
+            <span className="font-mono">{row.region?.code ?? t('dash')}</span>
             <span>{formatDateTime(row.createdAt)}</span>
           </div>
+          {fleetHint ? (
+            <p className="mt-2 text-xs font-semibold text-clox-orange">{fleetHint}</p>
+          ) : null}
         </div>
         <p className="mt-3 text-sm font-semibold text-clox-orange">{t('compliance.open')} →</p>
       </Link>
@@ -119,7 +185,22 @@ export function ComplianceQueuePage() {
         {rows.length > 0 ? <ViewModeToggle value={viewMode} onChange={setViewMode} /> : null}
       </div>
 
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+      <StatusFilterChips
+        className="mt-6"
+        options={COMPLIANCE_QUEUE_TABS}
+        value={queueTab}
+        onChange={(tab) => {
+          setQueueTab(tab);
+          setPage(1);
+          if (tab === 'fleet' || tab === 'drivers') {
+            setStatus((prev) => (prev === '' ? 'OPEN' : prev));
+          }
+        }}
+        getLabel={(key) => t(`compliance.queueTab.${key}`)}
+        aria-label={t('compliance.queueTabsLabel', { defaultValue: 'Review queues' })}
+      />
+
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
         <label className="mb-0 block w-full sm:w-auto sm:min-w-[16rem] flex-1">
           <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
             {t('search', { defaultValue: 'Search' })}
@@ -152,24 +233,6 @@ export function ComplianceQueuePage() {
           <option value="INFO_REQUESTED">{t('compliance.statusInfoRequested')}</option>
           <option value="APPROVED">{t('compliance.statusApproved')}</option>
           <option value="REJECTED">{t('compliance.statusRejected')}</option>
-        </Select>
-        <Select
-          className="mb-0 w-full min-w-[12rem] sm:w-auto"
-          label={t('compliance.colType')}
-          value={caseType}
-          onChange={(e) => {
-            setCaseType(e.target.value);
-            setPage(1);
-          }}
-        >
-          <option value="">{t('compliance.caseTypeAll')}</option>
-          <option value="SENDER_KYB">SENDER_KYB</option>
-          <option value="SENDER_KYC">SENDER_KYC</option>
-          <option value="CARRIER_KYB">CARRIER_KYB</option>
-          <option value="CARRIER_FLEET_RWC">CARRIER_FLEET_RWC</option>
-          <option value="CARRIER_DRIVER_LICENCE">CARRIER_DRIVER_LICENCE</option>
-          <option value="COMPANY_PROFILE_CHANGE">COMPANY_PROFILE_CHANGE</option>
-          <option value="ADMIN_PARTNER_KYB">ADMIN_PARTNER_KYB</option>
         </Select>
         <label className="mb-0 block w-full sm:w-auto">
           <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
@@ -209,95 +272,105 @@ export function ComplianceQueuePage() {
       ) : null}
 
       {rows.length > 0 ? (
-        <>
-          {viewMode === 'grid' ? (
-            <DataCardList
-              className="mt-6"
-              items={rows}
-              getKey={(row) => row.id}
-              mode="grid"
-              renderItem={renderCaseCard}
+        <PanelErrorBoundary>
+          <>
+            {viewMode === 'grid' ? (
+              <DataCardList
+                className="mt-6"
+                items={rows}
+                getKey={(row) => row.id}
+                mode="grid"
+                renderItem={renderCaseCard}
+              />
+            ) : (
+              <ResponsiveDataView
+                className="mt-6"
+                cards={
+                  <DataCardList
+                    items={rows}
+                    getKey={(row) => row.id}
+                    mode="list"
+                    renderItem={renderCaseCard}
+                  />
+                }
+                table={
+                  <DataTable
+                    headers={[
+                      t('compliance.colCompany'),
+                      t('compliance.colType'),
+                      t('compliance.colStatus'),
+                      t('compliance.colRegion'),
+                      t('admin.colCreated'),
+                      t('compliance.colAction'),
+                    ]}
+                    headerClassNames={[
+                      'w-[26%]',
+                      'w-[18%]',
+                      'w-[16%]',
+                      'w-[10%]',
+                      'w-[18%]',
+                      'w-[12%] text-right',
+                    ]}
+                  >
+                    {rows.map((row) => {
+                      const caseTone = complianceCaseStatusTone(row.status);
+                      const fleetHint = fleetPendingHint(t, row);
+                      return (
+                        <tr
+                          key={row.id}
+                          className={cn(
+                            'border-t border-clox-border-soft hover:bg-clox-surface-alt/60',
+                            statusAccentClass(caseTone),
+                          )}
+                        >
+                          <td className="px-4 py-3">
+                            <p className="font-medium text-clox-ink">{row.company.legalName}</p>
+                            <div className="mt-1">
+                              <StatusPill tone={companyStatusTone(row.company.status)}>
+                                {t(`companyStatuses.${row.company.status}`, {
+                                  defaultValue: row.company.status,
+                                })}
+                              </StatusPill>
+                            </div>
+                            {fleetHint ? (
+                              <p className="mt-1.5 text-xs font-semibold text-clox-orange">
+                                {fleetHint}
+                              </p>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-clox-ink">
+                            {caseTypeLabel(t, row.caseType)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <StatusPill tone={caseTone}>{caseStatusLabel(t, row.status)}</StatusPill>
+                          </td>
+                          <td className="px-4 py-3">{row.region?.code ?? t('dash')}</td>
+                          <td className="whitespace-nowrap px-4 py-3 text-xs text-clox-mute">
+                            {formatDateTime(row.createdAt)}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <Link
+                              to={`/compliance/${row.id}`}
+                              className="text-clox-orange hover:underline"
+                            >
+                              {t('compliance.open')}
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </DataTable>
+                }
+              />
+            )}
+            <PaginationBar
+              page={page}
+              totalPages={totalPages}
+              disabled={query.isFetching}
+              onPageChange={setPage}
             />
-          ) : (
-            <ResponsiveDataView
-              className="mt-6"
-              cards={
-                <DataCardList
-                  items={rows}
-                  getKey={(row) => row.id}
-                  mode="list"
-                  renderItem={renderCaseCard}
-                />
-              }
-              table={
-                <DataTable
-                  headers={[
-                    t('compliance.colCompany'),
-                    t('compliance.colType'),
-                    t('compliance.colStatus'),
-                    t('compliance.colRegion'),
-                    t('admin.colCreated'),
-                    t('compliance.colAction'),
-                  ]}
-                  headerClassNames={[
-                    'w-[26%]',
-                    'w-[18%]',
-                    'w-[16%]',
-                    'w-[10%]',
-                    'w-[18%]',
-                    'w-[12%] text-right',
-                  ]}
-                >
-                  {rows.map((row) => {
-                    const caseTone = complianceCaseStatusTone(row.status);
-                    return (
-                      <tr
-                        key={row.id}
-                        className={cn(
-                          'border-t border-clox-border-soft hover:bg-clox-surface-alt/60',
-                          statusAccentClass(caseTone),
-                        )}
-                      >
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-clox-ink">{row.company.legalName}</p>
-                          <div className="mt-1">
-                            <StatusPill tone={companyStatusTone(row.company.status)}>
-                              {t(`companyStatuses.${row.company.status}`, {
-                                defaultValue: row.company.status,
-                              })}
-                            </StatusPill>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 font-mono text-xs">{row.caseType}</td>
-                        <td className="px-4 py-3">
-                          <StatusPill tone={caseTone}>{row.status}</StatusPill>
-                        </td>
-                        <td className="px-4 py-3">{row.region?.code ?? t('dash')}</td>
-                        <td className="whitespace-nowrap px-4 py-3 text-xs text-clox-mute">
-                          {formatDateTime(row.createdAt)}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <Link
-                            to={`/compliance/${row.id}`}
-                            className="text-clox-orange hover:underline"
-                          >
-                            {t('compliance.open')}
-                          </Link>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </DataTable>
-              }
-            />
-          )}
-          <PaginationBar
-            page={page}
-            totalPages={totalPages}
-            disabled={query.isFetching}
-            onPageChange={setPage}
-          />
-        </>
+          </>
+        </PanelErrorBoundary>
       ) : null}
     </div>
   );
@@ -512,10 +585,12 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
         </Button>
       </div>
       <h1 className="mt-3 font-display text-2xl font-bold text-clox-ink">{c.company.legalName}</h1>
-      <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-sm text-clox-mute">
-        <span>{c.caseType}</span>
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-clox-mute">
+        <span className="font-medium text-clox-ink">{caseTypeLabel(t, c.caseType)}</span>
         <span>·</span>
-        <StatusPill tone={complianceCaseStatusTone(c.status)}>{c.status}</StatusPill>
+        <StatusPill tone={complianceCaseStatusTone(c.status)}>
+          {caseStatusLabel(t, c.status)}
+        </StatusPill>
         <span>· company</span>
         <StatusPill tone={companyStatusTone(c.company.status)}>
           {t(`companyStatuses.${c.company.status}`, { defaultValue: c.company.status })}

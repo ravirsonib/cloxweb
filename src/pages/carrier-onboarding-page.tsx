@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, type Resolver } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
@@ -37,6 +37,7 @@ import { LoadingBlock } from '@/components/status-blocks';
 import {
   abnSchema,
   AU_STATES,
+  optionalNumberFromInputSchema,
   suggestedGvmKgForClass,
   suggestedTareKgForClass,
   VEHICLE_CLASSES,
@@ -875,10 +876,7 @@ function VehiclesStep({
         .int()
         .positive(t('validation.gvmKgPositive'))
         .max(200_000),
-      gcmKg: z
-        .number()
-        .optional()
-        .transform((v) => (typeof v === 'number' && Number.isNaN(v) ? undefined : v)),
+      gcmKg: optionalNumberFromInputSchema(300_000),
     })
     .superRefine((values, ctx) => {
       if (values.tareKg >= values.gvmKg) {
@@ -888,20 +886,12 @@ function VehiclesStep({
           message: t('validation.tareLessThanGvm'),
         });
       }
-      if (values.gcmKg != null) {
-        if (!Number.isInteger(values.gcmKg) || values.gcmKg <= 0 || values.gcmKg > 300_000) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['gcmKg'],
-            message: t('fleet.gcmKgHint'),
-          });
-        } else if (values.gcmKg < values.gvmKg) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['gcmKg'],
-            message: t('fleet.gcmKgHint'),
-          });
-        }
+      if (values.gcmKg != null && values.gcmKg < values.gvmKg) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['gcmKg'],
+          message: t('fleet.gcmKgHint'),
+        });
       }
     });
 
@@ -911,7 +901,7 @@ function VehiclesStep({
   });
 
   const form = useForm<VehicleForm>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema) as Resolver<VehicleForm>,
     defaultValues: {
       label: t('carrierOnboarding.primaryTruckLabel'),
       registration: '',

@@ -4,7 +4,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 
 export default function App() {
   return (
-    <ErrorBoundary>
+    <ErrorBoundary variant="app">
       <AppProviders>
         <AppRouter />
       </AppProviders>

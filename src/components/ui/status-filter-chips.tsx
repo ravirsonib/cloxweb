@@ -11,7 +11,8 @@ export function StatusFilterChips<TKey extends string>({
 }: {
   options: readonly TKey[];
   value: TKey;
-  counts: Record<TKey, number>;
+  /** Optional — omit for filter chips that are labels only (e.g. compliance queue tabs). */
+  counts?: Partial<Record<TKey, number>>;
   onChange: (key: TKey) => void;
   getLabel: (key: TKey) => string;
   'aria-label': string;
@@ -25,6 +26,7 @@ export function StatusFilterChips<TKey extends string>({
     >
       {options.map((key) => {
         const selected = value === key;
+        const count = counts?.[key];
         return (
           <button
             key={key}
@@ -39,9 +41,9 @@ export function StatusFilterChips<TKey extends string>({
             )}
           >
             {getLabel(key)}
-            <span className="ml-1.5 font-mono text-[10px] text-clox-faint">
-              {counts[key]}
-            </span>
+            {count != null ? (
+              <span className="ml-1.5 font-mono text-[10px] text-clox-faint">{count}</span>
+            ) : null}
           </button>
         );
       })}

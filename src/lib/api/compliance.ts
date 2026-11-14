@@ -22,6 +22,8 @@ export type ComplianceCaseListItem = {
     status: string;
     expiresAt: string | null;
     originalFilename: string | null;
+    vehicleId?: string | null;
+    driverId?: string | null;
   }>;
 };
 
@@ -62,6 +64,7 @@ export type ComplianceCaseDetail = Omit<ComplianceCaseListItem, 'documents'> & {
 export function listComplianceCases(params?: {
   status?: string;
   caseType?: string;
+  caseTypes?: string[];
   regionCode?: string;
   search?: string;
   page?: number;
@@ -77,6 +80,7 @@ export function listComplianceCases(params?: {
       params: {
         status: params?.status,
         caseType: params?.caseType,
+        caseTypes: params?.caseTypes?.length ? params.caseTypes.join(',') : undefined,
         regionCode: params?.regionCode,
         search: params?.search,
         page: params?.page ?? 1,

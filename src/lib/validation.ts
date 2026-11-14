@@ -514,3 +514,16 @@ export function futureDateSchema(requiredMessage: string, futureMessage: string)
       return value.trim() >= `${yyyy}-${mm}-${dd}`;
     }, futureMessage);
 }
+
+/**
+ * HTML `<input type="number">` with `valueAsNumber` yields `NaN` when empty.
+ * Accepts undefined / NaN as “unset”; otherwise a positive int up to `max`.
+ * Uses `union` (not `preprocess`) so `zodResolver` stays typed for `useForm`.
+ */
+export function optionalNumberFromInputSchema(max: number): z.ZodType<number | undefined> {
+  return z.union([
+    z.undefined(),
+    z.nan().transform(() => undefined),
+    z.number().int().positive().max(max),
+  ]);
+}

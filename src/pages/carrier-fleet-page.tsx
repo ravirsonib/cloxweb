@@ -12,7 +12,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, type Resolver } from 'react-hook-form';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -58,6 +58,7 @@ import {
 import { formatCalendarDate } from '@/lib/datetime';
 import { cn } from '@/lib/cn';
 import {
+  optionalNumberFromInputSchema,
   suggestedGvmKgForClass,
   suggestedTareKgForClass,
   VEHICLE_CLASSES,
@@ -228,10 +229,7 @@ export function CarrierFleetPage() {
         .int()
         .positive(t('validation.gvmKgPositive'))
         .max(200_000),
-      gcmKg: z
-        .number()
-        .optional()
-        .transform((v) => (typeof v === 'number' && Number.isNaN(v) ? undefined : v)),
+      gcmKg: optionalNumberFromInputSchema(300_000),
     })
     .superRefine((values, ctx) => {
       if (values.tareKg >= values.gvmKg) {
@@ -241,20 +239,12 @@ export function CarrierFleetPage() {
           message: t('validation.tareLessThanGvm'),
         });
       }
-      if (values.gcmKg != null) {
-        if (!Number.isInteger(values.gcmKg) || values.gcmKg <= 0 || values.gcmKg > 300_000) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['gcmKg'],
-            message: t('fleet.gcmKgHint'),
-          });
-        } else if (values.gcmKg < values.gvmKg) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['gcmKg'],
-            message: t('fleet.gcmKgHint'),
-          });
-        }
+      if (values.gcmKg != null && values.gcmKg < values.gvmKg) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['gcmKg'],
+          message: t('fleet.gcmKgHint'),
+        });
       }
     });
 
@@ -264,7 +254,7 @@ export function CarrierFleetPage() {
   });
 
   const form = useForm<VehicleForm>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema) as Resolver<VehicleForm>,
     defaultValues: defaultVehicleFormValues(),
   });
 
@@ -519,13 +509,11 @@ export function CarrierFleetPage() {
     totalPages,
     pagedItems: pagedVehicles,
   } = useClientPagination(items, 10);
-  const missingRwcCount = items.filter(
-    (row) =>
-      row.status === 'ACTIVE' &&
-      (!row.compliance?.rwc ||
-        row.compliance.rwc.state === 'MISSING' ||
-        row.compliance.rwc.state === 'EXPIRED'),
-  ).length;
+  const missingRwcCount = items.filter((row) => {
+    if (row.status === 'RETIRED' || row.status === 'DRAFT') return false;
+    const state = row.compliance?.rwc?.state;
+    return !state || state === 'MISSING' || state === 'EXPIRED';
+  }).length;
   const busy =
     addMutation.isPending ||
     updateMutation.isPending ||
@@ -643,11 +631,16 @@ export function CarrierFleetPage() {
   }
 
   function needsRwcUpload(row: CarrierVehicleListItem) {
+    // ACTIVE: restore bidding; PENDING_REVIEW: docs plan allows upload; SUSPENDED: needed before reactivate.
+    if (
+      row.status !== 'ACTIVE' &&
+      row.status !== 'PENDING_REVIEW' &&
+      row.status !== 'SUSPENDED'
+    ) {
+      return false;
+    }
     const state = row.compliance?.rwc?.state;
-    return (
-      row.status === 'ACTIVE' &&
-      (!state || state === 'MISSING' || state === 'EXPIRED' || state === 'PENDING')
-    );
+    return !state || state === 'MISSING' || state === 'EXPIRED' || state === 'PENDING';
   }
 
   async function viewRwc(documentId: string) {

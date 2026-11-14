@@ -105,8 +105,10 @@ export {
   submitSenderVerification,
   setupSenderPayment,
   confirmSenderPayment,
+  getSenderPaymentMethod,
   getBookingEligibility,
   type SenderOnboarding,
+  type SenderPaymentMethodSummary,
 } from '@/lib/api/sender';
 export {
   registerCarrier,
@@ -117,6 +119,8 @@ export {
   listCarrierVehicles,
   listCarrierDrivers,
   addCarrierVehicle,
+  getCarrierVehicle,
+  updateCarrierVehicle,
   disableCarrierVehicle,
   retireCarrierVehicle,
   reactivateCarrierVehicle,

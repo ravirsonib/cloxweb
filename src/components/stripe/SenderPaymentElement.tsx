@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Notice } from '@/components/ui';
 import { getStripe } from '@/lib/stripe';
+import { STRIPE_PAYMENT_APPEARANCE } from '@/lib/stripe-appearance';
 
 type InnerProps = {
   onPaymentMethodReady: (paymentMethodId: string) => Promise<void>;
@@ -46,12 +47,14 @@ function SenderPaymentElementInner({ onPaymentMethodReady, submitting }: InnerPr
 
   return (
     <form onSubmit={(e) => void onSubmit(e)} className="space-y-4">
-      <PaymentElement
-        options={{
-          layout: 'tabs',
-          paymentMethodOrder: ['card'],
-        }}
-      />
+      <div className="rounded-xl border border-slate-200 bg-white p-3">
+        <PaymentElement
+          options={{
+            layout: 'tabs',
+            paymentMethodOrder: ['card'],
+          }}
+        />
+      </div>
       {error ? <Notice tone="error">{error}</Notice> : null}
       <Button type="submit" variant="cta" disabled={!stripe || busy || submitting}>
         {busy || submitting
@@ -80,13 +83,7 @@ export function SenderPaymentElement({
       options={{
         clientSecret,
         locale: 'en-AU',
-        appearance: {
-          theme: 'stripe',
-          variables: {
-            colorPrimary: '#e85d04',
-            borderRadius: '8px',
-          },
-        },
+        appearance: STRIPE_PAYMENT_APPEARANCE,
       }}
     >
       <SenderPaymentElementInner

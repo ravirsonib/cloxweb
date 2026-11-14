@@ -72,6 +72,22 @@ export function submitSenderVerification(documentIds: string[]) {
     .then((r) => r.data);
 }
 
+export type SenderPaymentMethodSummary = {
+  paymentReady: boolean;
+  paymentMethodId: string | null;
+  brand: string | null;
+  last4: string | null;
+  expMonth: number | null;
+  expYear: number | null;
+  mock: boolean;
+};
+
+export function getSenderPaymentMethod() {
+  return http
+    .get<SenderPaymentMethodSummary>('/sender/payment/method')
+    .then((r) => r.data);
+}
+
 export function setupSenderPayment() {
   return http
     .post<{

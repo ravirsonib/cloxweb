@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Button, Notice } from '@/components/ui';
 import { formatDollars } from '@/lib/currency';
 import { getStripe } from '@/lib/stripe';
+import { STRIPE_PAYMENT_APPEARANCE } from '@/lib/stripe-appearance';
 
 function PaymentElementConfirmForm({
   amountIncGstCents,
@@ -54,7 +55,7 @@ function PaymentElementConfirmForm({
 
   return (
     <form onSubmit={(e) => void onSubmit(e)} className="mt-4 space-y-4">
-      <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-900/40">
+      <div className="rounded-xl border border-slate-200 bg-white p-3">
         <PaymentElement
           options={{
             layout: 'tabs',
@@ -62,7 +63,7 @@ function PaymentElementConfirmForm({
           }}
         />
       </div>
-      <p className="text-xs text-slate-500 dark:text-slate-400">
+      <p className="text-xs text-slate-600">
         {t('jobs.paymentSaveCardHint', {
           defaultValue:
             'Your card will be securely saved via Stripe for future job bookings and approved trip surcharges.',
@@ -183,7 +184,7 @@ export function ScaPaymentConfirm({
       }}
     >
       <div
-        className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-[#1a2f4c] p-6 shadow-2xl border border-slate-200 dark:border-slate-700/80 text-left animate-in zoom-in-95 duration-150"
+        className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 text-left text-slate-900 shadow-2xl animate-in zoom-in-95 duration-150"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -192,13 +193,13 @@ export function ScaPaymentConfirm({
           <div>
             <h2
               id={titleId}
-              className="font-display text-lg font-bold text-slate-900 dark:text-white"
+              className="font-display text-lg font-bold text-slate-900"
             >
               {showPaymentElement
                 ? t('jobs.paymentModalTitle', { defaultValue: 'Complete payment to lock assignment' })
                 : t('jobs.scaTitle')}
             </h2>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+            <p className="mt-1 text-sm text-slate-600">
               {showPaymentElement
                 ? t('jobs.paymentModalSubtitle', {
                     defaultValue:
@@ -208,8 +209,8 @@ export function ScaPaymentConfirm({
             </p>
           </div>
           {amountIncGstCents != null ? (
-            <div className="shrink-0 rounded-lg bg-orange-50 px-3 py-1.5 text-right dark:bg-orange-950/40">
-              <div className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <div className="shrink-0 rounded-lg bg-orange-50 px-3 py-1.5 text-right">
+              <div className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
                 {t('jobs.totalIncGstLabel', { defaultValue: 'Total (inc. GST)' })}
               </div>
               <div className="font-display text-base font-bold text-clox-orange">
@@ -225,13 +226,7 @@ export function ScaPaymentConfirm({
             options={{
               clientSecret,
               locale: 'en-AU',
-              appearance: {
-                theme: 'stripe',
-                variables: {
-                  colorPrimary: '#e85d04',
-                  borderRadius: '8px',
-                },
-              },
+              appearance: STRIPE_PAYMENT_APPEARANCE,
             }}
           >
             <PaymentElementConfirmForm

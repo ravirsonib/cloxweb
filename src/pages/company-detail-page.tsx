@@ -107,7 +107,11 @@ export function CompanyDetailPage() {
     mutationFn: () => deleteCompany(id),
     onSuccess: () => {
       toast.success(t('companies.deleteSuccess'));
-      navigate('/companies');
+      const kind =
+        companyQuery.data?.company?.type === CompanyType.SENDER
+          ? CompanyType.SENDER
+          : CompanyType.CARRIER;
+      navigate(`/customers?type=${kind}`);
     },
     onError: (err) => setActionError(getErrorDetail(err)),
   });
@@ -168,14 +172,18 @@ export function CompanyDetailPage() {
     );
   }
 
+  const listHref = `/customers?type=${
+    company?.type === CompanyType.SENDER ? CompanyType.SENDER : CompanyType.CARRIER
+  }`;
+
   if (companyQuery.isError || !company) {
     return (
       <div className="py-8">
         <Notice tone="error">
-          {companyQuery.error ? getErrorDetail(companyQuery.error) : 'Company not found'}
+          {companyQuery.error ? getErrorDetail(companyQuery.error) : t('companies.notFound', { defaultValue: 'Customer not found' })}
         </Notice>
         <div className="mt-4">
-          <Link to="/companies" className="clox-btn clox-btn-secondary inline-flex items-center text-sm">
+          <Link to="/customers?type=CARRIER" className="clox-btn clox-btn-secondary inline-flex items-center text-sm">
             &larr; {t('companies.backToCompanies')}
           </Link>
         </div>
@@ -188,7 +196,7 @@ export function CompanyDetailPage() {
       {/* Top back navigation */}
       <div>
         <Link
-          to="/companies"
+          to={listHref}
           className="inline-flex items-center text-sm font-semibold text-clox-orange hover:underline"
         >
           &larr; {t('companies.backToCompanies')}

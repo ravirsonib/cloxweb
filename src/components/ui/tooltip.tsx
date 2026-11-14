@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Link } from 'react-router-dom';
-import type { LucideIcon } from 'lucide-react';
+import { Loader2, type LucideIcon } from 'lucide-react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/cn';
 
@@ -106,6 +106,18 @@ const iconButtonVariants = cva(
   },
 );
 
+function iconGlyphClass(size: 'sm' | 'md' | 'lg' | null | undefined) {
+  return size === 'lg' ? 'h-5 w-5' : 'h-4 w-4';
+}
+
+/** When showLabel is set, expand the square control into a readable chip (mobile / cards). */
+function labeledIconClass(size: 'sm' | 'md' | 'lg' | null | undefined, showLabel?: boolean) {
+  if (!showLabel) return undefined;
+  if (size === 'lg') return 'w-auto gap-2 px-3';
+  if (size === 'md') return 'w-auto gap-1.5 px-2.5';
+  return 'w-auto gap-1.5 px-2.5 text-[12px]';
+}
+
 export interface IconButtonProps
   extends ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof iconButtonVariants> {
@@ -113,6 +125,8 @@ export interface IconButtonProps
   label: string;
   tooltip?: string;
   tooltipPosition?: TooltipPosition;
+  /** Show visible text beside the icon (use on touch / card layouts — no hover tooltip needed). */
+  showLabel?: boolean;
 }
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
@@ -122,6 +136,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
       label,
       tooltip,
       tooltipPosition = 'top',
+      showLabel = false,
       variant,
       size,
       className,
@@ -131,17 +146,22 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
     },
     ref,
   ) {
-    const tooltipText = tooltip ?? label;
+    const tooltipText = showLabel ? undefined : (tooltip ?? label);
     const button = (
       <button
         ref={ref}
         type={type}
         aria-label={label}
         disabled={disabled}
-        className={cn(iconButtonVariants({ variant, size }), className)}
+        className={cn(
+          iconButtonVariants({ variant, size }),
+          labeledIconClass(size, showLabel),
+          className,
+        )}
         {...props}
       >
-        <Icon className={size === 'lg' ? 'h-5 w-5' : size === 'sm' ? 'h-4 w-4' : 'h-4 w-4'} />
+        <Icon className={iconGlyphClass(size)} aria-hidden />
+        {showLabel ? <span className="whitespace-nowrap font-medium">{label}</span> : null}
       </button>
     );
 
@@ -165,6 +185,7 @@ export interface IconButtonLinkProps
   label: string;
   tooltip?: string;
   tooltipPosition?: TooltipPosition;
+  showLabel?: boolean;
 }
 
 export const IconButtonLink = forwardRef<HTMLAnchorElement, IconButtonLinkProps>(
@@ -175,6 +196,7 @@ export const IconButtonLink = forwardRef<HTMLAnchorElement, IconButtonLinkProps>
       label,
       tooltip,
       tooltipPosition = 'top',
+      showLabel = false,
       variant,
       size,
       className,
@@ -182,16 +204,21 @@ export const IconButtonLink = forwardRef<HTMLAnchorElement, IconButtonLinkProps>
     },
     ref,
   ) {
-    const tooltipText = tooltip ?? label;
+    const tooltipText = showLabel ? undefined : (tooltip ?? label);
     const link = (
       <Link
         ref={ref}
         to={to}
         aria-label={label}
-        className={cn(iconButtonVariants({ variant, size }), className)}
+        className={cn(
+          iconButtonVariants({ variant, size }),
+          labeledIconClass(size, showLabel),
+          className,
+        )}
         {...props}
       >
-        <Icon className={size === 'lg' ? 'h-5 w-5' : size === 'sm' ? 'h-4 w-4' : 'h-4 w-4'} />
+        <Icon className={iconGlyphClass(size)} aria-hidden />
+        {showLabel ? <span className="whitespace-nowrap font-medium">{label}</span> : null}
       </Link>
     );
 
@@ -204,3 +231,77 @@ export const IconButtonLink = forwardRef<HTMLAnchorElement, IconButtonLinkProps>
     );
   },
 );
+
+export interface IconFileButtonProps extends VariantProps<typeof iconButtonVariants> {
+  icon: LucideIcon;
+  label: string;
+  tooltip?: string;
+  tooltipPosition?: TooltipPosition;
+  showLabel?: boolean;
+  accept?: string;
+  disabled?: boolean;
+  loading?: boolean;
+  className?: string;
+  inputId?: string;
+  onFile: (file: File) => void;
+}
+
+/** Icon control that opens a file picker — same tooltip + look as IconButton. */
+export function IconFileButton({
+  icon: Icon,
+  label,
+  tooltip,
+  tooltipPosition = 'top',
+  showLabel = false,
+  variant = 'secondary',
+  size = 'sm',
+  accept,
+  disabled,
+  loading,
+  className,
+  inputId,
+  onFile,
+}: IconFileButtonProps) {
+  const tooltipText = showLabel ? undefined : (tooltip ?? label);
+  const ActiveIcon = loading ? Loader2 : Icon;
+  const control = (
+    <label
+      htmlFor={inputId}
+      aria-label={label}
+      className={cn(
+        iconButtonVariants({ variant, size }),
+        labeledIconClass(size, showLabel),
+        disabled || loading ? 'pointer-events-none opacity-50' : 'cursor-pointer',
+        className,
+      )}
+    >
+      <ActiveIcon
+        className={cn(iconGlyphClass(size), loading && 'animate-spin')}
+        aria-hidden
+      />
+      {showLabel ? <span className="whitespace-nowrap font-medium">{label}</span> : null}
+      <input
+        id={inputId}
+        type="file"
+        accept={accept}
+        className="sr-only"
+        disabled={disabled || loading}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (file) onFile(file);
+        }}
+      />
+    </label>
+  );
+
+  if (!tooltipText || disabled) {
+    return control;
+  }
+
+  return (
+    <Tooltip content={tooltipText} position={tooltipPosition}>
+      {control}
+    </Tooltip>
+  );
+}

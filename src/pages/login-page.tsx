@@ -16,7 +16,7 @@ import {
 import { getErrorDetail, requestOtp, verifyOtp } from '@/lib/api';
 import { BrandLogo } from '@/components/brand-logo';
 import { LanguageSwitcher } from '@/components/language-switcher';
-import { LoadingBlock } from '@/components/status-blocks';
+import { AppBootScreen } from '@/components/app-boot-screen';
 import { Button, Field, Notice } from '@/components/ui';
 import type { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
@@ -89,6 +89,12 @@ export function LoginPage() {
   useEffect(() => {
     let cancelled = false;
     async function prepare() {
+      // Wait for persist rehydrate so we do not clear a valid session as "no token".
+      const started = Date.now();
+      while (!useAuthStore.getState().hasHydrated && Date.now() - started < 2_000) {
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      if (cancelled) return;
       const state = useAuthStore.getState();
       if (!state.accessToken) {
         if (!cancelled) setSessionReady(true);
@@ -134,7 +140,7 @@ export function LoginPage() {
   });
 
   if (!sessionReady) {
-    return <LoadingBlock label={t('loading')} />;
+    return <AppBootScreen />;
   }
 
   if (accessToken) {

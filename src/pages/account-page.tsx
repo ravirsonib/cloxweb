@@ -3,21 +3,25 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { IdentitySummary } from '@/components/identity-summary';
 import {
+  confirmSenderPayment,
   getCarrierCompanyProfile,
   getErrorDetail,
   getIdentityMe,
   getRegionsMeta,
   getSenderCompanyProfile,
+  getSenderPaymentMethod,
   listSessions,
   requestCarrierCompanyProfileChange,
   requestSenderCompanyProfileChange,
   revokeSession,
+  setupSenderPayment,
   updateCarrierCompanyProfileSelf,
   updateSenderCompanyProfileSelf,
   type CompanyProfileResponse,
   type CompanyProfileHistoryItem,
 } from '@/lib/api';
 import { LoadingBlock } from '@/components/status-blocks';
+import { SenderPaymentElement } from '@/components/stripe/SenderPaymentElement';
 import {
   Button,
   DataCard,
@@ -661,6 +665,173 @@ function ProfileActivityHistory({
   );
 }
 
+function formatCardBrand(brand: string | null | undefined) {
+  if (!brand) return 'Card';
+  return brand.charAt(0).toUpperCase() + brand.slice(1);
+}
+
+function SenderPaymentMethodSection() {
+  const { t } = useTranslation('common');
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [replacing, setReplacing] = useState(false);
+  const [setup, setSetup] = useState<{
+    clientSecret: string;
+    publishableKey: string;
+  } | null>(null);
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+
+  const methodQuery = useQuery({
+    queryKey: ['sender', 'payment-method'],
+    queryFn: () => getSenderPaymentMethod(),
+  });
+
+  const startReplace = useMutation({
+    mutationFn: () => setupSenderPayment(),
+    onSuccess: (data) => {
+      setSetupError(null);
+      if (data.mock || !data.clientSecret || !data.publishableKey) {
+        // Mock Stripe: confirm without Payment Element.
+        void confirmSenderPayment()
+          .then(async () => {
+            toast.success(t('account.paymentMethodUpdated'));
+            setReplacing(false);
+            setSetup(null);
+            await qc.invalidateQueries({ queryKey: ['sender', 'payment-method'] });
+          })
+          .catch((err) => {
+            setSetupError(getErrorDetail(err));
+          });
+        return;
+      }
+      setSetup({
+        clientSecret: data.clientSecret,
+        publishableKey: data.publishableKey,
+      });
+      setReplacing(true);
+    },
+    onError: (err) => setSetupError(getErrorDetail(err)),
+  });
+
+  async function onPaymentMethodReady(paymentMethodId: string) {
+    setConfirming(true);
+    setSetupError(null);
+    try {
+      await confirmSenderPayment(paymentMethodId);
+      toast.success(t('account.paymentMethodUpdated'));
+      setReplacing(false);
+      setSetup(null);
+      await qc.invalidateQueries({ queryKey: ['sender', 'payment-method'] });
+    } catch (err) {
+      setSetupError(getErrorDetail(err));
+    } finally {
+      setConfirming(false);
+    }
+  }
+
+  const method = methodQuery.data;
+  const hasCard = Boolean(method?.paymentReady && method.last4);
+
+  return (
+    <section className="clox-card mt-6 p-5">
+      <h2 className="font-display text-lg font-semibold text-clox-ink">
+        {t('account.paymentMethodTitle')}
+      </h2>
+      <p className="mt-1 text-sm text-clox-mute">{t('account.paymentMethodSubtitle')}</p>
+
+      {methodQuery.isLoading ? (
+        <div className="mt-4">
+          <LoadingBlock label={t('account.paymentMethodLoading')} />
+        </div>
+      ) : null}
+
+      {methodQuery.isError ? (
+        <Notice tone="error" className="mt-4">
+          {getErrorDetail(methodQuery.error)}
+        </Notice>
+      ) : null}
+
+      {!methodQuery.isLoading && !methodQuery.isError ? (
+        <div className="mt-4 space-y-4">
+          {hasCard ? (
+            <div className="rounded-clox-md border border-clox-border bg-clox-surface-alt/50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-clox-mute">
+                {t('account.paymentMethodOnFile')}
+              </p>
+              <p className="mt-1 font-medium text-clox-ink">
+                {t('account.paymentMethodCardLine', {
+                  brand: formatCardBrand(method?.brand),
+                  last4: method?.last4,
+                })}
+              </p>
+              {method?.expMonth && method?.expYear ? (
+                <p className="mt-0.5 text-xs text-clox-mute">
+                  {t('account.paymentMethodExpiry', {
+                    month: String(method.expMonth).padStart(2, '0'),
+                    year: method.expYear,
+                  })}
+                </p>
+              ) : null}
+              {method?.mock ? (
+                <p className="mt-1 text-xs text-clox-faint">{t('account.paymentMethodMock')}</p>
+              ) : null}
+              <p className="mt-2 text-xs text-clox-mute">{t('account.paymentMethodKeepHint')}</p>
+            </div>
+          ) : (
+            <Notice tone="info">{t('account.paymentMethodNone')}</Notice>
+          )}
+
+          {!replacing ? (
+            <Button
+              type="button"
+              variant={hasCard ? 'secondary' : 'cta'}
+              disabled={startReplace.isPending}
+              onClick={() => startReplace.mutate()}
+            >
+              {startReplace.isPending
+                ? t('loading')
+                : hasCard
+                  ? t('account.paymentMethodReplace')
+                  : t('account.paymentMethodAdd')}
+            </Button>
+          ) : null}
+
+          {setupError ? (
+            <Notice tone="error">{setupError}</Notice>
+          ) : null}
+
+          {replacing && setup ? (
+            <div className="rounded-clox-md border border-clox-border bg-white p-4 text-slate-900">
+              <p className="mb-3 text-sm text-slate-600">{t('account.paymentMethodReplaceHint')}</p>
+              <SenderPaymentElement
+                clientSecret={setup.clientSecret}
+                publishableKey={setup.publishableKey}
+                onPaymentMethodReady={onPaymentMethodReady}
+                submitting={confirming}
+              />
+              <div className="mt-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={confirming}
+                  onClick={() => {
+                    setReplacing(false);
+                    setSetup(null);
+                    setSetupError(null);
+                  }}
+                >
+                  {t('account.paymentMethodCancelReplace')}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function AccountPage() {
   const { t } = useTranslation('common');
   const role = useAuthStore((s) => s.role);
@@ -717,6 +888,8 @@ export function AccountPage() {
           kind={role === AppRole.TRANSPORT_COMPANY ? 'carrier' : 'sender'}
         />
       ) : null}
+
+      {role === AppRole.SENDER ? <SenderPaymentMethodSection /> : null}
 
       <h2 className="mt-10 font-display text-lg font-semibold text-clox-ink">
         {t('account.activeSessions')}

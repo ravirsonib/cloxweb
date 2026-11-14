@@ -40,7 +40,12 @@ import {
   type CarrierDriverListItem,
   type DriverScheduleEntryItem,
 } from '@/lib/api';
-import { formatCalendarDate, formatDateTime } from '@/lib/datetime';
+import {
+  formatCalendarDate,
+  formatDateTime,
+  isDatetimeLocalNotInPast,
+  minDatetimeLocalValue,
+} from '@/lib/datetime';
 
 type InviteForm = {
   name: string;
@@ -243,6 +248,17 @@ export function CarrierDriversPage() {
       toast.error(
         t('drivers.datesRequired', {
           defaultValue: 'Please provide both start and end date/time.',
+        }),
+      );
+      return;
+    }
+    if (
+      !isDatetimeLocalNotInPast(schedStartAt) ||
+      !isDatetimeLocalNotInPast(schedEndAt)
+    ) {
+      toast.error(
+        t('validation.datetimeNotInPast', {
+          defaultValue: 'Choose a current or future date and time.',
         }),
       );
       return;
@@ -1240,6 +1256,7 @@ export function CarrierDriversPage() {
                 label={t('drivers.startAt', { defaultValue: 'Start Date & Time' })}
                 value={schedStartAt}
                 onChange={(e) => setSchedStartAt(e.target.value)}
+                min={minDatetimeLocalValue()}
                 required
               />
 
@@ -1248,6 +1265,11 @@ export function CarrierDriversPage() {
                 label={t('drivers.endAt', { defaultValue: 'End Date & Time' })}
                 value={schedEndAt}
                 onChange={(e) => setSchedEndAt(e.target.value)}
+                min={
+                  schedStartAt && schedStartAt >= minDatetimeLocalValue()
+                    ? schedStartAt
+                    : minDatetimeLocalValue()
+                }
                 required
               />
 

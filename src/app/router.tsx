@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { AdminShell } from '@/components/admin-shell';
+import { AppBootScreen } from '@/components/app-boot-screen';
 import { isIntentionalLogoutRedirect } from '@/lib/auth-session';
 import { useAuthStore } from '@/stores/auth-store';
 import { AdminRole, AppRole } from '@/shared/types';
@@ -8,7 +9,7 @@ import { HomePage } from '@/pages/home-page';
 import { AuditPage } from '@/pages/audit-page';
 import { LeadDetailPage } from '@/pages/lead-detail-page';
 import { AdminJobDetailPage, AdminJobsPage } from '@/pages/admin-jobs-page';
-import { CompaniesPage } from '@/pages/companies-page';
+import { CustomersPage } from '@/pages/companies-page';
 import { CompanyDetailPage } from '@/pages/company-detail-page';
 import { LeadsPage } from '@/pages/leads-page';
 import { LoginPage } from '@/pages/login-page';
@@ -56,7 +57,12 @@ import { PartnerPerformancePage } from '@/pages/partner-performance-page';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const accessToken = useAuthStore((state) => state.accessToken);
+  const hasHydrated = useAuthStore((state) => state.hasHydrated);
   const location = useLocation();
+  // Wait for persist rehydrate so a brief null token does not look like logout.
+  if (!hasHydrated) {
+    return <AppBootScreen />;
+  }
   if (!accessToken) {
     // Intentional sign-out: land on clean /login (do not keep previous page as ?next=).
     // Session expiry / deep-link still uses ?next= so the user can return after OTP.
@@ -106,6 +112,11 @@ function OpsOnly({ children }: { children: ReactNode }) {
   return children;
 }
 
+function LegacyCustomerDetailRedirect() {
+  const { id } = useParams();
+  return <Navigate to={id ? `/customers/${id}` : '/customers?type=CARRIER'} replace />;
+}
+
 function ProtectedShell() {
   return (
     <ProtectedRoute>
@@ -152,21 +163,24 @@ export function AppRouter() {
           }
         />
         <Route
-          path="/companies"
+          path="/customers"
           element={
             <SuperOnly>
-              <CompaniesPage />
+              <CustomersPage />
             </SuperOnly>
           }
         />
         <Route
-          path="/companies/:id"
+          path="/customers/:id"
           element={
             <OpsOnly>
               <CompanyDetailPage />
             </OpsOnly>
           }
         />
+        {/* Legacy bookmarks → Customers */}
+        <Route path="/companies" element={<Navigate to="/customers?type=CARRIER" replace />} />
+        <Route path="/companies/:id" element={<LegacyCustomerDetailRedirect />} />
         <Route
           path="/admin-jobs"
           element={

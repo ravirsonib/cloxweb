@@ -62,6 +62,7 @@ export function OpsPartnersPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const qc = useQueryClient();
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [lastInviteUrl, setLastInviteUrl] = useState<string | null>(null);
   const [disableTarget, setDisableTarget] = useState<PartnerAdminListItem | null>(null);
   const [disableReason, setDisableReason] = useState('');
@@ -313,98 +314,119 @@ export function OpsPartnersPage() {
 
   return (
     <div>
-      <h1 className="font-display text-2xl font-bold text-clox-ink sm:text-3xl">
-        {t('opsPartners.title')}
-      </h1>
-      <p className="mt-2 text-sm text-clox-mute">{t('opsPartners.subtitle')}</p>
-
-      <section className="clox-card mt-6 max-w-2xl p-5">
-        <h2 className="font-display text-lg font-semibold text-clox-ink">
-          {t('opsPartners.inviteTitle')}
-        </h2>
-        {geoQuery.isError ? (
-          <Notice tone="error" className="mt-3">
-            {getErrorDetail(geoQuery.error)}
-          </Notice>
-        ) : null}
-        <form
-          className="mt-4 grid gap-3 sm:grid-cols-2"
-          onSubmit={form.handleSubmit((values) => inviteMutation.mutate(values))}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-clox-ink sm:text-3xl">
+            {t('opsPartners.title')}
+          </h1>
+          <p className="mt-2 text-sm text-clox-mute">{t('opsPartners.subtitle')}</p>
+        </div>
+        <Button
+          type="button"
+          variant={inviteOpen ? 'secondary' : 'cta'}
+          onClick={() => setInviteOpen((open) => !open)}
         >
-          <Field
-            label={t('opsPartners.email')}
-            className="sm:col-span-2"
-            error={form.formState.errors.email?.message}
-            {...form.register('email')}
-          />
-          <Field label={t('opsPartners.name')} {...form.register('name')} />
-          <Field label={t('opsPartners.companyName')} {...form.register('companyName')} />
-          <Select label={t('opsPartners.role')} {...form.register('role')}>
-            <option value={AdminRole.STATE_MASTER}>{t('opsPartners.roleState')}</option>
-            <option value={AdminRole.LOCAL_BDE}>{t('opsPartners.roleLocal')}</option>
-          </Select>
-          <Controller
-            name="regionCode"
-            control={form.control}
-            render={({ field, fieldState }) => (
-              <SearchableSelect
-                label={t('opsPartners.region')}
-                value={field.value}
-                onChange={(next) => {
-                  field.onChange(next);
-                  form.setValue('territoryCode', '');
-                }}
-                options={regionOptions}
-                placeholder={t('opsPartners.regionPlaceholder')}
-                searchPlaceholder={t('opsPartners.searchPlaceholder')}
-                emptyLabel={t('opsPartners.noMatches')}
-                error={fieldState.error?.message}
-                disabled={geoQuery.isLoading}
-                required
-              />
-            )}
-          />
-          {role === AdminRole.LOCAL_BDE ? (
+          {inviteOpen ? t('opsPartners.hideInvite') : t('opsPartners.inviteTitle')}
+        </Button>
+      </div>
+
+      {inviteOpen ? (
+        <section className="clox-card mt-6 max-w-2xl p-5">
+          <h2 className="font-display text-lg font-semibold text-clox-ink">
+            {t('opsPartners.inviteTitle')}
+          </h2>
+          {geoQuery.isError ? (
+            <Notice tone="error" className="mt-3">
+              {getErrorDetail(geoQuery.error)}
+            </Notice>
+          ) : null}
+          <form
+            className="mt-4 grid gap-3 sm:grid-cols-2"
+            onSubmit={form.handleSubmit((values) => inviteMutation.mutate(values))}
+          >
+            <Field
+              label={t('opsPartners.email')}
+              className="sm:col-span-2"
+              error={form.formState.errors.email?.message}
+              {...form.register('email')}
+            />
+            <Field label={t('opsPartners.name')} {...form.register('name')} />
+            <Field label={t('opsPartners.companyName')} {...form.register('companyName')} />
+            <Select label={t('opsPartners.role')} {...form.register('role')}>
+              <option value={AdminRole.STATE_MASTER}>{t('opsPartners.roleState')}</option>
+              <option value={AdminRole.LOCAL_BDE}>{t('opsPartners.roleLocal')}</option>
+            </Select>
             <Controller
-              name="territoryCode"
+              name="regionCode"
               control={form.control}
               render={({ field, fieldState }) => (
                 <SearchableSelect
-                  className="sm:col-span-2"
-                  label={t('opsPartners.territory')}
-                  value={field.value ?? ''}
-                  onChange={field.onChange}
-                  options={territoryOptions}
-                  placeholder={
-                    territoryOptions.length
-                      ? t('opsPartners.territoryPlaceholder')
-                      : t('opsPartners.noTerritories')
-                  }
+                  label={t('opsPartners.region')}
+                  value={field.value}
+                  onChange={(next) => {
+                    field.onChange(next);
+                    form.setValue('territoryCode', '');
+                  }}
+                  options={regionOptions}
+                  placeholder={t('opsPartners.regionPlaceholder')}
                   searchPlaceholder={t('opsPartners.searchPlaceholder')}
                   emptyLabel={t('opsPartners.noMatches')}
                   error={fieldState.error?.message}
-                  disabled={geoQuery.isLoading || !regionCode || territoryOptions.length === 0}
+                  disabled={geoQuery.isLoading}
                   required
                 />
               )}
             />
+            {role === AdminRole.LOCAL_BDE ? (
+              <Controller
+                name="territoryCode"
+                control={form.control}
+                render={({ field, fieldState }) => (
+                  <SearchableSelect
+                    className="sm:col-span-2"
+                    label={t('opsPartners.territory')}
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    options={territoryOptions}
+                    placeholder={
+                      territoryOptions.length
+                        ? t('opsPartners.territoryPlaceholder')
+                        : t('opsPartners.noTerritories')
+                    }
+                    searchPlaceholder={t('opsPartners.searchPlaceholder')}
+                    emptyLabel={t('opsPartners.noMatches')}
+                    error={fieldState.error?.message}
+                    disabled={geoQuery.isLoading || !regionCode || territoryOptions.length === 0}
+                    required
+                  />
+                )}
+              />
+            ) : null}
+            <div className="sm:col-span-2 flex flex-wrap gap-2">
+              <Button
+                type="submit"
+                variant="cta"
+                disabled={inviteMutation.isPending || geoQuery.isLoading}
+              >
+                {inviteMutation.isPending ? t('loading') : t('opsPartners.sendInvite')}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={inviteMutation.isPending}
+                onClick={() => setInviteOpen(false)}
+              >
+                {t('confirm.cancel')}
+              </Button>
+            </div>
+          </form>
+          {lastInviteUrl ? (
+            <Notice tone="info" className="mt-4 break-all">
+              {t('opsPartners.inviteUrlHint')}: {lastInviteUrl}
+            </Notice>
           ) : null}
-          <div className="sm:col-span-2">
-            <Button
-              type="submit"
-              variant="cta"
-              disabled={inviteMutation.isPending || geoQuery.isLoading}
-            >
-              {inviteMutation.isPending ? t('loading') : t('opsPartners.sendInvite')}
-            </Button>
-          </div>
-        </form>
-        {lastInviteUrl ? (
-          <Notice tone="info" className="mt-4 break-all">
-            {t('opsPartners.inviteUrlHint')}: {lastInviteUrl}
-          </Notice>
-        ) : null}
-      </section>
+        </section>
+      ) : null}
 
       <section className="mt-8">
         <h2 className="font-display text-lg font-semibold text-clox-ink">

@@ -316,115 +316,23 @@ export const VEHICLE_CLASS_RANK: Record<string, number> = Object.fromEntries(
   CLOX_VEHICLE_SPECS.map((s) => [s.code, s.rank]),
 );
 
-export type CloxLoadTypeMeta = {
-  code: string;
-  nameKey: string;
-  defaultName: string;
-  descKey: string;
-  defaultDesc: string;
-  badgeTone: 'neutral' | 'warn' | 'info';
-  requiresDoc?: boolean;
-};
-
-export const CLOX_LOAD_TYPES: readonly CloxLoadTypeMeta[] = [
-  {
-    code: 'GENERAL',
-    nameKey: 'loadTypes.general',
-    defaultName: 'General Freight',
-    descKey: 'loadTypes.generalDesc',
-    defaultDesc: 'Cartons, pallets, retail stock, FMCG, general merchandise.',
-    badgeTone: 'neutral',
-  },
-  {
-    code: 'DG',
-    nameKey: 'loadTypes.dg',
-    defaultName: 'Dangerous Goods (DG)',
-    descKey: 'loadTypes.dgDesc',
-    defaultDesc: 'Flammables, toxics, batteries, gas, chemicals (SDS document required).',
-    badgeTone: 'warn',
-    requiresDoc: true,
-  },
-  {
-    code: 'LIQUID',
-    nameKey: 'loadTypes.liquid',
-    defaultName: 'Liquid / Bulk Liquid',
-    descKey: 'loadTypes.liquidDesc',
-    defaultDesc: 'Drums, IBCs, oils, bulk liquids (spill containment required).',
-    badgeTone: 'info',
-  },
-  {
-    code: 'OVERSIZE',
-    nameKey: 'loadTypes.oversize',
-    defaultName: 'Oversize / Over-dimension',
-    descKey: 'loadTypes.oversizeDesc',
-    defaultDesc: 'Long steel, pipes, beams (flatbed & permit warnings apply).',
-    badgeTone: 'warn',
-  },
-  {
-    code: 'STEEL',
-    nameKey: 'loadTypes.steel',
-    defaultName: 'Steel / Metal',
-    descKey: 'loadTypes.steelDesc',
-    defaultDesc: 'Coils, rebar, metal sheets (chains & NHVR restraints required).',
-    badgeTone: 'neutral',
-  },
-  {
-    code: 'REEFER',
-    nameKey: 'loadTypes.reefer',
-    defaultName: 'Temperature Controlled (Reefer)',
-    descKey: 'loadTypes.reeferDesc',
-    defaultDesc: 'Chilled, frozen, perishable food, pharma (refrigerated unit required).',
-    badgeTone: 'info',
-  },
-  {
-    code: 'HEAVY_MACHINERY',
-    nameKey: 'loadTypes.heavyMachinery',
-    defaultName: 'Machinery / Heavy Equipment',
-    descKey: 'loadTypes.heavyMachineryDesc',
-    defaultDesc: 'Engines, mining & industrial gear, ramps & high-capacity transport.',
-    badgeTone: 'neutral',
-  },
-  {
-    code: 'VEHICLES_PLANT',
-    nameKey: 'loadTypes.vehiclesPlant',
-    defaultName: 'Vehicles / Plant',
-    descKey: 'loadTypes.vehiclesPlantDesc',
-    defaultDesc: 'Cars, excavators, forklifts, tractors, tilt-tray/ramps required.',
-    badgeTone: 'neutral',
-  },
-  {
-    code: 'CONTAINERS',
-    nameKey: 'loadTypes.containers',
-    defaultName: 'Containers (Port / Wharf)',
-    descKey: 'loadTypes.containersDesc',
-    defaultDesc: '20ft/40ft shipping containers (wharf access required).',
-    badgeTone: 'info',
-  },
-  {
-    code: 'TIMBER',
-    nameKey: 'loadTypes.timber',
-    defaultName: 'Timber / Building Materials',
-    descKey: 'loadTypes.timberDesc',
-    defaultDesc: 'Timber packs, plywood, gyprock, bricks, roofing.',
-    badgeTone: 'neutral',
-  },
-  {
-    code: 'HIGH_VALUE',
-    nameKey: 'loadTypes.highValue',
-    defaultName: 'High-Value / Sensitive',
-    descKey: 'loadTypes.highValueDesc',
-    defaultDesc: 'Electronics, medical gear, high-security sensitive freight.',
-    badgeTone: 'warn',
-  },
-  {
-    code: 'WASTE',
-    nameKey: 'loadTypes.waste',
-    defaultName: 'Waste / Recycling',
-    descKey: 'loadTypes.wasteDesc',
-    defaultDesc: 'Industrial/construction waste, scrap, EPA compliance applies.',
-    badgeTone: 'neutral',
-  },
-] as const;
+export type {
+  LoadTypeParentMeta as CloxLoadTypeMeta,
+  LoadTypeSubtypeMeta,
+  LoadTypeBadgeTone,
+} from './load-types';
+export {
+  CLOX_LOAD_TYPES,
+  CLOX_LOAD_TYPE_CODES,
+  normalizeLoadTypesSelection,
+  nextLoadTypesOnParentToggle,
+  nextLoadTypeSubtypesOnToggle,
+  pruneLoadTypeSubtypes,
+  ensureDefaultSubtypesForParents,
+  parentsMissingRequiredSubtype,
+  subtypeParentCode,
+  parentByCode,
+} from './load-types';
 
 /**
  * Indicative GVM (kg) by class for form defaults only — carrier must confirm
@@ -592,15 +500,17 @@ export function requiredPhoneSchema(requiredMessage: string, invalidMessage: str
     });
 }
 
+/** Date-only (`YYYY-MM-DD`) must be today or later (past dates rejected). */
 export function futureDateSchema(requiredMessage: string, futureMessage: string) {
   return z
     .string()
     .min(1, requiredMessage)
     .refine((value) => {
-      const date = new Date(`${value}T00:00:00`);
-      if (Number.isNaN(date.getTime())) return false;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return false;
       const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      return date.getTime() > today.getTime();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      return value.trim() >= `${yyyy}-${mm}-${dd}`;
     }, futureMessage);
 }

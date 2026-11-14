@@ -41,8 +41,10 @@ export function refreshSession(refreshToken: string, options?: { signal?: AbortS
 }
 
 export function logout(payload?: { refreshToken?: string; allDevices?: boolean }) {
+  // Default: this device only. allDevices:true would revoke every session and
+  // looks like a random logout on phone/tablet when desktop signs out.
   return http
-    .post<{ ok: boolean }>('/auth/logout', payload ?? { allDevices: true })
+    .post<{ ok: boolean }>('/auth/logout', payload ?? { allDevices: false })
     .then((r) => r.data);
 }
 

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
@@ -35,6 +35,7 @@ import {
   reassignCompanyReferrer,
   type CompanyListItem,
 } from '@/lib/api';
+import { cn } from '@/lib/cn';
 import { formatDateTime } from '@/lib/leads';
 import { companyStatusTone, complianceCaseStatusTone } from '@/lib/status-tone';
 import {
@@ -46,9 +47,9 @@ import {
 
 const REGION_OPTIONS = ['VIC', 'NSW', 'QLD', 'SA', 'WA', 'TAS', 'NT', 'ACT'] as const;
 
-function parseCompanyType(value: string): AdminCompanyListQuery['type'] {
+function parseCustomerType(value: string | null): 'SENDER' | 'CARRIER' {
   if (value === CompanyType.SENDER || value === CompanyType.CARRIER) return value;
-  return undefined;
+  return CompanyType.CARRIER;
 }
 
 function parseCompanyStatus(value: string): AdminCompanyListQuery['status'] {
@@ -58,6 +59,11 @@ function parseCompanyStatus(value: string): AdminCompanyListQuery['status'] {
 }
 
 export function CompaniesPage() {
+  return <CustomersPage />;
+}
+
+/** Super Admin → Customers (marketplace senders / carriers). */
+export function CustomersPage() {
   const { t } = useTranslation('common');
   const confirm = useConfirm();
   const toast = useToast();
@@ -70,20 +76,29 @@ export function CompaniesPage() {
   const [reassignTarget, setReassignTarget] = useState<CompanyListItem | null>(null);
   const [reassignLocalId, setReassignLocalId] = useState<string>('');
   const [actionError, setActionError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useDataViewMode('companies', 'list');
+  const [viewMode, setViewMode] = useDataViewMode('customers', 'list');
 
   const page = Number(searchParams.get('page') || '1') || 1;
   const q = searchParams.get('q') || '';
-  const type = searchParams.get('type') || '';
+  const type = parseCustomerType(searchParams.get('type'));
   const status = searchParams.get('status') || '';
   const regionCode = searchParams.get('regionCode') || '';
 
+  // Keep URL + server filter aligned (default carriers).
+  useEffect(() => {
+    const raw = searchParams.get('type');
+    if (raw === CompanyType.SENDER || raw === CompanyType.CARRIER) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('type', CompanyType.CARRIER);
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
   const query = useMemo(
-    () => ({
+    (): Partial<AdminCompanyListQuery> => ({
       page,
       pageSize: 20,
       q: q || undefined,
-      type: parseCompanyType(type),
+      type,
       status: parseCompanyStatus(status),
       regionCode: regionCode || undefined,
     }),
@@ -91,7 +106,7 @@ export function CompaniesPage() {
   );
 
   const companiesQuery = useQuery({
-    queryKey: ['admin', 'companies', query],
+    queryKey: ['admin', 'customers', query],
     queryFn: ({ signal }) => listCompanies(query, { signal }),
   });
 
@@ -108,7 +123,7 @@ export function CompaniesPage() {
   });
 
   const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ['admin', 'companies'] });
+    queryClient.invalidateQueries({ queryKey: ['admin', 'customers'] });
 
   const disableMutation = useMutation({
     mutationFn: () =>
@@ -174,8 +189,15 @@ export function CompaniesPage() {
 
   function updateFilter(key: string, value: string) {
     const next = new URLSearchParams(searchParams);
-    if (value) next.set(key, value);
-    else next.delete(key);
+    if (key === 'type') {
+      next.set('type', parseCustomerType(value));
+    } else if (value) {
+      next.set(key, value);
+    } else {
+      next.delete(key);
+    }
+    // Always keep a customer kind in the URL for server filtering.
+    if (!next.get('type')) next.set('type', CompanyType.CARRIER);
     if (key !== 'page') next.delete('page');
     setSearchParams(next);
   }
@@ -220,7 +242,7 @@ export function CompaniesPage() {
     return (
       <ActionGroup>
         <IconButtonLink
-          to={`/companies/${row.id}`}
+          to={`/customers/${row.id}`}
           icon={Eye}
           label={t('companies.viewDetails')}
           tooltip={t('companies.viewDetails')}
@@ -282,7 +304,7 @@ export function CompaniesPage() {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <Link
-                to={`/companies/${row.id}`}
+                to={`/customers/${row.id}`}
                 className="truncate font-medium text-clox-ink hover:text-clox-orange hover:underline block"
               >
                 {row.legalName}
@@ -307,11 +329,6 @@ export function CompaniesPage() {
             </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-clox-mute">
-            <span className="font-medium text-clox-ink">
-              {row.type === 'CARRIER'
-                ? t('companies.typeCarrier')
-                : t('companies.typeSender')}
-            </span>
             {row.homeRegion?.code ? (
               <span className="rounded bg-clox-surface-alt px-1.5 py-0.5 font-mono font-medium text-clox-ink">
                 {row.homeRegion.code}
@@ -354,6 +371,11 @@ export function CompaniesPage() {
     );
   }
 
+  const typeLabel =
+    type === CompanyType.CARRIER
+      ? t('companies.typeCarrier')
+      : t('companies.typeSender');
+
   return (
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -361,8 +383,15 @@ export function CompaniesPage() {
           <h1 className="font-display text-2xl font-bold text-clox-ink sm:text-3xl">
             {t('companies.title')}
           </h1>
-          <p className="mt-2 text-sm text-clox-mute">
-            {t('companies.subtitle')} · {t('totalCount', { count: total })}
+          <p className="mt-2 max-w-2xl text-sm text-clox-mute">
+            {t('companies.subtitle')}
+          </p>
+          <p className="mt-1 text-xs text-clox-faint">
+            {t('companies.showingCount', {
+              type: typeLabel,
+              count: total,
+              defaultValue: `Showing {{count}} {{type}}`,
+            })}
           </p>
         </div>
         {items.length > 0 ? (
@@ -370,8 +399,40 @@ export function CompaniesPage() {
         ) : null}
       </div>
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 sm:items-end">
-        <label className="mb-0 block">
+      <div
+        className="mt-6 inline-flex flex-wrap rounded-clox-sm border border-clox-border bg-clox-surface p-0.5"
+        role="tablist"
+        aria-label={t('companies.customerKindNav', { defaultValue: 'Customer type' })}
+      >
+        {(
+          [
+            { value: CompanyType.CARRIER, label: t('companies.tabCarriers') },
+            { value: CompanyType.SENDER, label: t('companies.tabSenders') },
+          ] as const
+        ).map((tab) => {
+          const active = type === tab.value;
+          return (
+            <button
+              key={tab.value}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              className={cn(
+                'rounded-[5px] px-4 py-2 text-sm font-semibold transition',
+                active
+                  ? 'bg-clox-navy-ink text-white shadow-sm'
+                  : 'text-clox-mute hover:bg-clox-surface-alt hover:text-clox-ink',
+              )}
+              onClick={() => updateFilter('type', tab.value)}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:items-end">
+        <label className="mb-0 block sm:col-span-2">
           <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
             {t('search')}
           </span>
@@ -387,16 +448,6 @@ export function CompaniesPage() {
         </label>
         <Select
           className="mb-0"
-          label={t('companies.colType')}
-          value={type}
-          onChange={(event) => updateFilter('type', event.target.value)}
-        >
-          <option value="">{t('companies.allTypes')}</option>
-          <option value={CompanyType.SENDER}>{t('companies.typeSender')}</option>
-          <option value={CompanyType.CARRIER}>{t('companies.typeCarrier')}</option>
-        </Select>
-        <Select
-          className="mb-0"
           label={t('companies.colStatus')}
           value={status}
           onChange={(event) => updateFilter('status', event.target.value)}
@@ -408,22 +459,24 @@ export function CompaniesPage() {
             </option>
           ))}
         </Select>
-        <Select
-          className="mb-0"
-          label={t('companies.colRegion')}
-          value={regionCode}
-          onChange={(event) => updateFilter('regionCode', event.target.value)}
-        >
-          <option value="">{t('companies.allRegions')}</option>
-          {REGION_OPTIONS.map((code) => (
-            <option key={code} value={code}>
-              {code}
-            </option>
-          ))}
-        </Select>
-        <Button variant="primary" onClick={applySearch}>
-          {t('search')}
-        </Button>
+        <div className="flex flex-wrap items-end gap-2">
+          <Select
+            className="mb-0 min-w-0 flex-1"
+            label={t('companies.colRegion')}
+            value={regionCode}
+            onChange={(event) => updateFilter('regionCode', event.target.value)}
+          >
+            <option value="">{t('companies.allRegions')}</option>
+            {REGION_OPTIONS.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </Select>
+          <Button variant="primary" className="mb-0 shrink-0" onClick={applySearch}>
+            {t('search')}
+          </Button>
+        </div>
       </div>
 
       {actionError ? (
@@ -474,12 +527,13 @@ export function CompaniesPage() {
               }
               table={
                 <DataTable
-                  minWidthClassName="min-w-[72rem]"
+                  minWidthClassName="min-w-[64rem]"
                   headers={[
                     t('companies.colCompany'),
-                    t('companies.colType'),
                     t('companies.colStatus'),
-                    t('companies.colReliability'),
+                    ...(type === CompanyType.CARRIER
+                      ? [t('companies.colReliability')]
+                      : []),
                     t('companies.colRegion'),
                     t('companies.colAbn'),
                     t('companies.colFleet'),
@@ -490,8 +544,7 @@ export function CompaniesPage() {
                   headerClassNames={[
                     undefined,
                     undefined,
-                    undefined,
-                    undefined,
+                    ...(type === CompanyType.CARRIER ? [undefined] : []),
                     undefined,
                     undefined,
                     undefined,
@@ -507,7 +560,7 @@ export function CompaniesPage() {
                     >
                       <td className="px-4 py-3">
                         <Link
-                          to={`/companies/${row.id}`}
+                          to={`/customers/${row.id}`}
                           className="font-medium text-clox-ink hover:text-clox-orange hover:underline block"
                         >
                           {row.legalName}
@@ -527,25 +580,22 @@ export function CompaniesPage() {
                           </div>
                         ) : null}
                       </td>
-                      <td className="px-4 py-3 text-clox-mute">
-                        {row.type === 'CARRIER'
-                          ? t('companies.typeCarrier')
-                          : t('companies.typeSender')}
-                      </td>
                       <td className="px-4 py-3">
                         <StatusPill tone={companyStatusTone(row.status)}>
                           {t(`companyStatuses.${row.status}`, { defaultValue: row.status })}
                         </StatusPill>
                       </td>
-                      <td className="px-4 py-3">
-                        {row.type === 'CARRIER' && typeof row.reliabilityScore === 'number' ? (
-                          <StatusPill tone="info">
-                            {t('companies.reliabilityScore', { score: row.reliabilityScore })}
-                          </StatusPill>
-                        ) : (
-                          <span className="text-sm text-clox-faint">{t('dash')}</span>
-                        )}
-                      </td>
+                      {type === CompanyType.CARRIER ? (
+                        <td className="px-4 py-3">
+                          {typeof row.reliabilityScore === 'number' ? (
+                            <StatusPill tone="info">
+                              {t('companies.reliabilityScore', { score: row.reliabilityScore })}
+                            </StatusPill>
+                          ) : (
+                            <span className="text-sm text-clox-faint">{t('dash')}</span>
+                          )}
+                        </td>
+                      ) : null}
                       <td className="px-4 py-3 text-clox-mute">
                         {row.homeRegion?.code ?? t('dash')}
                       </td>

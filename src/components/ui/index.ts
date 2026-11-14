@@ -44,10 +44,12 @@ export {
   Tooltip,
   IconButton,
   IconButtonLink,
+  IconFileButton,
   type TooltipProps,
   type TooltipPosition,
   type IconButtonProps,
   type IconButtonLinkProps,
+  type IconFileButtonProps,
 } from './tooltip';
 export { Timeline, type TimelineItem, type TimelineItemTone } from './timeline';
 export {

@@ -16,10 +16,16 @@ export function StatusPill({
   tone = 'neutral',
   children,
   className,
+  title,
 }: {
   tone?: StatusPillTone;
   children: ReactNode;
   className?: string;
+  title?: string;
 }) {
-  return <span className={cn('clox-status', tones[tone], className)}>{children}</span>;
+  return (
+    <span className={cn('clox-status', tones[tone], className)} title={title}>
+      {children}
+    </span>
+  );
 }

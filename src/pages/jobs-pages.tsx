@@ -44,6 +44,7 @@ import { ScaPaymentConfirm } from '@/components/stripe/ScaPaymentConfirm';
 import {
   Button,
   ChoiceCheck,
+  ChoiceCheckbox,
   DataCardList,
   DataTable,
   Field,
@@ -65,6 +66,15 @@ import {
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import { cn } from '@/lib/cn';
 import { formatDollars } from '@/lib/currency';
+import {
+  defaultPickupDatetimeLocal,
+  formatDateTime,
+  formatLocationDateTime,
+  fromDatetimeLocalValue,
+  isDatetimeLocalNotInPast,
+  minDatetimeLocalValue,
+  toDatetimeLocalValue,
+} from '@/lib/datetime';
 import {
   countByBucket,
   filterAndSortByBucket,
@@ -88,8 +98,14 @@ import {
   getStateStopDefaults,
   isChargeableOverLimit,
   isValidAuPostcodeForState,
+  ensureDefaultSubtypesForParents,
+  nextLoadTypeSubtypesOnToggle,
+  nextLoadTypesOnParentToggle,
+  normalizeLoadTypesSelection,
   optionalPhoneSchema,
+  parentsMissingRequiredSubtype,
   requiredPhoneSchema,
+  subtypeParentCode,
 } from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
@@ -153,9 +169,17 @@ function senderJobBucket(job: JobSummary): SenderJobBucket {
 
 function formatWhen(value: string | null | undefined) {
   if (!value) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleString();
+  const formatted = formatDateTime(value);
+  return formatted === '—' ? null : formatted;
+}
+
+function formatPickupWhen(
+  value: string | null | undefined,
+  state?: string | null,
+) {
+  if (!value) return null;
+  const formatted = formatLocationDateTime(value, state);
+  return formatted === '—' ? null : formatted;
 }
 
 export function JobsListPage() {
@@ -207,6 +231,7 @@ export function JobsListPage() {
     const bucket = senderJobBucket(j);
     const created = formatWhen(j.createdAt);
     const completed = formatWhen(j.completedAt);
+    const pickup = formatPickupWhen(j.pickupAt);
     const openBids = j.openProposalCount ?? 0;
     const hasOpenBids = openBids > 0;
     return (
@@ -247,6 +272,9 @@ export function JobsListPage() {
             : t('dash')}
         </p>
         <div className="mt-2 space-y-0.5 text-[11px] text-clox-faint">
+          {pickup ? (
+            <p>{t('jobs.pickupAtLine', { when: pickup })}</p>
+          ) : null}
           {created ? (
             <p>{t('jobs.createdAt', { when: created })}</p>
           ) : null}
@@ -361,6 +389,13 @@ export function JobsListPage() {
                         <p className="font-mono text-[11px] text-clox-faint">
                           {j.id.slice(0, 8)}
                         </p>
+                        {formatPickupWhen(j.pickupAt) ? (
+                          <p className="mt-0.5 text-[11px] text-clox-mute">
+                            {t('jobs.pickupAtLine', {
+                              when: formatPickupWhen(j.pickupAt),
+                            })}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3">
                         <StatusPill tone={jobStatusTone(j.status)}>
@@ -458,6 +493,8 @@ type ExtraDropoffStopForm = {
 type JobCreateForm = {
   pricingModel: 'PER_KM' | 'HOURLY';
   distanceKm?: number;
+  /** Wall-clock `YYYY-MM-DDTHH:mm` for datetime-local; converted with pickup state TZ on submit. */
+  pickupAt: string;
   pickupAddressLine: string;
   pickupSuburb: string;
   pickupState: string;
@@ -474,6 +511,7 @@ type JobCreateForm = {
   heightCm: number;
   loadDg: boolean;
   loadTypes: string[];
+  loadTypeSubtypes: string[];
   minVehicleClass?: string;
   dgDocumentId?: string | null;
   receiverName: string;
@@ -670,6 +708,10 @@ function buildJobPayload(values: JobCreateForm) {
       : values.loadDg
         ? ['GENERAL', 'DG']
         : ['GENERAL'];
+  const loadTypeSubtypes = ensureDefaultSubtypesForParents(
+    loadTypes,
+    Array.isArray(values.loadTypeSubtypes) ? values.loadTypeSubtypes : [],
+  );
   const requiresDg = loadTypes.includes('DG');
   const stops = buildStopsFromForm(values);
   const pickupCount = stops.filter((s) => s.stopType === 'PICKUP').length;
@@ -682,7 +724,7 @@ function buildJobPayload(values: JobCreateForm) {
           ? ('B' as const)
           : ('A' as const)
         : undefined,
-    pickupAt: new Date(Date.now() + 86_400_000).toISOString(),
+    pickupAt: fromDatetimeLocalValue(values.pickupAt, values.pickupState),
     receiverName: values.receiverName.trim(),
     receiverEmail: values.receiverEmail.trim(),
     receiverPhone: values.receiverPhone.trim(),
@@ -698,6 +740,7 @@ function buildJobPayload(values: JobCreateForm) {
       ? { distanceKm: values.distanceKm }
       : {}),
     loadTypes,
+    loadTypeSubtypes,
     siteManeuverability: values.siteManeuverability,
     siteFacility: values.siteFacility,
     siteDisclaimerAccepted: true as const,
@@ -1030,6 +1073,7 @@ type DraftWizardStep = (typeof DRAFT_WIZARD_STEPS)[number];
 const DRAFT_STEP_FIELDS: Record<DraftWizardStep, (keyof JobCreateForm)[]> = {
   pricing: [
     'pricingModel',
+    'pickupAt',
     'pickupAddressLine',
     'pickupSuburb',
     'pickupState',
@@ -1049,6 +1093,7 @@ const DRAFT_STEP_FIELDS: Record<DraftWizardStep, (keyof JobCreateForm)[]> = {
     'heightCm',
     'loadDg',
     'loadTypes',
+    'loadTypeSubtypes',
     'minVehicleClass',
     'dgDocumentId',
   ],
@@ -1116,6 +1161,15 @@ function JobDraftForm({
         .number()
         .optional()
         .transform((v) => (typeof v === 'number' && Number.isNaN(v) ? undefined : v)),
+      pickupAt: z
+        .string()
+        .trim()
+        .regex(
+          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/,
+          t('validation.pickupAtRequired', {
+            defaultValue: 'Choose a pickup date and time',
+          }),
+        ),
       pickupAddressLine: z
         .string()
         .trim()
@@ -1180,7 +1234,8 @@ function JobDraftForm({
         .positive(t('validation.dimensionPositive'))
         .max(MAX_JOB_HEIGHT_CM, t('validation.heightMax', { max: MAX_JOB_HEIGHT_CM })),
       loadDg: z.boolean(),
-      loadTypes: z.array(z.string()).default(['GENERAL']),
+      loadTypes: z.array(z.string()).min(1).max(2).default(['GENERAL']),
+      loadTypeSubtypes: z.array(z.string()).default([]),
       minVehicleClass: z.string().optional(),
       dgDocumentId: z.string().uuid().nullable().optional(),
       receiverName: z.string().trim().min(1, t('validation.receiverNameRequired')),
@@ -1238,6 +1293,18 @@ function JobDraftForm({
           message: auPostcodeErrorForState(values.dropoffState),
         });
       }
+      if (
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(values.pickupAt) &&
+        !isDatetimeLocalNotInPast(values.pickupAt, values.pickupState)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['pickupAt'],
+          message: t('validation.pickupAtPast', {
+            defaultValue: 'Pickup must be the current time or later.',
+          }),
+        });
+      }
       const chargeable = chargeableWeightKg({
         deadWeightKg: values.deadWeightKg,
         lengthCm: values.lengthCm,
@@ -1251,6 +1318,29 @@ function JobDraftForm({
           message: t('validation.chargeableOverLimit', {
             kg: chargeable.toFixed(1),
             max: MAX_JOB_CHARGEABLE_WEIGHT_KG,
+          }),
+        });
+      }
+      const nonDgParents = (values.loadTypes ?? []).filter((c) => c !== 'DG');
+      if (nonDgParents.length > 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['loadTypes'],
+          message: t('validation.loadTypesOneParent', {
+            defaultValue: 'Select at most one freight category (plus optional Dangerous Goods)',
+          }),
+        });
+      }
+      const missingSubtypeParents = parentsMissingRequiredSubtype(
+        values.loadTypes ?? [],
+        values.loadTypeSubtypes ?? [],
+      );
+      if (missingSubtypeParents.length > 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['loadTypeSubtypes'],
+          message: t('validation.loadTypeSubtypeRequired', {
+            defaultValue: 'Select at least one sub-type for each selected load type.',
           }),
         });
       }
@@ -1340,6 +1430,7 @@ function JobDraftForm({
     defaultValues: {
       pricingModel: 'PER_KM',
       distanceKm: undefined,
+      pickupAt: defaultPickupDatetimeLocal(senderDefaultState),
       pickupAddressLine: initialStopDefaults.pickupAddressLine,
       pickupSuburb: initialStopDefaults.pickupSuburb,
       pickupState: senderDefaultState,
@@ -1356,6 +1447,7 @@ function JobDraftForm({
       heightCm: 80,
       loadDg: false,
       loadTypes: ['GENERAL'],
+      loadTypeSubtypes: ensureDefaultSubtypesForParents(['GENERAL'], []),
       minVehicleClass: undefined,
       dgDocumentId: null,
       receiverName: '',
@@ -1432,6 +1524,9 @@ function JobDraftForm({
     form.reset({
       pricingModel: existing.data.pricingModel === 'HOURLY' ? 'HOURLY' : 'PER_KM',
       distanceKm: Number.isFinite(savedKm) && savedKm > 0 ? savedKm : undefined,
+      pickupAt: existing.data.pickupAt
+        ? toDatetimeLocalValue(existing.data.pickupAt, resolvedPickupState)
+        : defaultPickupDatetimeLocal(resolvedPickupState),
       pickupAddressLine: pickupStop?.addressLine || pickupDefaults.pickupAddressLine,
       pickupSuburb: pickupStop?.suburb || pickupDefaults.pickupSuburb,
       pickupState: resolvedPickupState,
@@ -1447,10 +1542,19 @@ function JobDraftForm({
       widthCm: Number(existing.data.widthCm) || 80,
       heightCm: Number(existing.data.heightCm) || 80,
       loadDg: Boolean(existing.data.requiresDg),
-      loadTypes:
+      loadTypes: normalizeLoadTypesSelection(
         Array.isArray(existing.data.loadTypes) && existing.data.loadTypes.length > 0
           ? existing.data.loadTypes
           : ['GENERAL'],
+      ),
+      loadTypeSubtypes: ensureDefaultSubtypesForParents(
+        normalizeLoadTypesSelection(
+          Array.isArray(existing.data.loadTypes) && existing.data.loadTypes.length > 0
+            ? existing.data.loadTypes
+            : ['GENERAL'],
+        ),
+        Array.isArray(existing.data.loadTypeSubtypes) ? existing.data.loadTypeSubtypes : [],
+      ),
       minVehicleClass: existing.data.minVehicleClass || undefined,
       dgDocumentId: existing.data.dgDocumentId ?? null,
       receiverName: existing.data.receiverName || '',
@@ -1472,6 +1576,7 @@ function JobDraftForm({
   }, [existing.data]);
 
   const pricingModel = form.watch('pricingModel');
+  const pickupAt = form.watch('pickupAt');
   const pickupAddressLine = form.watch('pickupAddressLine');
   const pickupSuburb = form.watch('pickupSuburb');
   const pickupState = form.watch('pickupState');
@@ -1493,6 +1598,7 @@ function JobDraftForm({
   const heightCm = form.watch('heightCm');
   const distanceKm = form.watch('distanceKm');
   const loadTypes = form.watch('loadTypes') ?? ['GENERAL'];
+  const loadTypeSubtypes = form.watch('loadTypeSubtypes') ?? [];
   const minVehicleClass = form.watch('minVehicleClass');
   const dgDocumentId = form.watch('dgDocumentId');
 
@@ -1585,7 +1691,11 @@ function JobDraftForm({
       receiverName: receiverName.trim() || 'Receiver',
       receiverEmail: receiverEmail.trim() || 'receiver@example.com',
     });
-    void previewJobRoute({ pricingModel, stops })
+    void previewJobRoute({
+      pricingModel,
+      stops,
+      vehicleClass: minVehicleClass || undefined,
+    })
       .then((route) => {
         if (cancelled) return;
         setRouteEstimate(route);
@@ -1617,6 +1727,7 @@ function JobDraftForm({
     extraStopsSignature,
     isEdit,
     role,
+    minVehicleClass,
   ]);
 
   const handleDgUpload = async (file: File) => {
@@ -1898,6 +2009,19 @@ function JobDraftForm({
               ]}
             />
 
+            <Field
+              type="datetime-local"
+              label={t('jobs.pickupAtLabel', { defaultValue: 'Pickup date & time' })}
+              hint={t('jobs.pickupAtHint', {
+                defaultValue:
+                  'When the carrier should collect the freight (shown in the pickup state’s local time).',
+              })}
+              required
+              error={form.formState.errors.pickupAt?.message}
+              {...form.register('pickupAt')}
+              min={minDatetimeLocalValue(pickupState)}
+            />
+
             {pricingModel === 'HOURLY' ? (
               <Notice
                 tone="info"
@@ -1941,6 +2065,18 @@ function JobDraftForm({
                               routeEstimate.billableHours * (routeEstimate.hourlyRateCents ?? 8_000),
                             )) / 100
                         ).toFixed(2),
+                      })}
+                    </span>
+                  ) : null}
+                  {routeEstimate?.estimateRange &&
+                  routeEstimate.estimateRange.maxIncGstCents >
+                    routeEstimate.estimateRange.minIncGstCents ? (
+                    <span className="mt-1 block text-xs">
+                      {t('jobs.estimateRangeHint', {
+                        defaultValue:
+                          'Typical range for this load class vs next larger vehicle: {{min}} – {{max}} inc GST (guidance; final price is the accepted bid).',
+                        min: formatDollars(routeEstimate.estimateRange.minIncGstCents),
+                        max: formatDollars(routeEstimate.estimateRange.maxIncGstCents),
                       })}
                     </span>
                   ) : null}
@@ -2262,20 +2398,42 @@ function JobDraftForm({
             ) : null}
 
             {pricingModel === 'PER_KM' ? (
-              <Field
-                type="number"
-                step="0.1"
-                min={0.1}
-                label={t('jobs.distanceKmLabel')}
-                required
-                hint={
-                  suggestedKm != null
-                    ? t('jobs.distanceKmSuggested', { km: suggestedKm })
-                    : t('jobs.distanceKmHint')
-                }
-                error={form.formState.errors.distanceKm?.message}
-                {...form.register('distanceKm', { valueAsNumber: true })}
-              />
+              <>
+                <Field
+                  type="number"
+                  step="0.1"
+                  min={0.1}
+                  label={t('jobs.distanceKmLabel')}
+                  required
+                  hint={
+                    suggestedKm != null
+                      ? t('jobs.distanceKmSuggested', { km: suggestedKm })
+                      : t('jobs.distanceKmHint')
+                  }
+                  error={form.formState.errors.distanceKm?.message}
+                  {...form.register('distanceKm', { valueAsNumber: true })}
+                />
+                {routeEstimate?.estimateRange &&
+                routeEstimate.estimateRange.maxIncGstCents >
+                  routeEstimate.estimateRange.minIncGstCents ? (
+                  <p className="mb-3 text-xs text-clox-mute">
+                    {t('jobs.estimateRangeHint', {
+                      defaultValue:
+                        'Typical range for this load class vs next larger vehicle: {{min}} – {{max}} inc GST (guidance; final price is the accepted bid).',
+                      min: formatDollars(routeEstimate.estimateRange.minIncGstCents),
+                      max: formatDollars(routeEstimate.estimateRange.maxIncGstCents),
+                    })}
+                  </p>
+                ) : routeEstimate?.estimateIncGstCents != null ? (
+                  <p className="mb-3 text-xs text-clox-mute">
+                    {t('jobs.estimateForClassHint', {
+                      defaultValue: 'Estimated {{amount}} inc GST for class {{class}} (final price is the accepted bid).',
+                      amount: formatDollars(routeEstimate.estimateIncGstCents),
+                      class: routeEstimate.pricingVehicleClass ?? minVehicleClass ?? '—',
+                    })}
+                  </p>
+                ) : null}
+              </>
             ) : null}
           </>
         ) : null}
@@ -2339,7 +2497,7 @@ function JobDraftForm({
               </Notice>
             ) : null}
 
-            {/* 12 CLOX Load Types Selection */}
+            {/* CLOX Load Types — one non-DG parent + optional DG; subtypes nest inside selected cards */}
             <div className="mt-6 mb-4">
               <div className="flex items-center justify-between gap-2">
                 <div>
@@ -2348,7 +2506,8 @@ function JobDraftForm({
                   </h3>
                   <p className="mt-0.5 text-xs text-clox-mute">
                     {t('loadTypes.subtitle', {
-                      defaultValue: 'Select all categories that apply to your freight.',
+                      defaultValue:
+                        'Choose one freight category (optional Dangerous Goods). A sub-type is selected by default — change it if needed before continuing.',
                     })}
                   </p>
                 </div>
@@ -2356,56 +2515,150 @@ function JobDraftForm({
                   {loadTypes.length} {t('selected', { defaultValue: 'selected' })}
                 </span>
               </div>
+              {form.formState.errors.loadTypes?.message ? (
+                <Notice tone="error" className="mt-2 text-xs">
+                  {form.formState.errors.loadTypes.message}
+                </Notice>
+              ) : null}
+              {form.formState.errors.loadTypeSubtypes?.message ? (
+                <Notice tone="error" className="mt-2 text-xs">
+                  {form.formState.errors.loadTypeSubtypes.message}
+                </Notice>
+              ) : null}
 
               <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-2 sm:gap-2.5 lg:grid-cols-3">
                 {CLOX_LOAD_TYPES.map((lt) => {
                   const isChecked = loadTypes.includes(lt.code);
+                  const selectedSubtypeCount = isChecked
+                    ? loadTypeSubtypes.filter((s) => subtypeParentCode(s) === lt.code).length
+                    : 0;
+                  const needsSubtypeNudge = isChecked && selectedSubtypeCount === 0;
                   return (
-                    <button
+                    <div
                       key={lt.code}
-                      type="button"
-                      onClick={() => {
-                        let next: string[];
-                        if (isChecked) {
-                          next = loadTypes.filter((c) => c !== lt.code);
-                          if (next.length === 0) next = ['GENERAL'];
-                        } else {
-                          next = [...loadTypes, lt.code];
-                        }
-                        form.setValue('loadTypes', next);
-                        form.setValue('loadDg', next.includes('DG'));
-                      }}
                       className={cn(
-                        'group flex flex-col items-start rounded-clox-md border p-3 text-left transition-all duration-150',
+                        'flex flex-col rounded-clox-md border p-3 text-left transition-all duration-150',
                         isChecked
-                          ? 'border-[#f26e22] bg-[#f26e22]/5 dark:bg-[#f26e22]/10 shadow-sm ring-1 ring-[#f26e22]'
+                          ? 'col-span-full border-[#f26e22] bg-clox-surface shadow-sm ring-1 ring-[#f26e22]'
                           : 'border-clox-border bg-clox-surface hover:border-slate-300 dark:hover:border-slate-600',
                       )}
                     >
-                      <div className="flex w-full items-center justify-between gap-2">
-                        <span
-                          className={cn(
-                            'text-xs font-semibold',
-                            isChecked ? 'text-[#f26e22] dark:text-[#ff8f4d]' : 'text-clox-ink',
-                          )}
-                        >
-                          {t(lt.nameKey, { defaultValue: lt.defaultName })}
-                        </span>
-                        <div
-                          className={cn(
-                            'flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors',
-                            isChecked
-                              ? 'border-[#f26e22] bg-[#f26e22] text-white'
-                              : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800',
-                          )}
-                        >
-                          {isChecked ? <Check className="h-3 w-3 stroke-[3]" /> : null}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = nextLoadTypesOnParentToggle(loadTypes, lt.code, !isChecked);
+                          const nextSubs = ensureDefaultSubtypesForParents(next, loadTypeSubtypes);
+                          form.setValue('loadTypes', next, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          });
+                          form.setValue('loadTypeSubtypes', nextSubs, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          });
+                          form.setValue('loadDg', next.includes('DG'));
+                        }}
+                        className="group flex w-full flex-col items-start text-left"
+                      >
+                        <div className="flex w-full items-center justify-between gap-2">
+                          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                            <span
+                              className={cn(
+                                'text-xs font-semibold',
+                                isChecked ? 'text-[#f26e22] dark:text-[#ff8f4d]' : 'text-clox-ink',
+                              )}
+                            >
+                              {t(lt.nameKey, { defaultValue: lt.defaultName })}
+                            </span>
+                            {needsSubtypeNudge ? (
+                              <span className="rounded border border-clox-border bg-clox-surface-alt px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-clox-ink">
+                                {t('loadTypes.subtypesAddDetail', {
+                                  defaultValue: 'Add detail',
+                                })}
+                              </span>
+                            ) : null}
+                          </div>
+                          <div
+                            className={cn(
+                              'flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors',
+                              isChecked
+                                ? 'border-[#f26e22] bg-[#f26e22] text-white'
+                                : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800',
+                            )}
+                          >
+                            {isChecked ? <Check className="h-3 w-3 stroke-[3]" /> : null}
+                          </div>
                         </div>
-                      </div>
-                      <p className="mt-1 hidden text-[11px] leading-snug text-clox-mute sm:block">
-                        {t(lt.descKey, { defaultValue: lt.defaultDesc })}
-                      </p>
-                    </button>
+                        <p className="mt-1 hidden text-[11px] leading-snug text-clox-mute sm:block">
+                          {t(lt.descKey, { defaultValue: lt.defaultDesc })}
+                        </p>
+                      </button>
+
+                      {isChecked ? (
+                        <div className="mt-3 border-t border-clox-border pt-3">
+                          <p className="text-xs font-semibold text-clox-ink">
+                            {t('loadTypes.subtypesFor', {
+                              name: t(lt.nameKey, { defaultValue: lt.defaultName }),
+                              defaultValue: `Sub-types · ${lt.defaultName}`,
+                            })}
+                          </p>
+                          <p className="mt-1 text-[11px] text-clox-mute">
+                            {t('loadTypes.subtypesSelectedCount', {
+                              count: selectedSubtypeCount,
+                              defaultValue: '{{count}} sub-type(s) selected',
+                            })}
+                          </p>
+                          <p className="mt-1 text-[11px] text-clox-mute">
+                            {t('loadTypes.subtypesHint', {
+                              defaultValue:
+                                'At least one sub-type is required. Change the default if it is not the closest match.',
+                            })}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {lt.subtypes.map((st) => {
+                              const selected = loadTypeSubtypes.includes(st.code);
+                              return (
+                                <label
+                                  key={st.code}
+                                  className={cn(
+                                    'inline-flex cursor-pointer items-center gap-2 rounded-clox-sm border px-2.5 py-1.5 text-[11px] transition-colors',
+                                    selected
+                                      ? 'border-[#f26e22] bg-clox-surface-alt text-clox-ink'
+                                      : 'border-clox-border bg-clox-surface text-clox-ink hover:border-slate-300 dark:hover:border-slate-600',
+                                  )}
+                                >
+                                  <ChoiceCheckbox
+                                    checked={selected}
+                                    onChange={() => {
+                                      const nextSubs = nextLoadTypeSubtypesOnToggle(
+                                        loadTypeSubtypes,
+                                        st.code,
+                                        !selected,
+                                      );
+                                      // Do not allow clearing the last subtype for this parent.
+                                      if (
+                                        selected &&
+                                        !nextSubs.some((s) => subtypeParentCode(s) === lt.code)
+                                      ) {
+                                        return;
+                                      }
+                                      form.setValue('loadTypeSubtypes', nextSubs, {
+                                        shouldDirty: true,
+                                        shouldValidate: true,
+                                      });
+                                    }}
+                                    className="mt-0"
+                                  />
+                                  <span className="whitespace-nowrap font-medium leading-snug">
+                                    {t(st.nameKey, { defaultValue: st.defaultName })}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
                   );
                 })}
               </div>
@@ -2529,6 +2782,46 @@ function JobDraftForm({
                   </button>
                 ))}
               </div>
+
+              {routeEstimate?.estimateRange &&
+              routeEstimate.estimateRange.maxIncGstCents >
+                routeEstimate.estimateRange.minIncGstCents ? (
+                <Notice tone="info" className="mt-3 text-xs">
+                  {t('jobs.estimateRangeHint', {
+                    defaultValue:
+                      'Typical range for this load class vs next larger vehicle: {{min}} – {{max}} inc GST (guidance; final price is the accepted bid).',
+                    min: formatDollars(routeEstimate.estimateRange.minIncGstCents),
+                    max: formatDollars(routeEstimate.estimateRange.maxIncGstCents),
+                  })}
+                  {routeEstimate.pricingVehicleClass || minVehicleClass ? (
+                    <span className="mt-1 block text-clox-mute">
+                      {t('jobs.estimateForClassHint', {
+                        defaultValue:
+                          'Estimated {{amount}} inc GST for class {{class}} (final price is the accepted bid).',
+                        amount: formatDollars(routeEstimate.estimateIncGstCents ?? 0),
+                        class:
+                          routeEstimate.pricingVehicleClass ??
+                          minVehicleClass ??
+                          recommend.data?.recommendedVehicleClass ??
+                          '—',
+                      })}
+                    </span>
+                  ) : null}
+                </Notice>
+              ) : routeEstimate?.estimateIncGstCents != null ? (
+                <p className="mt-3 text-xs text-clox-mute">
+                  {t('jobs.estimateForClassHint', {
+                    defaultValue:
+                      'Estimated {{amount}} inc GST for class {{class}} (final price is the accepted bid).',
+                    amount: formatDollars(routeEstimate.estimateIncGstCents),
+                    class:
+                      routeEstimate.pricingVehicleClass ??
+                      minVehicleClass ??
+                      recommend.data?.recommendedVehicleClass ??
+                      '—',
+                  })}
+                </p>
+              ) : null}
 
               <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {vehicleSpecs.map((v) => {
@@ -3026,6 +3319,23 @@ function JobDraftForm({
                 </div>
                 <div className="flex flex-wrap justify-between gap-2">
                   <dt className="text-clox-mute">
+                    {t('jobs.pickupAtLabel', { defaultValue: 'Pickup date & time' })}
+                  </dt>
+                  <dd className="text-right font-medium text-clox-ink">
+                    {formatPickupWhen(
+                      (() => {
+                        try {
+                          return fromDatetimeLocalValue(pickupAt, pickupState);
+                        } catch {
+                          return null;
+                        }
+                      })(),
+                      pickupState,
+                    ) ?? t('dash')}
+                  </dd>
+                </div>
+                <div className="flex flex-wrap justify-between gap-2">
+                  <dt className="text-clox-mute">
                     {t('jobs.view.sectionStops', { defaultValue: 'Route Stops' })}
                   </dt>
                   <dd className="text-right font-medium text-clox-ink">
@@ -3068,6 +3378,9 @@ function JobDraftForm({
                     })}
                     <span className="mt-0.5 block text-xs font-normal text-clox-faint">
                       {loadTypes.join(', ')}
+                      {loadTypeSubtypes.length > 0
+                        ? ` · ${loadTypeSubtypes.map((c) => c.split(':')[1] ?? c).join(', ')}`
+                        : ''}
                       {minVehicleClass || recommend.data?.recommendedVehicleClass
                         ? ` · Class: ${minVehicleClass || recommend.data?.recommendedVehicleClass}`
                         : ''}
@@ -3462,6 +3775,19 @@ export function JobDetailPage() {
             {t('jobs.view.jobId')} · {j.id.slice(0, 8)}
           </p>
           <div className="mt-2 space-y-0.5 text-xs text-clox-faint">
+            {formatPickupWhen(
+              j.pickupAt,
+              j.stops?.find((s) => s.stopType === 'PICKUP')?.state,
+            ) ? (
+              <p>
+                {t('jobs.pickupAtLine', {
+                  when: formatPickupWhen(
+                    j.pickupAt,
+                    j.stops?.find((s) => s.stopType === 'PICKUP')?.state,
+                  ),
+                })}
+              </p>
+            ) : null}
             {formatWhen(j.createdAt) ? (
               <p>{t('jobs.createdAt', { when: formatWhen(j.createdAt) })}</p>
             ) : null}
@@ -3470,11 +3796,6 @@ export function JobDetailPage() {
             ) : null}
             {formatWhen(j.completedAt) ? (
               <p>{t('jobs.completedAt', { when: formatWhen(j.completedAt) })}</p>
-            ) : null}
-            {formatWhen(j.pickupAt) ? (
-              <p>
-                {t('jobs.view.pickup')}: {formatWhen(j.pickupAt)}
-              </p>
             ) : null}
           </div>
         </div>

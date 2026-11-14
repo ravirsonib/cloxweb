@@ -222,6 +222,20 @@ export function addCarrierVehicle(payload: Record<string, unknown>) {
   return http.post<CarrierOnboarding>('/carrier/vehicles', payload).then((r) => r.data);
 }
 
+export function getCarrierVehicle(id: string, options?: { signal?: AbortSignal }) {
+  return http
+    .get<CarrierVehicleListItem>(`/carrier/vehicles/${id}`, {
+      signal: options?.signal,
+    })
+    .then((r) => r.data);
+}
+
+export function updateCarrierVehicle(id: string, payload: Record<string, unknown>) {
+  return http
+    .patch<CarrierVehicleListItem>(`/carrier/vehicles/${id}`, payload)
+    .then((r) => r.data);
+}
+
 export function disableCarrierVehicle(id: string, payload: FleetDisableReasonInput) {
   return http
     .post<CarrierVehicleListItem>(`/carrier/vehicles/${id}/disable`, payload)

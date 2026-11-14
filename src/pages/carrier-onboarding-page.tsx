@@ -373,14 +373,14 @@ function ProfileStep({
     >
       <h2 className="mb-4 font-display text-lg font-semibold">{t('carrierOnboarding.profileTitle')}</h2>
       <Field
-        label={t('account.legalName', { defaultValue: 'Legal entity name' })}
+        label={t('account.legalName')}
         hint={t('account.legalNameHint')}
         required
         error={form.formState.errors.legalName?.message}
         {...form.register('legalName')}
       />
       <Field
-        label={t('account.abn', { defaultValue: 'ABN (Australian Business Number)' })}
+        label={t('account.abn')}
         hint={t('account.abnHint')}
         required
         inputMode="numeric"
@@ -844,6 +844,7 @@ type VehicleForm = {
   vehicleClass: string;
   tareKg: number;
   gvmKg: number;
+  gcmKg?: number;
 };
 
 function VehiclesStep({
@@ -874,6 +875,10 @@ function VehiclesStep({
         .int()
         .positive(t('validation.gvmKgPositive'))
         .max(200_000),
+      gcmKg: z
+        .number()
+        .optional()
+        .transform((v) => (typeof v === 'number' && Number.isNaN(v) ? undefined : v)),
     })
     .superRefine((values, ctx) => {
       if (values.tareKg >= values.gvmKg) {
@@ -882,6 +887,21 @@ function VehiclesStep({
           path: ['tareKg'],
           message: t('validation.tareLessThanGvm'),
         });
+      }
+      if (values.gcmKg != null) {
+        if (!Number.isInteger(values.gcmKg) || values.gcmKg <= 0 || values.gcmKg > 300_000) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['gcmKg'],
+            message: t('fleet.gcmKgHint'),
+          });
+        } else if (values.gcmKg < values.gvmKg) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['gcmKg'],
+            message: t('fleet.gcmKgHint'),
+          });
+        }
       }
     });
 
@@ -893,11 +913,12 @@ function VehiclesStep({
   const form = useForm<VehicleForm>({
     resolver: zodResolver(schema),
     defaultValues: {
-      label: 'Primary truck',
+      label: t('carrierOnboarding.primaryTruckLabel'),
       registration: '',
       vehicleClass: 'RIGID_1_2T',
       tareKg: suggestedTareKgForClass('RIGID_1_2T'),
       gvmKg: suggestedGvmKgForClass('RIGID_1_2T'),
+      gcmKg: undefined,
     },
   });
   const watchedClass = form.watch('vehicleClass');
@@ -937,6 +958,9 @@ function VehiclesStep({
         vehicleClass: values.vehicleClass,
         tareKg: values.tareKg,
         gvmKg: values.gvmKg,
+        ...(values.gcmKg != null && !Number.isNaN(values.gcmKg)
+          ? { gcmKg: values.gcmKg }
+          : {}),
       });
       const rego = values.registration.trim().toUpperCase();
       const created =
@@ -951,22 +975,18 @@ function VehiclesStep({
         await uploadRwcForVehicle(created.id, rwcFile);
       } catch (err) {
         const detail = getErrorDetail(err);
-        throw new Error(
-          t('carrierOnboarding.vehicleSavedRwcFailed', {
-            detail,
-            defaultValue: `Vehicle saved, but RWC upload failed: ${detail}. Upload RWC on the vehicle below, then continue.`,
-          }),
-        );
+        throw new Error(t('carrierOnboarding.vehicleSavedRwcFailed', { detail }));
       }
       return onboarding;
     },
     onSuccess: async () => {
       form.reset({
-        label: 'Primary truck',
+        label: t('carrierOnboarding.primaryTruckLabel'),
         registration: '',
         vehicleClass: 'RIGID_1_2T',
         tareKg: suggestedTareKgForClass('RIGID_1_2T'),
         gvmKg: suggestedGvmKgForClass('RIGID_1_2T'),
+        gcmKg: undefined,
       });
       setRwcFile(null);
       setRwcFormError(null);
@@ -1097,6 +1117,13 @@ function VehiclesStep({
           required
           error={form.formState.errors.tareKg?.message}
           {...form.register('tareKg', { valueAsNumber: true })}
+        />
+        <Field
+          type="number"
+          label={t('fleet.gcmKgLabel')}
+          hint={t('fleet.gcmKgHint')}
+          error={form.formState.errors.gcmKg?.message}
+          {...form.register('gcmKg', { valueAsNumber: true })}
         />
         <FileInput
           label={
@@ -1476,13 +1503,10 @@ function CapabilitiesStep({
       </div>
       <div>
         <p className="mb-1 text-xs font-semibold text-clox-ink">
-          {t('account.serviceRegions', { defaultValue: 'Service regions (Operating coverage)' })}
+          {t('account.serviceRegions')}
         </p>
         <p className="mb-2 text-xs text-clox-mute">
-          {t('account.serviceRegionsHint', {
-            defaultValue:
-              'States and territories where your fleet picks up, transports, and delivers freight. You will receive and bid on loads in these regions.',
-          })}
+          {t('account.serviceRegionsHint')}
         </p>
         <div className="flex flex-wrap gap-2">
           {AU_STATES.map((code) => {
@@ -1494,7 +1518,7 @@ function CapabilitiesStep({
                 type="button"
                 aria-pressed={on}
                 disabled={disabled}
-                title={disabled ? 'Region not active on platform' : undefined}
+                title={disabled ? t('carrierOnboarding.regionNotActive') : undefined}
                 className={
                   on
                     ? 'rounded-clox-md border border-clox-orange bg-clox-orange/10 px-3 py-1.5 text-xs font-semibold text-clox-orange shadow-sm transition'
@@ -1624,34 +1648,46 @@ function SubmitStep({
           : t('carrierOnboarding.submitHint')}
       </p>
 
-      {/* Review & Verification Checklist */}
       <div className="space-y-3 rounded-xl border border-clox-border bg-clox-surface p-4 text-sm">
-        <h3 className="font-semibold text-clox-ink">Review & Verification Checklist</h3>
+        <h3 className="font-semibold text-clox-ink">
+          {t('carrierOnboarding.reviewChecklistTitle')}
+        </h3>
 
-        {/* Legal Entity */}
         <div className="flex items-center justify-between border-b border-clox-border pb-2">
           <div>
-            <p className="font-medium text-clox-ink">{data.company.legalName || 'Legal Entity'}</p>
+            <p className="font-medium text-clox-ink">
+              {data.company.legalName || t('carrierOnboarding.legalEntityFallback')}
+            </p>
             <p className="text-xs text-clox-mute">
-              ABN: {data.company.abn || '—'} · State: {data.company.homeRegionCode || 'VIC'}
+              {t('carrierOnboarding.abnStateLine', {
+                abn: data.company.abn || t('dash'),
+                state: data.company.homeRegionCode || 'VIC',
+              })}
             </p>
           </div>
-          <span className="text-xs font-semibold text-[var(--status-ok)]">✓ Complete</span>
+          <span className="text-xs font-semibold text-[var(--status-ok)]">
+            {t('carrierOnboarding.statusComplete')}
+          </span>
         </div>
 
-        {/* Public Liability */}
         <div className="flex flex-col gap-2 border-b border-clox-border pb-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
               <span className="font-medium text-clox-ink">{t('carrierOnboarding.publicLiability')}</span>
               {plId ? (
-                <span className="text-xs font-semibold text-[var(--status-ok)]">✓ Uploaded</span>
+                <span className="text-xs font-semibold text-[var(--status-ok)]">
+                  {t('carrierOnboarding.statusUploaded')}
+                </span>
               ) : (
-                <span className="text-xs font-semibold text-clox-warn">Missing</span>
+                <span className="text-xs font-semibold text-clox-warn">
+                  {t('carrierOnboarding.statusMissing')}
+                </span>
               )}
             </div>
             {pl?.status ? (
-              <p className="text-xs text-clox-mute">Status: {pl.status}</p>
+              <p className="text-xs text-clox-mute">
+                {t('carrierOnboarding.docStatusLine', { status: pl.status })}
+              </p>
             ) : null}
           </div>
           <div className="flex items-center gap-2">
@@ -1664,8 +1700,8 @@ function SubmitStep({
                 onClick={() => void viewDoc(plId)}
               >
                 {openingDocId === plId
-                  ? t('compliance.openingDocument', { defaultValue: 'Opening…' })
-                  : t('documentsUpload.viewDocument', { defaultValue: 'View' })}
+                  ? t('compliance.openingDocument')
+                  : t('documentsUpload.viewDocument')}
               </Button>
             ) : null}
             <Button
@@ -1674,7 +1710,9 @@ function SubmitStep({
               size="sm"
               onClick={() => setShowReplacePl((prev) => !prev)}
             >
-              {showReplacePl ? t('cancel', { defaultValue: 'Cancel' }) : t('replace', { defaultValue: 'Replace' })}
+              {showReplacePl
+                ? t('confirm.cancel')
+                : t('carrierOnboarding.replaceDocument')}
             </Button>
           </div>
         </div>
@@ -1701,19 +1739,24 @@ function SubmitStep({
           />
         ) : null}
 
-        {/* Cargo Insurance */}
         <div className="flex flex-col gap-2 border-b border-clox-border pb-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
               <span className="font-medium text-clox-ink">{t('carrierOnboarding.cargoInsurance')}</span>
               {cargoId ? (
-                <span className="text-xs font-semibold text-[var(--status-ok)]">✓ Uploaded</span>
+                <span className="text-xs font-semibold text-[var(--status-ok)]">
+                  {t('carrierOnboarding.statusUploaded')}
+                </span>
               ) : (
-                <span className="text-xs font-semibold text-clox-warn">Missing</span>
+                <span className="text-xs font-semibold text-clox-warn">
+                  {t('carrierOnboarding.statusMissing')}
+                </span>
               )}
             </div>
             {cargo?.status ? (
-              <p className="text-xs text-clox-mute">Status: {cargo.status}</p>
+              <p className="text-xs text-clox-mute">
+                {t('carrierOnboarding.docStatusLine', { status: cargo.status })}
+              </p>
             ) : null}
           </div>
           <div className="flex items-center gap-2">
@@ -1726,8 +1769,8 @@ function SubmitStep({
                 onClick={() => void viewDoc(cargoId)}
               >
                 {openingDocId === cargoId
-                  ? t('compliance.openingDocument', { defaultValue: 'Opening…' })
-                  : t('documentsUpload.viewDocument', { defaultValue: 'View' })}
+                  ? t('compliance.openingDocument')
+                  : t('documentsUpload.viewDocument')}
               </Button>
             ) : null}
             <Button
@@ -1736,7 +1779,9 @@ function SubmitStep({
               size="sm"
               onClick={() => setShowReplaceCargo((prev) => !prev)}
             >
-              {showReplaceCargo ? t('cancel', { defaultValue: 'Cancel' }) : t('replace', { defaultValue: 'Replace' })}
+              {showReplaceCargo
+                ? t('confirm.cancel')
+                : t('carrierOnboarding.replaceDocument')}
             </Button>
           </div>
         </div>
@@ -1763,63 +1808,84 @@ function SubmitStep({
           />
         ) : null}
 
-        {/* Stripe Payouts */}
         <div className="flex items-center justify-between border-b border-clox-border pb-2">
           <div>
-            <p className="font-medium text-clox-ink">Stripe Connect Payouts</p>
-            <p className="text-xs text-clox-mute">Direct automated carrier job payouts</p>
+            <p className="font-medium text-clox-ink">{t('carrierOnboarding.stripePayoutsTitle')}</p>
+            <p className="text-xs text-clox-mute">{t('carrierOnboarding.stripePayoutsHint')}</p>
           </div>
           <span className="text-xs font-semibold text-[var(--status-ok)]">
-            {data.company.stripeConnectPayoutsEnabled ? '✓ Connected' : 'Pending'}
+            {data.company.stripeConnectPayoutsEnabled
+              ? t('carrierOnboarding.statusConnected')
+              : t('carrierOnboarding.statusPending')}
           </span>
         </div>
 
-        {/* Fleet */}
         <div className="flex items-center justify-between border-b border-clox-border pb-2">
           <div>
             <p className="font-medium text-clox-ink">
-              Fleet ({data.vehicles.length} vehicle{data.vehicles.length === 1 ? '' : 's'})
+              {t('carrierOnboarding.fleetCount', { count: data.vehicles.length })}
             </p>
             <p className="text-xs text-clox-mute">
-              {data.vehicles.map((v) => v.registration || v.label).join(', ') || 'None'}
+              {data.vehicles.map((v) => v.registration || v.label).join(', ') ||
+                t('carrierOnboarding.fleetNone')}
             </p>
           </div>
-          <span className="text-xs font-semibold text-[var(--status-ok)]">✓ RWCs Attached</span>
+          <span className="text-xs font-semibold text-[var(--status-ok)]">
+            {t('carrierOnboarding.fleetRwcsAttached')}
+          </span>
         </div>
 
-        {/* Drivers */}
         <div className="flex items-center justify-between border-b border-clox-border pb-2">
           <div>
             <p className="font-medium text-clox-ink">
-              Drivers ({data.drivers.length} driver{data.drivers.length === 1 ? '' : 's'})
+              {t('carrierOnboarding.driversCount', { count: data.drivers.length })}
             </p>
             <p className="text-xs text-clox-mute">
-              {data.drivers.map((d) => d.name || d.email).join(', ') || 'None'}
+              {data.drivers.map((d) => d.name || d.email).join(', ') ||
+                t('carrierOnboarding.driversNone')}
             </p>
           </div>
-          <span className="text-xs font-semibold text-[var(--status-ok)]">✓ Registered</span>
+          <span className="text-xs font-semibold text-[var(--status-ok)]">
+            {t('carrierOnboarding.driversRegistered')}
+          </span>
         </div>
 
-        {/* Coverage */}
         <div className="flex items-center justify-between">
           <div>
-            <p className="font-medium text-clox-ink">Coverage & Capabilities</p>
+            <p className="font-medium text-clox-ink">{t('carrierOnboarding.coverageTitle')}</p>
             <p className="text-xs text-clox-mute">
-              Regions: {data.company.serviceRegionCodes.join(', ') || 'VIC'}
-              {data.company.capabilities.length ? ` · ${data.company.capabilities.join(', ')}` : ''}
+              {t('carrierOnboarding.coverageRegions', {
+                regions: data.company.serviceRegionCodes.join(', ') || 'VIC',
+              })}
+              {data.company.capabilities.length
+                ? ` · ${data.company.capabilities
+                    .map((cap) => {
+                      switch (cap) {
+                        case 'DG':
+                          return t('carrierOnboarding.capDangerousGoods');
+                        case 'REEFER':
+                          return t('carrierOnboarding.capReefer');
+                        case 'OVERSIZE':
+                          return t('carrierOnboarding.capOversize');
+                        case 'TAIL_LIFT':
+                          return t('carrierOnboarding.capTailLift');
+                        default:
+                          return cap;
+                      }
+                    })
+                    .join(', ')}`
+                : ''}
             </p>
           </div>
-          <span className="text-xs font-semibold text-[var(--status-ok)]">✓ Configured</span>
+          <span className="text-xs font-semibold text-[var(--status-ok)]">
+            {t('carrierOnboarding.statusConfigured')}
+          </span>
         </div>
       </div>
 
       {uploadError ? <Notice tone="error">{uploadError}</Notice> : null}
       {missingDocs ? (
-        <Notice tone="warn">
-          {t('carrierOnboarding.errorUploadPlCargo', {
-            defaultValue: 'Please upload public liability and cargo insurance before submitting.',
-          })}
-        </Notice>
+        <Notice tone="warn">{t('carrierOnboarding.errorUploadPlCargo')}</Notice>
       ) : null}
       {submit.isError ? (
         <Notice tone="error">{getErrorDetail(submit.error)}</Notice>

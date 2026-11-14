@@ -23,6 +23,8 @@ export type TripSummary = {
     paid: boolean;
     safetyOk: boolean;
     massOk: boolean;
+    /** Licence doc + vehicle RWC (assignment compliance). */
+    complianceOk?: boolean;
     canStart: boolean;
     /** False while any surcharge is PENDING_PAYMENT (POD blocked). */
     canFinalizePod?: boolean;

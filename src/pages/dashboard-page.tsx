@@ -147,9 +147,9 @@ export function DashboardPage() {
           <p className="mt-1.5 text-sm text-clox-mute">{t('admin.dashboardSubtitle')}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link to="/companies" className="clox-btn clox-btn-secondary">
+          <Link to="/customers?type=CARRIER" className="clox-btn clox-btn-secondary">
             <Building2 className="h-4 w-4" />
-            {t('nav.companies')}
+            {t('nav.customers')}
           </Link>
           <Link to="/admin-jobs" className="clox-btn clox-btn-secondary">
             <Package className="h-4 w-4" />

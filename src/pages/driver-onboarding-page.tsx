@@ -24,7 +24,7 @@ import {
   useToast,
 } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
-import { formatCalendarDate } from '@/lib/datetime';
+import { formatCalendarDate, minDateInputValue } from '@/lib/datetime';
 import {
   AU_STATES,
   AU_STATE_OPTIONS,
@@ -660,6 +660,7 @@ function LicenceStep({
               required
               error={form.formState.errors.licenceExpiry?.message}
               {...form.register('licenceExpiry')}
+              min={minDateInputValue()}
             />
 
             <Notice tone="info">{t('driverOnboarding.licenceUploadRequiredNotice')}</Notice>

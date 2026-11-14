@@ -182,7 +182,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           <SidebarSubMenu
             label={t('nav.menuOperations', { defaultValue: 'Operations' })}
             icon={Briefcase}
-            activePaths={['/admin-jobs', '/surcharges', '/leads', '/companies', '/ops/partners', '/ops/team']}
+            activePaths={['/admin-jobs', '/surcharges', '/leads', '/customers', '/companies', '/ops/partners', '/ops/team']}
           >
             <SidebarSubLink to="/admin-jobs" icon={navIconForPath('/admin-jobs')} onNavigate={onNavigate}>
               {t('nav.adminJobs')}
@@ -193,8 +193,8 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
             <SidebarSubLink to="/leads" icon={navIconForPath('/leads')} onNavigate={onNavigate}>
               {t('nav.leads')}
             </SidebarSubLink>
-            <SidebarSubLink to="/companies" icon={navIconForPath('/companies')} onNavigate={onNavigate}>
-              {t('nav.companies')}
+            <SidebarSubLink to="/customers?type=CARRIER" icon={navIconForPath('/customers')} onNavigate={onNavigate}>
+              {t('nav.customers')}
             </SidebarSubLink>
             <SidebarSubLink to="/ops/partners" icon={navIconForPath('/ops/partners')} onNavigate={onNavigate}>
               {t('nav.opsPartners')}

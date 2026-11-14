@@ -803,7 +803,7 @@ function MyCompaniesPage({ type }: { type: 'SENDER' | 'CARRIER' }) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <Link
-              to={`/companies/${row.id}`}
+              to={`/customers/${row.id}`}
               className="truncate font-medium text-clox-ink hover:text-clox-orange hover:underline block"
             >
               {row.legalName}
@@ -1048,7 +1048,7 @@ function MyCompaniesPage({ type }: { type: 'SENDER' | 'CARRIER' }) {
                   >
                     <td className="px-4 py-3">
                       <Link
-                        to={`/companies/${r.id}`}
+                        to={`/customers/${r.id}`}
                         className="font-medium text-clox-ink hover:text-clox-orange hover:underline block"
                       >
                         {r.legalName}

@@ -55,6 +55,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   '/ops/partners': Handshake,
   '/ops/commissions': CircleDollarSign,
   '/companies': Building2,
+  '/customers': Building2,
   '/admin-jobs': Boxes,
   '/audit': FileSearch,
   '/partner/onboarding': BadgeCheck,

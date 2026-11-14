@@ -23,6 +23,7 @@ import {
   formatManeuverabilityLabel,
   formatFacilityLabel,
 } from './jobs-pages';
+import { formatDateTime, formatLocationDateTime } from '@/lib/datetime';
 import {
   Button,
   DataCardList,
@@ -532,10 +533,15 @@ export function MarketBoardPage() {
                       <p className="mt-0.5 font-mono text-[11px] text-clox-faint">
                         {t('market.jobRef', { id: j.id.slice(0, 8) })}
                         {j.publishedAt
-                          ? ` · ${new Date(j.publishedAt).toLocaleString()}`
+                          ? ` · ${formatDateTime(j.publishedAt)}`
                           : ''}
                         {j.pickupAt
-                          ? ` · ${t('market.pickupAt', { when: new Date(j.pickupAt).toLocaleString() })}`
+                          ? ` · ${t('market.pickupAt', {
+                              when: formatLocationDateTime(
+                                j.pickupAt,
+                                j.stops?.find((s) => s.stopType === 'PICKUP')?.state,
+                              ),
+                            })}`
                           : ''}
                       </p>
                       <p className="mt-1 font-mono text-xs text-clox-mute">

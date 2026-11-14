@@ -1,6 +1,17 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import {
+  Archive,
+  Ban,
+  Eye,
+  FileWarning,
+  Loader2,
+  Pencil,
+  RotateCcw,
+  Trash2,
+  Upload,
+} from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -14,14 +25,18 @@ import {
   DataTable,
   Field,
   FileInput,
+  IconButton,
+  IconFileButton,
   Notice,
   PaginationBar,
   ResponsiveDataView,
   Select,
   StatusPill,
+  ViewModeToggle,
   dataCardClassName,
   useClientPagination,
   useConfirm,
+  useDataViewMode,
   useToast,
 } from '@/components/ui';
 import {
@@ -35,6 +50,7 @@ import {
   reactivateCarrierVehicle,
   retireCarrierVehicle,
   updateCarrierCapabilities,
+  updateCarrierVehicle,
   uploadAndConfirmDocument,
   getVehicleClassesMeta,
   type CarrierVehicleListItem,
@@ -53,7 +69,30 @@ type VehicleForm = {
   vehicleClass: string;
   tareKg: number;
   gvmKg: number;
+  gcmKg?: number;
 };
+
+function toVehiclePayload(values: VehicleForm) {
+  return {
+    label: values.label,
+    registration: values.registration,
+    vehicleClass: values.vehicleClass,
+    tareKg: values.tareKg,
+    gvmKg: values.gvmKg,
+    ...(values.gcmKg != null && !Number.isNaN(values.gcmKg) ? { gcmKg: values.gcmKg } : {}),
+  };
+}
+
+function defaultVehicleFormValues(): VehicleForm {
+  return {
+    label: '',
+    registration: '',
+    vehicleClass: 'RIGID_1_2T',
+    tareKg: suggestedTareKgForClass('RIGID_1_2T'),
+    gvmKg: suggestedGvmKgForClass('RIGID_1_2T'),
+    gcmKg: undefined,
+  };
+}
 
 async function uploadVehicleRwc(companyId: string, vehicleId: string, file: File) {
   await uploadAndConfirmDocument({
@@ -133,7 +172,9 @@ export function CarrierFleetPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
+  const [viewMode, setViewMode] = useDataViewMode('carrier-fleet', 'list');
   const [showForm, setShowForm] = useState(false);
+  const [editingVehicle, setEditingVehicle] = useState<CarrierVehicleListItem | null>(null);
   const [rwcFile, setRwcFile] = useState<File | null>(null);
   const [hasDgForm, setHasDgForm] = useState(false);
   const [dgFile, setDgFile] = useState<File | null>(null);
@@ -154,6 +195,7 @@ export function CarrierFleetPage() {
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
+  const lastSuggestedClass = useRef<string | null>(null);
 
   const vehiclesQuery = useQuery({
     queryKey: ['carrier', 'vehicles'],
@@ -186,6 +228,10 @@ export function CarrierFleetPage() {
         .int()
         .positive(t('validation.gvmKgPositive'))
         .max(200_000),
+      gcmKg: z
+        .number()
+        .optional()
+        .transform((v) => (typeof v === 'number' && Number.isNaN(v) ? undefined : v)),
     })
     .superRefine((values, ctx) => {
       if (values.tareKg >= values.gvmKg) {
@@ -194,6 +240,21 @@ export function CarrierFleetPage() {
           path: ['tareKg'],
           message: t('validation.tareLessThanGvm'),
         });
+      }
+      if (values.gcmKg != null) {
+        if (!Number.isInteger(values.gcmKg) || values.gcmKg <= 0 || values.gcmKg > 300_000) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['gcmKg'],
+            message: t('fleet.gcmKgHint'),
+          });
+        } else if (values.gcmKg < values.gvmKg) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['gcmKg'],
+            message: t('fleet.gcmKgHint'),
+          });
+        }
       }
     });
 
@@ -204,19 +265,15 @@ export function CarrierFleetPage() {
 
   const form = useForm<VehicleForm>({
     resolver: zodResolver(schema),
-    defaultValues: {
-      label: '',
-      registration: '',
-      vehicleClass: 'RIGID_1_2T',
-      tareKg: suggestedTareKgForClass('RIGID_1_2T'),
-      gvmKg: suggestedGvmKgForClass('RIGID_1_2T'),
-    },
+    defaultValues: defaultVehicleFormValues(),
   });
 
   const watchedClass = form.watch('vehicleClass');
   const setValue = form.setValue;
   useEffect(() => {
     if (!watchedClass) return;
+    if (lastSuggestedClass.current === watchedClass) return;
+    lastSuggestedClass.current = watchedClass;
     const gvm =
       vehicleClassesQuery.data?.suggestedGvmKg?.[watchedClass] ??
       suggestedGvmKgForClass(watchedClass);
@@ -227,12 +284,64 @@ export function CarrierFleetPage() {
     setValue('tareKg', tare);
   }, [watchedClass, setValue, vehicleClassesQuery.data]);
 
+  const capacityLocked = Boolean(editingVehicle?.currentTrip);
+  const isEditing = editingVehicle != null;
+
   const invalidate = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['carrier', 'vehicles'] }),
       queryClient.invalidateQueries({ queryKey: ['carrier', 'onboarding'] }),
     ]);
   };
+
+  function resetVehicleFormPanel() {
+    lastSuggestedClass.current = 'RIGID_1_2T';
+    form.reset(defaultVehicleFormValues());
+    setEditingVehicle(null);
+    setRwcFile(null);
+    setHasDgForm(false);
+    setDgFile(null);
+    setHasReefer(false);
+    setHasOversize(false);
+    setHasTailLift(false);
+    setHasCurtainsider(false);
+    setRwcFormError(null);
+    setShowForm(false);
+  }
+
+  function openAddForm() {
+    lastSuggestedClass.current = null;
+    setEditingVehicle(null);
+    form.reset(defaultVehicleFormValues());
+    setRwcFile(null);
+    setHasDgForm(false);
+    setDgFile(null);
+    setHasReefer(false);
+    setHasOversize(false);
+    setHasTailLift(false);
+    setHasCurtainsider(false);
+    setRwcFormError(null);
+    setShowForm(true);
+  }
+
+  function openEditForm(row: CarrierVehicleListItem) {
+    if (row.status === 'RETIRED') return;
+    lastSuggestedClass.current = row.vehicleClass ?? 'RIGID_1_2T';
+    setEditingVehicle(row);
+    form.reset({
+      label: row.label ?? '',
+      registration: row.registration ?? '',
+      vehicleClass: row.vehicleClass ?? 'RIGID_1_2T',
+      tareKg: row.tareKg ?? suggestedTareKgForClass(row.vehicleClass ?? 'RIGID_1_2T'),
+      gvmKg: row.gvmKg ?? suggestedGvmKgForClass(row.vehicleClass ?? 'RIGID_1_2T'),
+      gcmKg: row.gcmKg ?? undefined,
+    });
+    setRwcFile(null);
+    setHasDgForm(false);
+    setDgFile(null);
+    setRwcFormError(null);
+    setShowForm(true);
+  }
 
   const addMutation = useMutation({
     mutationFn: async (values: VehicleForm) => {
@@ -249,13 +358,7 @@ export function CarrierFleetPage() {
       if (!companyId) {
         throw new Error(getErrorDetail(companyQuery.error) || t('loading'));
       }
-      const onboarding = await addCarrierVehicle({
-        label: values.label,
-        registration: values.registration,
-        vehicleClass: values.vehicleClass,
-        tareKg: values.tareKg,
-        gvmKg: values.gvmKg,
-      });
+      const onboarding = await addCarrierVehicle(toVehiclePayload(values));
       const rego = values.registration.trim().toUpperCase();
       const created =
         onboarding.vehicles.find(
@@ -269,7 +372,7 @@ export function CarrierFleetPage() {
       if (hasDgForm && dgFile) {
         await uploadVehicleDgDoc(companyId, created.id, dgFile);
       }
-      // Merge vehicle capabilities into company capabilities if any new ones checked
+      // Merge checked flags into company capabilities (not stored per vehicle).
       const newCaps: string[] = [];
       if (hasDgForm) newCaps.push('DG');
       if (hasReefer) newCaps.push('REEFER');
@@ -293,23 +396,23 @@ export function CarrierFleetPage() {
       return onboarding;
     },
     onSuccess: async () => {
-      form.reset({
-        label: '',
-        registration: '',
-        vehicleClass: 'RIGID_1_2T',
-        tareKg: suggestedTareKgForClass('RIGID_1_2T'),
-        gvmKg: suggestedGvmKgForClass('RIGID_1_2T'),
-      });
-      setRwcFile(null);
-      setHasDgForm(false);
-      setDgFile(null);
-      setHasReefer(false);
-      setHasOversize(false);
-      setHasTailLift(false);
-      setHasCurtainsider(false);
-      setRwcFormError(null);
-      setShowForm(false);
+      resetVehicleFormPanel();
       toast.success(t('fleet.addSuccess'));
+      await invalidate();
+    },
+    onError: (error) => setRwcFormError(getErrorDetail(error)),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (values: VehicleForm) => {
+      if (!editingVehicle) {
+        throw new Error(t('loading'));
+      }
+      return updateCarrierVehicle(editingVehicle.id, toVehiclePayload(values));
+    },
+    onSuccess: async () => {
+      resetVehicleFormPanel();
+      toast.success(t('fleet.editSuccess'));
       await invalidate();
     },
     onError: (error) => setRwcFormError(getErrorDetail(error)),
@@ -359,11 +462,7 @@ export function CarrierFleetPage() {
     },
     onSuccess: async () => {
       setUploadingDgVehicleId(null);
-      toast.success(
-        t('fleet.dgUploadSuccess', {
-          defaultValue: 'Vehicle Dangerous Goods (DG) document uploaded.',
-        }),
-      );
+        toast.success(t('fleet.dgUploadSuccess'));
       await invalidate();
     },
     onError: (error) => {
@@ -429,6 +528,7 @@ export function CarrierFleetPage() {
   ).length;
   const busy =
     addMutation.isPending ||
+    updateMutation.isPending ||
     reasonMutation.isPending ||
     reactivateMutation.isPending ||
     deleteMutation.isPending ||
@@ -481,19 +581,19 @@ export function CarrierFleetPage() {
       row.currentTrip?.jobTitle?.trim() ||
       (row.currentTrip?.jobId ? row.currentTrip.jobId.slice(0, 8) : null);
     return (
-      <div className="flex min-w-[9.5rem] max-w-[15rem] flex-col items-start gap-1">
+      <div className="flex w-full min-w-0 max-w-[14rem] flex-col items-start gap-1">
         {activity ? (
           <>
-            <StatusPill tone={activityStatusTone(activity)} className="max-w-full">
-              <span className="truncate">{activityLabel(activity)}</span>
+            <StatusPill tone={activityStatusTone(activity)} className="max-w-full min-w-0">
+              <span className="min-w-0 truncate">{activityLabel(activity)}</span>
             </StatusPill>
-            <p className="text-[11px] leading-tight text-clox-mute">
+            <p className="w-full truncate text-[11px] leading-tight text-clox-mute">
               {t('fleet.accountStatus', { status: statusLabel(row.status) })}
             </p>
           </>
         ) : (
-          <StatusPill tone={vehicleStatusTone(row.status)} className="max-w-full">
-            <span className="truncate">{statusLabel(row.status)}</span>
+          <StatusPill tone={vehicleStatusTone(row.status)} className="max-w-full min-w-0">
+            <span className="min-w-0 truncate">{statusLabel(row.status)}</span>
           </StatusPill>
         )}
         {tripLabel ? (
@@ -531,7 +631,15 @@ export function CarrierFleetPage() {
     } else {
       label = t(`fleet.rwc.${rwc.state}`, { defaultValue: rwc.state });
     }
-    return <StatusPill tone={rwcTone(rwc.state)}>{label}</StatusPill>;
+    return (
+      <StatusPill
+        tone={rwcTone(rwc.state)}
+        className="max-w-full min-w-0"
+        title={label}
+      >
+        <span className="min-w-0 truncate">{label}</span>
+      </StatusPill>
+    );
   }
 
   function needsRwcUpload(row: CarrierVehicleListItem) {
@@ -553,144 +661,189 @@ export function CarrierFleetPage() {
     }
   }
 
-  function renderRwcUpload(row: CarrierVehicleListItem) {
-    if (!needsRwcUpload(row)) return null;
-    const inputId = `rwc-upload-${row.id}`;
-    return (
-      <label
-        htmlFor={inputId}
-        className="clox-btn clox-btn-secondary inline-flex cursor-pointer items-center text-sm"
-      >
-        {uploadingVehicleId === row.id ? t('saving') : t('fleet.rwcUpload')}
-        <input
-          id={inputId}
-          type="file"
-          accept=".pdf,image/jpeg,image/png,image/webp"
-          className="sr-only"
-          disabled={busy || !companyId}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = '';
-            if (file) rwcUploadMutation.mutate({ vehicleId: row.id, file });
-          }}
-        />
-      </label>
-    );
+  function formatMassCell(row: CarrierVehicleListItem) {
+    if (row.gvmKg == null && row.gcmKg == null) return t('dash');
+    if (row.gcmKg != null) {
+      return `${row.gvmKg ?? t('dash')} / ${row.gcmKg}`;
+    }
+    return `${row.gvmKg}`;
   }
 
-  function renderRwcView(row: CarrierVehicleListItem) {
-    const documentId = row.compliance?.rwc?.documentId;
-    if (!documentId) return null;
-    return (
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        disabled={busy || openingDocId === documentId}
-        onClick={() => void viewRwc(documentId)}
-      >
-        {openingDocId === documentId ? t('loading') : t('fleet.rwcView')}
-      </Button>
-    );
-  }
-
-  function renderDgView(row: CarrierVehicleListItem) {
-    const documentId = row.dgDocumentId;
-    if (!documentId) return null;
-    return (
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        disabled={busy || openingDocId === documentId}
-        onClick={() => void viewRwc(documentId)}
-      >
-        {openingDocId === documentId
-          ? t('loading')
-          : t('fleet.dgView', { defaultValue: 'View DG Doc' })}
-      </Button>
-    );
-  }
-
-  function renderDgUpload(row: CarrierVehicleListItem) {
-    if (row.status === 'SUSPENDED' || row.status === 'RETIRED') return null;
-    const inputId = `dg-upload-${row.id}`;
-    return (
-      <label
-        htmlFor={inputId}
-        className="clox-btn clox-btn-secondary inline-flex cursor-pointer items-center text-sm"
-      >
-        {uploadingDgVehicleId === row.id
-          ? t('saving')
-          : row.dgDocumentId
-            ? t('fleet.dgUpdate', { defaultValue: 'Update DG Doc' })
-            : t('fleet.dgUpload', { defaultValue: 'Add DG Doc' })}
-        <input
-          id={inputId}
-          type="file"
-          accept=".pdf,image/jpeg,image/png,image/webp"
-          className="sr-only"
-          disabled={busy || !companyId}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = '';
-            if (file) dgUploadMutation.mutate({ vehicleId: row.id, file });
-          }}
-        />
-      </label>
-    );
-  }
-
-  function renderActions(row: CarrierVehicleListItem) {
+  function renderActions(row: CarrierVehicleListItem, opts?: { showLabel?: boolean }) {
+    const showLabel = opts?.showLabel ?? false;
+    const canEdit = row.status !== 'RETIRED';
     const isParked = row.status === 'SUSPENDED' || row.status === 'RETIRED';
+    const rwcDocId = row.compliance?.rwc?.documentId ?? null;
+    const openingRwc = rwcDocId != null && openingDocId === rwcDocId;
+    const openingDg = row.dgDocumentId != null && openingDocId === row.dgDocumentId;
+
     return (
-      <ActionGroup align="end" wrap>
-        {renderRwcView(row)}
-        {renderRwcUpload(row)}
-        {renderDgView(row)}
-        {renderDgUpload(row)}
-        {isParked ? (
-          <Button
-            type="button"
+      <ActionGroup wrap={showLabel}>
+        {canEdit ? (
+          <IconButton
+            icon={Pencil}
+            label={t('fleet.edit')}
+            tooltip={t('fleet.edit')}
+            showLabel={showLabel}
+            variant="primary"
+            size="sm"
+            disabled={busy}
+            onClick={() => openEditForm(row)}
+          />
+        ) : null}
+        {rwcDocId ? (
+          <IconButton
+            icon={openingRwc ? Loader2 : Eye}
+            label={t('fleet.rwcView')}
+            tooltip={t('fleet.rwcView')}
+            showLabel={showLabel}
             variant="secondary"
+            size="sm"
+            disabled={busy || openingRwc}
+            className={openingRwc ? '[&_svg]:animate-spin' : undefined}
+            onClick={() => void viewRwc(rwcDocId)}
+          />
+        ) : null}
+        {needsRwcUpload(row) ? (
+          <IconFileButton
+            icon={Upload}
+            label={t('fleet.rwcUpload')}
+            tooltip={t('fleet.rwcUpload')}
+            showLabel={showLabel}
+            variant="secondary"
+            size="sm"
+            inputId={`rwc-upload-${row.id}`}
+            accept=".pdf,image/jpeg,image/png,image/webp"
+            disabled={busy || !companyId}
+            loading={uploadingVehicleId === row.id}
+            onFile={(file) => rwcUploadMutation.mutate({ vehicleId: row.id, file })}
+          />
+        ) : null}
+        {row.dgDocumentId ? (
+          <IconButton
+            icon={openingDg ? Loader2 : Eye}
+            label={t('fleet.dgView')}
+            tooltip={t('fleet.dgView')}
+            showLabel={showLabel}
+            variant="secondary"
+            size="sm"
+            disabled={busy || openingDg}
+            className={openingDg ? '[&_svg]:animate-spin' : undefined}
+            onClick={() => void viewRwc(row.dgDocumentId!)}
+          />
+        ) : null}
+        {!isParked ? (
+          <IconFileButton
+            icon={FileWarning}
+            label={row.dgDocumentId ? t('fleet.dgUpdate') : t('fleet.dgUpload')}
+            tooltip={row.dgDocumentId ? t('fleet.dgUpdate') : t('fleet.dgUpload')}
+            showLabel={showLabel}
+            variant="secondary"
+            size="sm"
+            inputId={`dg-upload-${row.id}`}
+            accept=".pdf,image/jpeg,image/png,image/webp"
+            disabled={busy || !companyId}
+            loading={uploadingDgVehicleId === row.id}
+            onFile={(file) => dgUploadMutation.mutate({ vehicleId: row.id, file })}
+          />
+        ) : null}
+        {isParked ? (
+          <IconButton
+            icon={RotateCcw}
+            label={t('fleet.reactivate')}
+            tooltip={t('fleet.reactivate')}
+            showLabel={showLabel}
+            variant="success"
             size="sm"
             disabled={busy}
             onClick={() => void onReactivate(row)}
-          >
-            {t('fleet.reactivate')}
-          </Button>
+          />
         ) : (
           <>
-            <Button
-              type="button"
-              variant="secondary"
+            <IconButton
+              icon={Ban}
+              label={t('fleet.disable')}
+              tooltip={t('fleet.disable')}
+              showLabel={showLabel}
+              variant="destructive"
               size="sm"
               disabled={busy}
               onClick={() => openReason(row, 'disable')}
-            >
-              {t('fleet.disable')}
-            </Button>
-            <Button
-              type="button"
+            />
+            <IconButton
+              icon={Archive}
+              label={t('fleet.retire')}
+              tooltip={t('fleet.retire')}
+              showLabel={showLabel}
               variant="destructive"
               size="sm"
               disabled={busy}
               onClick={() => openReason(row, 'retire')}
-            >
-              {t('fleet.retire')}
-            </Button>
+            />
           </>
         )}
-        <Button
-          type="button"
+        <IconButton
+          icon={Trash2}
+          label={t('fleet.delete')}
+          tooltip={t('fleet.delete')}
+          showLabel={showLabel}
           variant={isParked ? 'destructive' : 'ghost'}
           size="sm"
           disabled={busy}
           onClick={() => void onDelete(row)}
-        >
-          {t('fleet.delete')}
-        </Button>
+        />
       </ActionGroup>
+    );
+  }
+
+  function renderVehicleCard(row: CarrierVehicleListItem) {
+    return (
+      <div className={cn(dataCardClassName, 'flex h-full flex-col')}>
+        <div className="flex min-w-0 items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <p className="truncate font-semibold text-clox-ink">
+                {row.registration ?? t('dash')}
+              </p>
+              {row.hasDg ? <StatusPill tone="warn">DG</StatusPill> : null}
+            </div>
+            <p className="mt-0.5 truncate text-xs text-clox-mute">
+              {row.label ?? t('dash')}
+            </p>
+          </div>
+          <div className="shrink-0">{renderStatus(row)}</div>
+        </div>
+
+        <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+          <div className="min-w-0">
+            <dt className="text-clox-faint">{t('fleet.colClass')}</dt>
+            <dd className="truncate font-medium text-clox-ink">
+              {row.vehicleClass ?? t('dash')}
+            </dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="text-clox-faint">{t('fleet.colGvm')}</dt>
+            <dd className="truncate font-mono text-clox-ink">{formatMassCell(row)}</dd>
+          </div>
+          <div className="col-span-2 min-w-0">
+            <dt className="text-clox-faint">{t('fleet.colRwc')}</dt>
+            <dd className="mt-1">{renderRwc(row)}</dd>
+          </div>
+          {row.disabledReason ? (
+            <div className="col-span-2 min-w-0">
+              <dt className="text-clox-faint">{t('fleet.reasonLabel')}</dt>
+              <dd className="mt-0.5 line-clamp-2 text-clox-mute">{row.disabledReason}</dd>
+            </div>
+          ) : null}
+        </dl>
+
+        <div className="mt-auto border-t border-clox-border-soft pt-3">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-clox-faint">
+            {t('fleet.colActions')}
+          </p>
+          {renderActions(row, { showLabel: true })}
+        </div>
+      </div>
     );
   }
 
@@ -714,7 +867,12 @@ export function CarrierFleetPage() {
             ) : null}
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <ViewModeToggle
+            value={viewMode}
+            onChange={setViewMode}
+            className="hidden sm:inline-flex"
+          />
           {busy ? (
             <span
               className="clox-btn clox-btn-secondary inline-flex cursor-not-allowed items-center opacity-50"
@@ -734,11 +892,15 @@ export function CarrierFleetPage() {
             type="button"
             variant="primary"
             disabled={busy}
-            onClick={() => setShowForm((open) => !open)}
+            onClick={() => openAddForm()}
           >
-            {showForm ? t('cancel') : t('fleet.addVehicle')}
+            {t('fleet.addVehicle')}
           </Button>
         </div>
+      </div>
+
+      <div className="mt-4 sm:hidden">
+        <ViewModeToggle value={viewMode} onChange={setViewMode} />
       </div>
 
       {actionError ? (
@@ -781,53 +943,53 @@ export function CarrierFleetPage() {
               setShowManageCaps((prev) => !prev);
             }}
           >
-            {showManageCaps ? t('cancel') : t('fleet.manageCapabilities', { defaultValue: 'Manage Capabilities' })}
+            {showManageCaps ? t('confirm.cancel') : t('fleet.manageCapabilities')}
           </Button>
         </div>
 
-        {/* Current Active Capability Badges */}
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <StatusPill tone="info">General Freight</StatusPill>
+          <StatusPill tone="info">{t('fleet.capGeneral')}</StatusPill>
           {(companyQuery.data?.company.capabilities ?? []).includes('DG') ? (
-            <StatusPill tone="warn">Dangerous Goods (DG)</StatusPill>
+            <StatusPill tone="warn">{t('fleet.capDg')}</StatusPill>
           ) : null}
           {(companyQuery.data?.company.capabilities ?? []).includes('REEFER') ? (
-            <StatusPill tone="info">Temperature Controlled (Reefer)</StatusPill>
+            <StatusPill tone="info">{t('fleet.capReefer')}</StatusPill>
           ) : null}
           {(companyQuery.data?.company.capabilities ?? []).includes('OVERSIZE') ? (
-            <StatusPill tone="warn">Oversize / Flatbed</StatusPill>
+            <StatusPill tone="warn">{t('fleet.capOversize')}</StatusPill>
           ) : null}
           {(companyQuery.data?.company.capabilities ?? []).includes('TAIL_LIFT') ? (
-            <StatusPill tone="neutral">Tail-lift Equipped</StatusPill>
+            <StatusPill tone="neutral">{t('fleet.capTailLift')}</StatusPill>
           ) : null}
           {(companyQuery.data?.company.capabilities ?? []).includes('CURTAINSIDER') ? (
-            <StatusPill tone="neutral">Curtainsider</StatusPill>
+            <StatusPill tone="neutral">{t('fleet.capCurtainsider')}</StatusPill>
           ) : null}
           {(companyQuery.data?.company.capabilities ?? []).length === 0 ? (
-            <span className="text-xs text-clox-mute">No specialized equipment certifications enabled.</span>
+            <span className="text-xs text-clox-mute">{t('fleet.noSpecialCaps')}</span>
           ) : null}
         </div>
 
-        {/* Inline Capabilities Editor */}
         {showManageCaps ? (
           <div className="mt-4 border-t border-clox-border-soft pt-4">
-            <p className="text-xs font-semibold text-clox-ink">
-              Toggle certified equipment and specialized load capabilities:
-            </p>
-            <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 text-xs">
+            <p className="text-xs font-semibold text-clox-ink">{t('fleet.toggleCapsHint')}</p>
+            <div className="mt-3 grid grid-cols-1 gap-2.5 text-xs sm:grid-cols-2 lg:grid-cols-3">
               {[
-                { code: 'DG', label: 'Dangerous Goods (DG)', hint: 'Requires active DG licence doc' },
-                { code: 'REEFER', label: 'Refrigerated / Reefer', hint: 'Temperature controlled units' },
-                { code: 'OVERSIZE', label: 'Oversize / Flatbed', hint: 'Extendable trailers & wide loads' },
-                { code: 'TAIL_LIFT', label: 'Tail-lift Equipped', hint: 'Hydraulic lift vehicles' },
-                { code: 'CURTAINSIDER', label: 'Curtainsider / Tautliner', hint: 'Side-loading weather protection' },
+                { code: 'DG', labelKey: 'fleet.capDg', hintKey: 'fleet.capDgHint' },
+                { code: 'REEFER', labelKey: 'fleet.capReefer', hintKey: 'fleet.capReeferHint' },
+                { code: 'OVERSIZE', labelKey: 'fleet.capOversize', hintKey: 'fleet.capOversizeHint' },
+                { code: 'TAIL_LIFT', labelKey: 'fleet.capTailLift', hintKey: 'fleet.capTailLiftHint' },
+                {
+                  code: 'CURTAINSIDER',
+                  labelKey: 'fleet.capCurtainsider',
+                  hintKey: 'fleet.capCurtainsiderHint',
+                },
               ].map((cap) => {
                 const checked = editingCaps.includes(cap.code);
                 return (
                   <label
                     key={cap.code}
                     className={cn(
-                      'flex items-start gap-2.5 rounded-clox-sm border p-2.5 cursor-pointer transition-colors',
+                      'flex cursor-pointer items-start gap-2.5 rounded-clox-sm border p-2.5 transition-colors',
                       checked
                         ? 'border-[#f26e22] bg-[#f26e22]/5 dark:bg-[#f26e22]/10'
                         : 'border-clox-border bg-clox-surface',
@@ -846,191 +1008,29 @@ export function CarrierFleetPage() {
                       }}
                     />
                     <div>
-                      <span className="font-semibold text-clox-ink block">{cap.label}</span>
-                      <span className="text-[11px] text-clox-mute">{cap.hint}</span>
+                      <span className="block font-semibold text-clox-ink">{t(cap.labelKey)}</span>
+                      <span className="text-[11px] text-clox-mute">{t(cap.hintKey)}</span>
                     </div>
                   </label>
                 );
               })}
             </div>
-            <div className="mt-4 flex items-center gap-2">
+            <div className="mt-4 flex flex-wrap items-center gap-2">
               <Button
                 type="button"
                 variant="primary"
                 disabled={capsMutation.isPending}
                 onClick={() => capsMutation.mutate(editingCaps)}
               >
-                {capsMutation.isPending ? t('saving') : t('fleet.saveCapabilities', { defaultValue: 'Save Capabilities' })}
+                {capsMutation.isPending ? t('saving') : t('fleet.saveCapabilities')}
               </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setShowManageCaps(false)}
-              >
-                {t('cancel')}
+              <Button type="button" variant="ghost" onClick={() => setShowManageCaps(false)}>
+                {t('confirm.cancel')}
               </Button>
             </div>
           </div>
         ) : null}
       </div>
-
-      {showForm ? (
-        <form
-          className="clox-card mt-6 p-4 sm:p-5"
-          onSubmit={form.handleSubmit((values) => {
-            if (busy) return;
-            if (!rwcFile) {
-              setRwcFormError(t('fleet.rwcRequiredError'));
-              return;
-            }
-            if (hasDgForm && !dgFile) {
-              setRwcFormError(
-                t('fleet.dgDocRequiredError', {
-                  defaultValue: 'Please upload the Dangerous Goods (DG) document for this vehicle.',
-                }),
-              );
-              return;
-            }
-            setRwcFormError(null);
-            addMutation.mutate(values);
-          })}
-          noValidate
-        >
-          <fieldset disabled={busy} className="min-w-0 border-0 p-0">
-            <h2 className="font-display text-lg font-semibold text-clox-ink">
-              {t('fleet.addVehicleTitle')}
-            </h2>
-            <p className="mt-1 text-sm text-clox-mute">{t('fleet.addVehicleHint')}</p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <Field
-                label={t('carrierOnboarding.placeholderLabel')}
-                error={form.formState.errors.label?.message}
-                {...form.register('label')}
-              />
-              <Field
-                label={t('carrierOnboarding.placeholderRegistration')}
-                error={form.formState.errors.registration?.message}
-                {...form.register('registration')}
-              />
-              <Select
-                label={t('validation.vehicleClassLabel')}
-                error={form.formState.errors.vehicleClass?.message}
-                value={form.watch('vehicleClass')}
-                {...form.register('vehicleClass')}
-              >
-                {(
-                  vehicleClassesQuery.data?.classes ??
-                  VEHICLE_CLASSES.map((c) => ({ code: c, name: c }))
-                ).map((cls) => (
-                  <option key={cls.code} value={cls.code}>
-                    {cls.name || cls.code}
-                  </option>
-                ))}
-              </Select>
-              <Field
-                type="number"
-                label={t('fleet.gvmKgLabel')}
-                hint={t('fleet.gvmKgHint')}
-                error={form.formState.errors.gvmKg?.message}
-                {...form.register('gvmKg', { valueAsNumber: true })}
-              />
-              <Field
-                type="number"
-                label={t('fleet.tareKgLabel')}
-                hint={t('fleet.tareKgHint')}
-                error={form.formState.errors.tareKg?.message}
-                {...form.register('tareKg', { valueAsNumber: true })}
-              />
-              <FileInput
-                className="mb-0 sm:col-span-2 lg:col-span-3"
-                label={t('fleet.rwcLabel')}
-                hint={t('fleet.rwcHint')}
-                accept=".pdf,image/jpeg,image/png,image/webp"
-                fileName={rwcFile?.name ?? null}
-                onChange={(event) => {
-                  setRwcFile(event.target.files?.[0] ?? null);
-                  setRwcFormError(null);
-                }}
-              />
-              <div className="sm:col-span-2 lg:col-span-3">
-                <ChoiceCheck
-                  checked={hasDgForm}
-                  onChange={(e) => {
-                    setHasDgForm(e.target.checked);
-                    if (!e.target.checked) setDgFile(null);
-                    setRwcFormError(null);
-                  }}
-                >
-                  {t('fleet.vehicleHasDg', {
-                    defaultValue: 'This vehicle is licensed for Dangerous Goods (DG)',
-                  })}
-                </ChoiceCheck>
-                {hasDgForm ? (
-                  <FileInput
-                    className="mt-2 mb-0"
-                    label={t('fleet.dgDocLabel', {
-                      defaultValue: 'Vehicle Dangerous Goods (DG) Licence Document',
-                    })}
-                    hint={t('fleet.dgDocHint', {
-                      defaultValue:
-                        'Required to bid this vehicle on Dangerous Goods jobs (document or image).',
-                    })}
-                    accept=".pdf,image/jpeg,image/png,image/webp"
-                    fileName={dgFile?.name ?? null}
-                    onChange={(event) => {
-                      setDgFile(event.target.files?.[0] ?? null);
-                      setRwcFormError(null);
-                    }}
-                  />
-                ) : null}
-              </div>
-
-              {/* Vehicle specialized equipment checkboxes */}
-              <div className="sm:col-span-2 lg:col-span-3 border-t border-clox-border-soft pt-3">
-                <span className="text-xs font-semibold text-clox-ink block mb-2">
-                  {t('fleet.vehicleCapabilities', { defaultValue: 'Vehicle Equipment & Supported Load Types' })}
-                </span>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4 text-xs">
-                  <ChoiceCheck
-                    checked={hasReefer}
-                    onChange={(e) => setHasReefer(e.target.checked)}
-                  >
-                    Reefer / Refrigerated
-                  </ChoiceCheck>
-                  <ChoiceCheck
-                    checked={hasOversize}
-                    onChange={(e) => setHasOversize(e.target.checked)}
-                  >
-                    Flatbed / Oversize
-                  </ChoiceCheck>
-                  <ChoiceCheck
-                    checked={hasTailLift}
-                    onChange={(e) => setHasTailLift(e.target.checked)}
-                  >
-                    Tail-lift Equipped
-                  </ChoiceCheck>
-                  <ChoiceCheck
-                    checked={hasCurtainsider}
-                    onChange={(e) => setHasCurtainsider(e.target.checked)}
-                  >
-                    Curtainsider
-                  </ChoiceCheck>
-                </div>
-              </div>
-            </div>
-            {rwcFormError || addMutation.isError ? (
-              <Notice tone="error" className="mt-4">
-                {rwcFormError ?? getErrorDetail(addMutation.error)}
-              </Notice>
-            ) : null}
-            <div className="clox-form-actions">
-              <Button type="submit" variant="cta" disabled={busy || !companyId}>
-                {addMutation.isPending ? t('saving') : t('fleet.addVehicle')}
-              </Button>
-            </div>
-          </fieldset>
-        </form>
-      ) : null}
 
       {vehiclesQuery.isLoading ? (
         <div className="mt-8">
@@ -1049,6 +1049,17 @@ export function CarrierFleetPage() {
           <div className="mt-6">
             <EmptyBlock title={t('fleet.emptyTitle')} description={t('fleet.emptyHint')} />
           </div>
+        ) : viewMode === 'grid' ? (
+          <>
+            <DataCardList
+              className="mt-6 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
+              items={pagedVehicles}
+              getKey={(row) => row.id}
+              mode="grid"
+              renderItem={renderVehicleCard}
+            />
+            <PaginationBar page={page} totalPages={totalPages} onPageChange={setPage} />
+          </>
         ) : (
           <>
             <ResponsiveDataView
@@ -1057,36 +1068,13 @@ export function CarrierFleetPage() {
                 <DataCardList
                   items={pagedVehicles}
                   getKey={(row) => row.id}
-                  renderItem={(row) => (
-                    <div className={dataCardClassName}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <p className="truncate font-medium text-clox-ink">
-                              {row.registration ?? t('dash')}
-                            </p>
-                            {row.hasDg ? <StatusPill tone="warn">DG</StatusPill> : null}
-                          </div>
-                          <p className="mt-0.5 truncate text-xs text-clox-faint">
-                            {row.label ?? t('dash')} · {row.vehicleClass ?? t('dash')}
-                          </p>
-                        </div>
-                        <div className="shrink-0">{renderRwc(row)}</div>
-                      </div>
-                      <div className="mt-3">{renderStatus(row)}</div>
-                      {row.disabledReason ? (
-                        <p className="mt-2 text-xs text-clox-mute">
-                          {t('fleet.reasonLabel')}: {row.disabledReason}
-                        </p>
-                      ) : null}
-                      <div className="mt-3 overflow-x-auto">{renderActions(row)}</div>
-                    </div>
-                  )}
+                  mode="list"
+                  renderItem={renderVehicleCard}
                 />
               }
               table={
                 <DataTable
-                  minWidthClassName="min-w-[72rem]"
+                  minWidthClassName="min-w-[64rem]"
                   headers={[
                     t('fleet.colRego'),
                     t('fleet.colLabel'),
@@ -1094,7 +1082,6 @@ export function CarrierFleetPage() {
                     t('fleet.colGvm'),
                     t('fleet.colStatus'),
                     t('fleet.colRwc'),
-                    t('fleet.colReason'),
                     t('fleet.colActions'),
                   ]}
                   headerClassNames={[
@@ -1104,8 +1091,7 @@ export function CarrierFleetPage() {
                     undefined,
                     undefined,
                     undefined,
-                    undefined,
-                    'text-right',
+                    'text-left',
                   ]}
                 >
                   {pagedVehicles.map((row) => (
@@ -1113,33 +1099,30 @@ export function CarrierFleetPage() {
                       key={row.id}
                       className="border-t border-clox-border-soft hover:bg-clox-surface-alt/60"
                     >
-                      <td className="px-4 py-3 align-top font-mono text-sm text-clox-ink">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span>{row.registration ?? t('dash')}</span>
+                      <td className="px-3 py-3 align-middle font-mono text-sm text-clox-ink sm:px-4">
+                        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                          <span className="truncate">{row.registration ?? t('dash')}</span>
                           {row.hasDg ? <StatusPill tone="warn">DG</StatusPill> : null}
                         </div>
                       </td>
-                      <td className="px-4 py-3 align-top text-clox-mute">
-                        {row.label ?? t('dash')}
+                      <td className="max-w-[10rem] px-3 py-3 align-middle text-clox-mute sm:px-4">
+                        <span className="line-clamp-2">{row.label ?? t('dash')}</span>
                       </td>
-                      <td className="px-4 py-3 align-top text-clox-mute">
+                      <td className="whitespace-nowrap px-3 py-3 align-middle text-clox-mute sm:px-4">
                         {row.vehicleClass ?? t('dash')}
                       </td>
-                      <td className="px-4 py-3 align-top font-mono text-xs text-clox-mute">
-                        {row.gvmKg != null ? `${row.gvmKg}` : t('dash')}
+                      <td className="whitespace-nowrap px-3 py-3 align-middle font-mono text-xs text-clox-mute sm:px-4">
+                        {formatMassCell(row)}
                       </td>
-                      <td className="px-4 py-3 align-top">{renderStatus(row)}</td>
-                      <td className="px-4 py-3 align-top">{renderRwc(row)}</td>
-                      <td className="max-w-[12rem] px-4 py-3 align-top text-xs text-clox-mute">
-                        {row.disabledReason ? (
-                          <span className="line-clamp-2" title={row.disabledReason}>
-                            {row.disabledReason}
-                          </span>
-                        ) : (
-                          t('dash')
-                        )}
+                      <td className="px-3 py-3 align-middle sm:px-4">{renderStatus(row)}</td>
+                      <td className="px-3 py-3 align-middle sm:px-4">
+                        <div className="max-w-[11rem]">{renderRwc(row)}</div>
                       </td>
-                      <td className="px-4 py-3 align-top text-right">{renderActions(row)}</td>
+                      <td className="px-3 py-3 align-middle sm:px-4">
+                        <div className="min-w-[10.5rem] max-w-[16rem]">
+                          {renderActions(row)}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </DataTable>
@@ -1148,6 +1131,222 @@ export function CarrierFleetPage() {
             <PaginationBar page={page} totalPages={totalPages} onPageChange={setPage} />
           </>
         )
+      ) : null}
+
+      {showForm ? (
+        <div
+          className="clox-dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              !addMutation.isPending &&
+              !updateMutation.isPending
+            ) {
+              resetVehicleFormPanel();
+            }
+          }}
+        >
+          <div
+            className="clox-dialog max-h-[min(92dvh,48rem)] max-w-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="fleet-vehicle-form-title"
+          >
+            <form
+              onSubmit={form.handleSubmit((values) => {
+                if (busy) return;
+                if (isEditing) {
+                  setRwcFormError(null);
+                  updateMutation.mutate(values);
+                  return;
+                }
+                if (!rwcFile) {
+                  setRwcFormError(t('fleet.rwcRequiredError'));
+                  return;
+                }
+                if (hasDgForm && !dgFile) {
+                  setRwcFormError(t('fleet.dgDocRequiredError'));
+                  return;
+                }
+                setRwcFormError(null);
+                addMutation.mutate(values);
+              })}
+              noValidate
+            >
+              <fieldset disabled={busy} className="min-w-0 border-0 p-0">
+                <h2
+                  id="fleet-vehicle-form-title"
+                  className="font-display text-lg font-semibold text-clox-ink"
+                >
+                  {isEditing ? t('fleet.editVehicleTitle') : t('fleet.addVehicleTitle')}
+                </h2>
+                <p className="mt-1 text-sm text-clox-mute">
+                  {isEditing ? t('fleet.editVehicleHint') : t('fleet.addVehicleHint')}
+                </p>
+                {isEditing && capacityLocked ? (
+                  <Notice tone="warn" className="mt-3 text-xs">
+                    {t('fleet.editCapacityLocked')}
+                  </Notice>
+                ) : null}
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <Field
+                    label={t('carrierOnboarding.placeholderLabel')}
+                    error={form.formState.errors.label?.message}
+                    {...form.register('label')}
+                  />
+                  <Field
+                    label={t('carrierOnboarding.placeholderRegistration')}
+                    error={form.formState.errors.registration?.message}
+                    {...form.register('registration')}
+                  />
+                  <Select
+                    label={t('validation.vehicleClassLabel')}
+                    error={form.formState.errors.vehicleClass?.message}
+                    value={form.watch('vehicleClass')}
+                    disabled={capacityLocked}
+                    {...form.register('vehicleClass')}
+                  >
+                    {(
+                      vehicleClassesQuery.data?.classes ??
+                      VEHICLE_CLASSES.map((c) => ({ code: c, name: c }))
+                    ).map((cls) => (
+                      <option key={cls.code} value={cls.code}>
+                        {cls.name || cls.code}
+                      </option>
+                    ))}
+                  </Select>
+                  <Field
+                    type="number"
+                    label={t('fleet.gvmKgLabel')}
+                    hint={t('fleet.gvmKgHint')}
+                    error={form.formState.errors.gvmKg?.message}
+                    disabled={capacityLocked}
+                    {...form.register('gvmKg', { valueAsNumber: true })}
+                  />
+                  <Field
+                    type="number"
+                    label={t('fleet.tareKgLabel')}
+                    hint={t('fleet.tareKgHint')}
+                    error={form.formState.errors.tareKg?.message}
+                    disabled={capacityLocked}
+                    {...form.register('tareKg', { valueAsNumber: true })}
+                  />
+                  <Field
+                    type="number"
+                    label={t('fleet.gcmKgLabel')}
+                    hint={t('fleet.gcmKgHint')}
+                    error={form.formState.errors.gcmKg?.message}
+                    disabled={capacityLocked}
+                    {...form.register('gcmKg', { valueAsNumber: true })}
+                  />
+                  {!isEditing ? (
+                    <>
+                      <FileInput
+                        className="mb-0 sm:col-span-2"
+                        label={t('fleet.rwcLabel')}
+                        hint={t('fleet.rwcHint')}
+                        accept=".pdf,image/jpeg,image/png,image/webp"
+                        fileName={rwcFile?.name ?? null}
+                        onChange={(event) => {
+                          setRwcFile(event.target.files?.[0] ?? null);
+                          setRwcFormError(null);
+                        }}
+                      />
+                      <div className="sm:col-span-2">
+                        <ChoiceCheck
+                          checked={hasDgForm}
+                          onChange={(e) => {
+                            setHasDgForm(e.target.checked);
+                            if (!e.target.checked) setDgFile(null);
+                            setRwcFormError(null);
+                          }}
+                        >
+                          {t('fleet.vehicleHasDg')}
+                        </ChoiceCheck>
+                        {hasDgForm ? (
+                          <FileInput
+                            className="mt-2 mb-0"
+                            label={t('fleet.dgDocLabel')}
+                            hint={t('fleet.dgDocHint')}
+                            accept=".pdf,image/jpeg,image/png,image/webp"
+                            fileName={dgFile?.name ?? null}
+                            onChange={(event) => {
+                              setDgFile(event.target.files?.[0] ?? null);
+                              setRwcFormError(null);
+                            }}
+                          />
+                        ) : null}
+                      </div>
+                      <div className="border-t border-clox-border-soft pt-3 sm:col-span-2">
+                        <span className="mb-1 block text-xs font-semibold text-clox-ink">
+                          {t('fleet.vehicleCapabilities')}
+                        </span>
+                        <p className="mb-2 text-[11px] text-clox-mute">
+                          {t('fleet.vehicleCapabilitiesHint')}
+                        </p>
+                        <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                          <ChoiceCheck
+                            checked={hasReefer}
+                            onChange={(e) => setHasReefer(e.target.checked)}
+                          >
+                            {t('fleet.capReefer')}
+                          </ChoiceCheck>
+                          <ChoiceCheck
+                            checked={hasOversize}
+                            onChange={(e) => setHasOversize(e.target.checked)}
+                          >
+                            {t('fleet.capOversize')}
+                          </ChoiceCheck>
+                          <ChoiceCheck
+                            checked={hasTailLift}
+                            onChange={(e) => setHasTailLift(e.target.checked)}
+                          >
+                            {t('fleet.capTailLift')}
+                          </ChoiceCheck>
+                          <ChoiceCheck
+                            checked={hasCurtainsider}
+                            onChange={(e) => setHasCurtainsider(e.target.checked)}
+                          >
+                            {t('fleet.capCurtainsider')}
+                          </ChoiceCheck>
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+                {rwcFormError || addMutation.isError || updateMutation.isError ? (
+                  <Notice tone="error" className="mt-4">
+                    {rwcFormError ??
+                      getErrorDetail(updateMutation.error) ??
+                      getErrorDetail(addMutation.error)}
+                  </Notice>
+                ) : null}
+                <div className="mt-6 flex flex-wrap justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => resetVehicleFormPanel()}
+                  >
+                    {t('confirm.cancel')}
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="cta"
+                    disabled={busy || (!isEditing && !companyId)}
+                  >
+                    {addMutation.isPending || updateMutation.isPending
+                      ? t('saving')
+                      : isEditing
+                        ? t('fleet.saveVehicle')
+                        : t('fleet.addVehicle')}
+                  </Button>
+                </div>
+              </fieldset>
+            </form>
+          </div>
+        </div>
       ) : null}
 
       {reasonTarget ? (

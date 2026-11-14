@@ -30,6 +30,15 @@ interface FormData {
   suggestedGvmKg: number;
   suggestedTareKg: number;
   isActive: boolean;
+  /** Dollars AUD (converted to cents on save). */
+  perKmRateDollars: string;
+  hourlyRateDollars: string;
+  perKmMinBaseDollars: string;
+  hourlyMinBaseDollars: string;
+  perKmGuidanceMinDollars: string;
+  perKmGuidanceMaxDollars: string;
+  hourlyGuidanceMinDollars: string;
+  hourlyGuidanceMaxDollars: string;
 }
 
 const INITIAL_FORM: FormData = {
@@ -44,7 +53,39 @@ const INITIAL_FORM: FormData = {
   suggestedGvmKg: 3500,
   suggestedTareKg: 2000,
   isActive: true,
+  perKmRateDollars: '2.50',
+  hourlyRateDollars: '85.00',
+  perKmMinBaseDollars: '50.00',
+  hourlyMinBaseDollars: '340.00',
+  perKmGuidanceMinDollars: '2.00',
+  perKmGuidanceMaxDollars: '3.00',
+  hourlyGuidanceMinDollars: '70.00',
+  hourlyGuidanceMaxDollars: '100.00',
 };
+
+function centsToDollars(cents: number | null | undefined, fallback: string): string {
+  if (cents == null || !Number.isFinite(cents)) return fallback;
+  return (cents / 100).toFixed(2);
+}
+
+function dollarsToCents(value: string): number | null {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n * 100);
+}
+
+function formRatesToApi(form: FormData) {
+  return {
+    perKmRateCents: dollarsToCents(form.perKmRateDollars),
+    hourlyRateCents: dollarsToCents(form.hourlyRateDollars),
+    perKmMinBaseCents: dollarsToCents(form.perKmMinBaseDollars),
+    hourlyMinBaseCents: dollarsToCents(form.hourlyMinBaseDollars),
+    perKmGuidanceMinCents: dollarsToCents(form.perKmGuidanceMinDollars),
+    perKmGuidanceMaxCents: dollarsToCents(form.perKmGuidanceMaxDollars),
+    hourlyGuidanceMinCents: dollarsToCents(form.hourlyGuidanceMinDollars),
+    hourlyGuidanceMaxCents: dollarsToCents(form.hourlyGuidanceMaxDollars),
+  };
+}
 
 export function AdminVehicleClassesPage() {
   const { t } = useTranslation('common');
@@ -65,7 +106,8 @@ export function AdminVehicleClassesPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: FormData) => createAdminVehicleClass(data),
+    mutationFn: (data: Parameters<typeof createAdminVehicleClass>[0]) =>
+      createAdminVehicleClass(data),
     onSuccess: async () => {
       toast.success(t('adminVehicleClasses.createSuccess', { defaultValue: 'Vehicle class created successfully' }));
       setModalMode(null);
@@ -143,6 +185,29 @@ export function AdminVehicleClassesPage() {
       suggestedGvmKg: item.suggestedGvmKg,
       suggestedTareKg: item.suggestedTareKg,
       isActive: item.isActive,
+      perKmRateDollars: centsToDollars(item.perKmRateCents, INITIAL_FORM.perKmRateDollars),
+      hourlyRateDollars: centsToDollars(item.hourlyRateCents, INITIAL_FORM.hourlyRateDollars),
+      perKmMinBaseDollars: centsToDollars(item.perKmMinBaseCents, INITIAL_FORM.perKmMinBaseDollars),
+      hourlyMinBaseDollars: centsToDollars(
+        item.hourlyMinBaseCents,
+        INITIAL_FORM.hourlyMinBaseDollars,
+      ),
+      perKmGuidanceMinDollars: centsToDollars(
+        item.perKmGuidanceMinCents,
+        INITIAL_FORM.perKmGuidanceMinDollars,
+      ),
+      perKmGuidanceMaxDollars: centsToDollars(
+        item.perKmGuidanceMaxCents,
+        INITIAL_FORM.perKmGuidanceMaxDollars,
+      ),
+      hourlyGuidanceMinDollars: centsToDollars(
+        item.hourlyGuidanceMinCents,
+        INITIAL_FORM.hourlyGuidanceMinDollars,
+      ),
+      hourlyGuidanceMaxDollars: centsToDollars(
+        item.hourlyGuidanceMaxCents,
+        INITIAL_FORM.hourlyGuidanceMaxDollars,
+      ),
     });
     setFormError(null);
     setModalMode('EDIT');
@@ -182,9 +247,11 @@ export function AdminVehicleClassesPage() {
       });
       if (!ok) return;
 
+      const { perKmRateDollars: _a, hourlyRateDollars: _b, perKmMinBaseDollars: _c, hourlyMinBaseDollars: _d, perKmGuidanceMinDollars: _e, perKmGuidanceMaxDollars: _f, hourlyGuidanceMinDollars: _g, hourlyGuidanceMaxDollars: _h, ...rest } = formValues;
       createMutation.mutate({
-        ...formValues,
+        ...rest,
         code: codeClean,
+        ...formRatesToApi(formValues),
       });
     } else if (modalMode === 'EDIT' && selectedClass) {
       const ok = await confirm({
@@ -214,6 +281,7 @@ export function AdminVehicleClassesPage() {
           suggestedGvmKg: Number(formValues.suggestedGvmKg),
           suggestedTareKg: Number(formValues.suggestedTareKg),
           isActive: formValues.isActive,
+          ...formRatesToApi(formValues),
         },
       });
     }
@@ -283,7 +351,7 @@ export function AdminVehicleClassesPage() {
           <p className="mt-1 text-sm text-clox-mute">
             {t('adminVehicleClasses.subtitle', {
               defaultValue:
-                'Manage vehicle hierarchy, cargo weight and dimension envelopes, licence classes, and fleet defaults. Sender load auto-suggestion uses these dynamic rules.',
+                'Manage vehicle hierarchy, cargo envelopes, licence classes, and per-class freight rates ($/km · $/hr). Sender estimates and bid floors use these rates.',
             })}
           </p>
         </div>
@@ -335,6 +403,7 @@ export function AdminVehicleClassesPage() {
                 <th className="px-4 py-3">{t('adminVehicleClasses.thPayload', { defaultValue: 'Max Payload' })}</th>
                 <th className="px-4 py-3">{t('adminVehicleClasses.thCargoBay', { defaultValue: 'Cargo Bay (L × W × H)' })}</th>
                 <th className="px-4 py-3">{t('adminVehicleClasses.thLicence', { defaultValue: 'Min Licence' })}</th>
+                <th className="px-4 py-3">{t('adminVehicleClasses.thRates', { defaultValue: '$/km · $/hr' })}</th>
                 <th className="px-4 py-3">{t('adminVehicleClasses.thGvmTare', { defaultValue: 'Suggested GVM / Tare' })}</th>
                 <th className="px-4 py-3">{t('adminVehicleClasses.thStatus', { defaultValue: 'Status' })}</th>
                 <th className="px-4 py-3 text-right">{t('adminVehicleClasses.thActions', { defaultValue: 'Actions' })}</th>
@@ -364,6 +433,15 @@ export function AdminVehicleClassesPage() {
                     <span className="inline-flex items-center rounded border border-clox-border bg-clox-surface-alt px-2 py-0.5 text-xs font-bold text-clox-ink">
                       {cls.minLicenceClass}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-clox-ink whitespace-nowrap">
+                    {cls.perKmRateCents != null
+                      ? `$${(cls.perKmRateCents / 100).toFixed(2)}`
+                      : '—'}{' '}
+                    ·{' '}
+                    {cls.hourlyRateCents != null
+                      ? `$${(cls.hourlyRateCents / 100).toFixed(2)}`
+                      : '—'}
                   </td>
                   <td className="px-4 py-3 text-xs text-clox-mute">
                     {cls.suggestedGvmKg.toLocaleString()} / {cls.suggestedTareKg.toLocaleString()} kg
@@ -623,6 +701,88 @@ export function AdminVehicleClassesPage() {
                     }))
                   }
                 />
+              </div>
+
+              <div className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-3 space-y-3">
+                <div>
+                  <p className="text-xs font-bold text-clox-ink">
+                    {t('adminVehicleClasses.freightRatesTitle', {
+                      defaultValue: 'Freight rates (AUD, ex-GST guidance → Ops quote)',
+                    })}
+                  </p>
+                  <p className="text-[11px] text-clox-mute">
+                    {t('adminVehicleClasses.freightRatesHint', {
+                      defaultValue:
+                        'Active rates drive job estimates and bid floors for this class. Guidance min/max are shown to senders as a range.',
+                    })}
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Field
+                    label={t('adminVehicleClasses.perKmRateLabel', { defaultValue: '$ / km (Ops rate)' })}
+                    value={formValues.perKmRateDollars}
+                    inputMode="decimal"
+                    onChange={(e) =>
+                      setFormValues((prev) => ({ ...prev, perKmRateDollars: e.target.value }))
+                    }
+                  />
+                  <Field
+                    label={t('adminVehicleClasses.hourlyRateLabel', { defaultValue: '$ / hr (Ops rate)' })}
+                    value={formValues.hourlyRateDollars}
+                    inputMode="decimal"
+                    onChange={(e) =>
+                      setFormValues((prev) => ({ ...prev, hourlyRateDollars: e.target.value }))
+                    }
+                  />
+                  <Field
+                    label={t('adminVehicleClasses.perKmMinLabel', { defaultValue: 'PER_KM trip min ($)' })}
+                    value={formValues.perKmMinBaseDollars}
+                    inputMode="decimal"
+                    onChange={(e) =>
+                      setFormValues((prev) => ({ ...prev, perKmMinBaseDollars: e.target.value }))
+                    }
+                  />
+                  <Field
+                    label={t('adminVehicleClasses.hourlyMinLabel', { defaultValue: 'HOURLY trip min ($)' })}
+                    value={formValues.hourlyMinBaseDollars}
+                    inputMode="decimal"
+                    onChange={(e) =>
+                      setFormValues((prev) => ({ ...prev, hourlyMinBaseDollars: e.target.value }))
+                    }
+                  />
+                  <Field
+                    label={t('adminVehicleClasses.perKmGuideMinLabel', { defaultValue: 'PER_KM guidance min ($)' })}
+                    value={formValues.perKmGuidanceMinDollars}
+                    inputMode="decimal"
+                    onChange={(e) =>
+                      setFormValues((prev) => ({ ...prev, perKmGuidanceMinDollars: e.target.value }))
+                    }
+                  />
+                  <Field
+                    label={t('adminVehicleClasses.perKmGuideMaxLabel', { defaultValue: 'PER_KM guidance max ($)' })}
+                    value={formValues.perKmGuidanceMaxDollars}
+                    inputMode="decimal"
+                    onChange={(e) =>
+                      setFormValues((prev) => ({ ...prev, perKmGuidanceMaxDollars: e.target.value }))
+                    }
+                  />
+                  <Field
+                    label={t('adminVehicleClasses.hourlyGuideMinLabel', { defaultValue: 'HOURLY guidance min ($)' })}
+                    value={formValues.hourlyGuidanceMinDollars}
+                    inputMode="decimal"
+                    onChange={(e) =>
+                      setFormValues((prev) => ({ ...prev, hourlyGuidanceMinDollars: e.target.value }))
+                    }
+                  />
+                  <Field
+                    label={t('adminVehicleClasses.hourlyGuideMaxLabel', { defaultValue: 'HOURLY guidance max ($)' })}
+                    value={formValues.hourlyGuidanceMaxDollars}
+                    inputMode="decimal"
+                    onChange={(e) =>
+                      setFormValues((prev) => ({ ...prev, hourlyGuidanceMaxDollars: e.target.value }))
+                    }
+                  />
+                </div>
               </div>
 
               <ChoiceCheck

@@ -526,6 +526,7 @@ export type FinanceQuery = z.infer<typeof financeQuerySchema>;
 export const adminCompanyListQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  /** Marketplace customer kind; omit → API defaults to CARRIER. */
   type: z.enum(['SENDER', 'CARRIER']).optional(),
   status: z.enum([
     'DRAFT',
@@ -555,32 +556,51 @@ export const vehicleClassCodeSchema = z
   .regex(/^[A-Za-z0-9_]+$/, 'Code must be alphanumeric with underscores only')
   .transform((v) => v.toUpperCase());
 
-export const vehicleClassCreateSchema = z.object({
-  code: vehicleClassCodeSchema,
-  name: z.string().trim().min(1, 'Name is required').max(64),
-  rank: z.number().int().min(1, 'Rank must be at least 1').max(999),
-  maxChargeableWeightKg: z.number().positive('Max chargeable weight must be positive').max(100_000),
-  maxLengthCm: z.number().positive('Length must be positive').max(10_000),
-  maxWidthCm: z.number().positive('Width must be positive').max(1_000),
-  maxHeightCm: z.number().positive('Height must be positive').max(1_000),
-  minLicenceClass: z.string().trim().min(1, 'Min licence class is required').max(10),
-  suggestedGvmKg: z.number().int().positive('Suggested GVM must be positive').max(200_000),
-  suggestedTareKg: z.number().int().positive('Suggested Tare must be positive').max(200_000),
-  isActive: z.boolean().default(true),
+const vehicleClassRateFieldsSchema = z.object({
+  perKmRateCents: z.number().int().positive().max(100_000).optional().nullable(),
+  hourlyRateCents: z.number().int().positive().max(1_000_000).optional().nullable(),
+  perKmMinBaseCents: z.number().int().positive().max(10_000_000).optional().nullable(),
+  hourlyMinBaseCents: z.number().int().positive().max(10_000_000).optional().nullable(),
+  perKmGuidanceMinCents: z.number().int().positive().max(100_000).optional().nullable(),
+  perKmGuidanceMaxCents: z.number().int().positive().max(100_000).optional().nullable(),
+  hourlyGuidanceMinCents: z.number().int().positive().max(1_000_000).optional().nullable(),
+  hourlyGuidanceMaxCents: z.number().int().positive().max(1_000_000).optional().nullable(),
 });
 
-export const vehicleClassUpdateSchema = z.object({
-  name: z.string().trim().min(1, 'Name is required').max(64).optional(),
-  rank: z.number().int().min(1, 'Rank must be at least 1').max(999).optional(),
-  maxChargeableWeightKg: z.number().positive('Max chargeable weight must be positive').max(100_000).optional(),
-  maxLengthCm: z.number().positive('Length must be positive').max(10_000).optional(),
-  maxWidthCm: z.number().positive('Width must be positive').max(1_000).optional(),
-  maxHeightCm: z.number().positive('Height must be positive').max(1_000).optional(),
-  minLicenceClass: z.string().trim().min(1, 'Min licence class is required').max(10).optional(),
-  suggestedGvmKg: z.number().int().positive('Suggested GVM must be positive').max(200_000).optional(),
-  suggestedTareKg: z.number().int().positive('Suggested Tare must be positive').max(200_000).optional(),
-  isActive: z.boolean().optional(),
-});
+export const vehicleClassCreateSchema = z
+  .object({
+    code: vehicleClassCodeSchema,
+    name: z.string().trim().min(1, 'Name is required').max(64),
+    rank: z.number().int().min(1, 'Rank must be at least 1').max(999),
+    maxChargeableWeightKg: z.number().positive('Max chargeable weight must be positive').max(100_000),
+    maxLengthCm: z.number().positive('Length must be positive').max(10_000),
+    maxWidthCm: z.number().positive('Width must be positive').max(1_000),
+    maxHeightCm: z.number().positive('Height must be positive').max(1_000),
+    minLicenceClass: z.string().trim().min(1, 'Min licence class is required').max(10),
+    suggestedGvmKg: z.number().int().positive('Suggested GVM must be positive').max(200_000),
+    suggestedTareKg: z.number().int().positive('Suggested Tare must be positive').max(200_000),
+    isActive: z.boolean().default(true),
+  })
+  .merge(vehicleClassRateFieldsSchema);
+
+export const vehicleClassUpdateSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Name is required').max(64).optional(),
+    rank: z.number().int().min(1, 'Rank must be at least 1').max(999).optional(),
+    maxChargeableWeightKg: z
+      .number()
+      .positive('Max chargeable weight must be positive')
+      .max(100_000)
+      .optional(),
+    maxLengthCm: z.number().positive('Length must be positive').max(10_000).optional(),
+    maxWidthCm: z.number().positive('Width must be positive').max(1_000).optional(),
+    maxHeightCm: z.number().positive('Height must be positive').max(1_000).optional(),
+    minLicenceClass: z.string().trim().min(1, 'Min licence class is required').max(10).optional(),
+    suggestedGvmKg: z.number().int().positive('Suggested GVM must be positive').max(200_000).optional(),
+    suggestedTareKg: z.number().int().positive('Suggested Tare must be positive').max(200_000).optional(),
+    isActive: z.boolean().optional(),
+  })
+  .merge(vehicleClassRateFieldsSchema.partial());
 
 export type VehicleClassCreateInput = z.infer<typeof vehicleClassCreateSchema>;
 export type VehicleClassUpdateInput = z.infer<typeof vehicleClassUpdateSchema>;
@@ -598,6 +618,14 @@ export type VehicleClassDto = {
   suggestedGvmKg: number;
   suggestedTareKg: number;
   isActive: boolean;
+  perKmRateCents: number | null;
+  hourlyRateCents: number | null;
+  perKmMinBaseCents: number | null;
+  hourlyMinBaseCents: number | null;
+  perKmGuidanceMinCents: number | null;
+  perKmGuidanceMaxCents: number | null;
+  hourlyGuidanceMinCents: number | null;
+  hourlyGuidanceMaxCents: number | null;
   createdAt: string;
   updatedAt: string;
 };

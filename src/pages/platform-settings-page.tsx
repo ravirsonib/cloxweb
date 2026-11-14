@@ -693,13 +693,13 @@ export function PlatformSettingsPage() {
           <div className="border-b border-clox-border pb-3">
             <h2 className="font-display text-base font-semibold text-clox-ink">
               {t('platformSettings.pricingTitle', {
-                defaultValue: 'Freight Pricing Models & Base Rates',
+                defaultValue: 'Freight pricing policy (global floors)',
               })}
             </h2>
             <p className="text-xs text-clox-mute">
               {t('platformSettings.pricingSubtitle', {
                 defaultValue:
-                  'Baseline rate cards, trip minimum base fares, and billable hour floors for automatic marketplace quoting.',
+                  'Global hard floors, GST, and hourly min hours. Per-vehicle $/km and $/hr live on Vehicle Classes. Legacy global rates below remain a fallback if a class has no rate card.',
               })}
             </p>
           </div>

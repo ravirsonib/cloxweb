@@ -95,6 +95,11 @@ export function formatDateTime(
   }).format(date);
 }
 
+export function resolveStateTimeZone(state?: string | null): string {
+  const code = state?.trim().toUpperCase();
+  return (code && AU_STATE_TIMEZONES[code]) || PLATFORM_TIMEZONE;
+}
+
 /**
  * Formats a location-aware timestamp (e.g. pickupAt, delivery appointment)
  * in the state's specific timezone (e.g. Perth = AWST, Brisbane = AEST, Sydney = AEDT),
@@ -107,11 +112,137 @@ export function formatLocationDateTime(
   if (!value) return i18n.t('dash', { defaultValue: '—' });
   const date = typeof value === 'string' ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) return i18n.t('dash', { defaultValue: '—' });
-  const timeZone = (state && AU_STATE_TIMEZONES[state]) || PLATFORM_TIMEZONE;
+  const timeZone = resolveStateTimeZone(state);
   return new Intl.DateTimeFormat(resolveLocale(), {
     timeZone,
     dateStyle: 'medium',
     timeStyle: 'short',
     timeZoneName: 'short',
   }).format(date);
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+/**
+ * Convert an instant to `YYYY-MM-DDTHH:mm` for `<input type="datetime-local">`
+ * using the pickup state's wall clock.
+ */
+export function toDatetimeLocalValue(
+  value: string | Date | null | undefined,
+  state?: string | null,
+): string {
+  if (!value) return '';
+  const date = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return '';
+  const timeZone = resolveStateTimeZone(state);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? '';
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
+}
+
+function offsetIsoForInstant(date: Date, timeZone: string): string {
+  const raw =
+    new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      timeZoneName: 'longOffset',
+      hour: '2-digit',
+    })
+      .formatToParts(date)
+      .find((p) => p.type === 'timeZoneName')?.value ?? 'GMT';
+  if (raw === 'GMT' || raw === 'UTC') return '+00:00';
+  const match = raw.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/i);
+  if (!match) return '+00:00';
+  return `${match[1]}${pad2(Number(match[2]))}:${pad2(Number(match[3] ?? 0))}`;
+}
+
+/**
+ * Interpret a datetime-local wall time in the pickup state's zone → ISO-8601 with offset
+ * (compatible with `jobCreateSchema.pickupAt`).
+ */
+export function fromDatetimeLocalValue(
+  localValue: string,
+  state?: string | null,
+): string {
+  const trimmed = localValue.trim();
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) {
+    throw new Error('Invalid datetime-local value');
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6] ?? 0);
+  const timeZone = resolveStateTimeZone(state);
+
+  // Guess UTC instant, then correct so the wall clock in `timeZone` matches.
+  let utcGuess = Date.UTC(year, month - 1, day, hour, minute, second);
+  for (let i = 0; i < 3; i += 1) {
+    const asLocal = toDatetimeLocalValue(new Date(utcGuess), state);
+    const got = asLocal.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+    if (!got) break;
+    const gotUtc = Date.UTC(
+      Number(got[1]),
+      Number(got[2]) - 1,
+      Number(got[3]),
+      Number(got[4]),
+      Number(got[5]),
+      second,
+    );
+    const wantedUtc = Date.UTC(year, month - 1, day, hour, minute, second);
+    utcGuess += wantedUtc - gotUtc;
+  }
+
+  const instant = new Date(utcGuess);
+  const wall = toDatetimeLocalValue(instant, state);
+  const offset = offsetIsoForInstant(instant, timeZone);
+  return `${wall}:${pad2(second)}${offset}`;
+}
+
+/** Default create value: tomorrow 08:00 in the pickup state's wall clock. */
+export function defaultPickupDatetimeLocal(state?: string | null): string {
+  const nowLocal = toDatetimeLocalValue(new Date(), state);
+  const datePart = nowLocal.slice(0, 10);
+  const [y, m, d] = datePart.split('-').map(Number);
+  const tomorrow = new Date(Date.UTC(y, m - 1, d + 1));
+  return `${tomorrow.getUTCFullYear()}-${pad2(tomorrow.getUTCMonth() + 1)}-${pad2(tomorrow.getUTCDate())}T08:00`;
+}
+
+/** `YYYY-MM-DDTHH:mm` for “now” — use as `<input type="datetime-local" min>`. */
+export function minDatetimeLocalValue(state?: string | null): string {
+  return toDatetimeLocalValue(new Date(), state);
+}
+
+/** `YYYY-MM-DD` for “today” — use as `<input type="date" min>`. */
+export function minDateInputValue(state?: string | null): string {
+  return minDatetimeLocalValue(state).slice(0, 10);
+}
+
+/** True when datetime-local wall time is current or future in the given state zone. */
+export function isDatetimeLocalNotInPast(
+  localValue: string,
+  state?: string | null,
+): boolean {
+  const trimmed = localValue.trim();
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) return false;
+  return trimmed >= minDatetimeLocalValue(state);
+}
+
+/** True when date-only value is today or later in the given state zone. */
+export function isDateInputNotInPast(dateValue: string, state?: string | null): boolean {
+  const trimmed = dateValue.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return false;
+  return trimmed >= minDateInputValue(state);
 }

@@ -17,9 +17,11 @@ export type JobSummary = {
   widthCm?: number | null;
   heightCm?: number | null;
   loadTypes?: string[];
+  loadTypeSubtypes?: string[];
   hourlyPattern?: string | null;
   minVehicleClass: string | null;
   recommendedVehicleClass: string | null;
+  pricingVehicleClass?: string | null;
   chargeableWeightKg: number | null;
   siteManeuverability?: string | null;
   siteFacility?: string | null;
@@ -327,12 +329,19 @@ export type JobRouteEstimate = {
   minBaseCents?: number;
   minChargeIncGstCents?: number;
   estimateIncGstCents?: number;
+  pricingVehicleClass?: string;
+  estimateRange?: {
+    minIncGstCents: number;
+    maxIncGstCents: number;
+    maxClassCode: string | null;
+  };
   mock: boolean;
 };
 
 export function previewJobRoute(payload: {
   pricingModel: 'PER_KM' | 'HOURLY';
   stops: Array<Record<string, unknown>>;
+  vehicleClass?: string;
 }) {
   return http.post<JobRouteEstimate>('/jobs/route-estimate', payload).then((r) => r.data);
 }

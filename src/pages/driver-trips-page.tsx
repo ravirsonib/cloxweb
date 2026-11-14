@@ -138,6 +138,28 @@ export function DriverTripsPage() {
                     : ''}
                   {tripItem.gates.canStart ? ` · ${t('trips.readyToStart')}` : ''}
                 </p>
+                {isPreStartGatesPhase(tripItem) ? (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <StatusPill tone={tripItem.gates.paid ? 'ok' : 'warn'} className="shrink-0">
+                      {t('trips.gateLabelPaid')}
+                    </StatusPill>
+                    <StatusPill
+                      tone={tripItem.gates.safetyOk ? 'ok' : 'warn'}
+                      className="shrink-0"
+                    >
+                      {t('trips.gateLabelSafety')}
+                    </StatusPill>
+                    <StatusPill tone={tripItem.gates.massOk ? 'ok' : 'warn'} className="shrink-0">
+                      {t('trips.gateLabelMass')}
+                    </StatusPill>
+                    <StatusPill
+                      tone={tripItem.gates.complianceOk === false ? 'warn' : 'ok'}
+                      className="shrink-0"
+                    >
+                      {t('trips.gateLabelCompliance')}
+                    </StatusPill>
+                  </div>
+                ) : null}
               </Link>
             )}
           />
@@ -158,6 +180,67 @@ function startLockReason(
   if (!gates.massOk) missing.push(t('trips.gateMass'));
   if (gates.complianceOk === false) missing.push(t('trips.gateCompliance'));
   return missing.join(', ');
+}
+
+/** Pre-start phase: prefer trip status as source of truth (UI-UX Gate A/B). */
+function isPreStartGatesPhase(trip: {
+  status: string;
+  startedAt: string | null;
+}): boolean {
+  if (trip.status === 'PENDING_GATES') return true;
+  if (trip.status === 'COMPLETED' || trip.status === 'CANCELLED') return false;
+  return !trip.startedAt;
+}
+
+type TripGates = {
+  paid: boolean;
+  safetyOk: boolean;
+  massOk: boolean;
+  complianceOk?: boolean;
+  canStart: boolean;
+};
+
+/** Stacked gate board — avoids cab overflow-x clipping of header StatusPills on mobile. */
+function TripGatesBoard({
+  gates,
+  t,
+}: {
+  gates: TripGates;
+  t: (key: string, opts?: Record<string, unknown>) => string;
+}) {
+  const complianceOk = gates.complianceOk !== false;
+  const rows: Array<{ key: string; label: string; ok: boolean }> = [
+    { key: 'paid', label: t('trips.gateLabelPaid'), ok: gates.paid },
+    { key: 'safety', label: t('trips.gateLabelSafety'), ok: gates.safetyOk },
+    { key: 'mass', label: t('trips.gateLabelMass'), ok: gates.massOk },
+    { key: 'compliance', label: t('trips.gateLabelCompliance'), ok: complianceOk },
+  ];
+  return (
+    <div className="mt-4 rounded-clox-md border border-clox-border bg-clox-surface p-3.5">
+      <h2 className="font-display text-base font-semibold text-clox-ink">
+        {t('trips.gatesTitle')}
+      </h2>
+      <p className="mt-0.5 text-xs text-clox-mute">{t('trips.gatesSubtitle')}</p>
+      <ul className="mt-3 space-y-2">
+        {rows.map((row) => (
+          <li
+            key={row.key}
+            className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-clox-sm border border-clox-border bg-clox-surface-alt px-2.5 py-2"
+          >
+            <span className="min-w-0 text-sm font-medium text-clox-ink">{row.label}</span>
+            <StatusPill tone={row.ok ? 'ok' : 'warn'} className="shrink-0">
+              {row.ok ? t('trips.gateStatusPassed') : t('trips.gateStatusPending')}
+            </StatusPill>
+          </li>
+        ))}
+      </ul>
+      {gates.complianceOk === false ? (
+        <Notice tone="warn" className="mt-3">
+          {t('trips.gateComplianceBlocked')}
+        </Notice>
+      ) : null}
+    </div>
+  );
 }
 
 export function DriverTripDetailPage() {
@@ -840,14 +923,22 @@ export function DriverTripDetailPage() {
         </Notice>
       ) : null}
 
+      {isPreStartGatesPhase(tripData) ? (
+        <TripGatesBoard gates={tripData.gates} t={t} />
+      ) : (
+        <ul className="mt-4 space-y-1 text-sm text-clox-mute">
+          <li>
+            {t('trips.gatesLine', {
+              paid: String(tripData.gates.paid),
+              safetyOk: String(tripData.gates.safetyOk),
+              massOk: String(tripData.gates.massOk),
+              complianceOk: String(tripData.gates.complianceOk !== false),
+            })}
+          </li>
+        </ul>
+      )}
+
       <ul className="mt-4 space-y-1 text-sm text-clox-mute">
-        <li>
-          {t('trips.gatesLine', {
-            paid: String(tripData.gates.paid),
-            safetyOk: String(tripData.gates.safetyOk),
-            massOk: String(tripData.gates.massOk),
-          })}
-        </li>
         <li>
           {t('trips.siteLine', {
             maneuverability: tripData.siteAccess?.maneuverability ?? t('dash'),
@@ -929,15 +1020,17 @@ export function DriverTripDetailPage() {
         </Notice>
       ) : null}
 
-      {!tripData.startedAt ? (
+      {isPreStartGatesPhase(tripData) ? (
         <div className="mt-6 space-y-4">
-          <div className="rounded-lg border border-clox-border bg-clox-surface p-3.5">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="font-display font-semibold text-clox-ink">
+          <div className="rounded-clox-md border border-clox-border bg-clox-surface p-3.5">
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <h2 className="min-w-0 font-display font-semibold text-clox-ink">
                 1. {t('trips.safetyChecklist')}
               </h2>
               {tripData.gates.safetyOk ? (
-                <StatusPill tone="ok">✓ {t('trips.gateSafetyPassed', { defaultValue: 'Passed' })}</StatusPill>
+                <StatusPill tone="ok" className="shrink-0">
+                  ✓ {t('trips.gateSafetyPassed')}
+                </StatusPill>
               ) : null}
             </div>
             {!tripData.gates.safetyOk ? (
@@ -971,25 +1064,26 @@ export function DriverTripDetailPage() {
               </div>
             ) : (
               <p className="mt-1 text-xs text-clox-mute">
-                ✓ {t('trips.safetyPassedHint', { defaultValue: 'Pre-trip safety checklist completed.' })}
+                ✓ {t('trips.safetyPassedHint')}
               </p>
             )}
           </div>
 
-          <div className="rounded-lg border border-clox-border bg-clox-surface p-3.5">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="font-display font-semibold text-clox-ink">
+          <div className="rounded-clox-md border border-clox-border bg-clox-surface p-3.5">
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <h2 className="min-w-0 font-display font-semibold text-clox-ink">
                 2. {t('trips.massCheck')}
               </h2>
               {tripData.gates.massOk ? (
-                <StatusPill tone="ok">✓ {t('trips.gateMassCleared', { defaultValue: 'Cleared' })}</StatusPill>
+                <StatusPill tone="ok" className="shrink-0">
+                  ✓ {t('trips.gateMassCleared')}
+                </StatusPill>
               ) : null}
             </div>
             {tripData.gates.massOk ? (
               <div className="mt-2">
                 <Notice tone="success" className="text-xs">
                   {t('trips.massClearedNotice', {
-                    defaultValue: 'Mass check cleared ({{kg}} kg). Gate is clear — proceed to start trip.',
                     kg: tripData.actualMassKg ?? declared,
                   })}
                 </Notice>
@@ -1014,7 +1108,7 @@ export function DriverTripDetailPage() {
             )}
           </div>
 
-          <div className="space-y-3 rounded-lg border border-clox-border bg-clox-surface p-3.5">
+          <div className="space-y-3 rounded-clox-md border border-clox-border bg-clox-surface p-3.5">
             <h2 className="mb-2 font-display font-semibold text-clox-ink">
               3. {t('trips.startTripHeading')}
             </h2>

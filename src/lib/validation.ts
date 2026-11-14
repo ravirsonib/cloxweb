@@ -220,6 +220,32 @@ export function auPostcodeErrorForState(state: string | null | undefined): strin
 
 export const LICENCE_CLASSES = ['C', 'LR', 'MR', 'HR', 'HC', 'MC'] as const;
 
+/** Keep in sync with api LICENCE_CLASS_RANK. */
+export const LICENCE_CLASS_RANK: Record<string, number> = {
+  C: 1,
+  LR: 2,
+  MR: 3,
+  HR: 4,
+  HC: 5,
+  MC: 6,
+};
+
+export function licenceClassRank(licenceClass: string | null | undefined): number {
+  if (!licenceClass) return 0;
+  return LICENCE_CLASS_RANK[licenceClass.toUpperCase()] ?? 0;
+}
+
+export function isDriverLicenceExpiryValid(
+  licenceExpiry: string | Date | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!licenceExpiry) return false;
+  const expiry =
+    typeof licenceExpiry === 'string' ? new Date(licenceExpiry) : licenceExpiry;
+  if (Number.isNaN(expiry.getTime())) return false;
+  return expiry.getTime() > now.getTime();
+}
+
 export const VEHICLE_CLASSES = [
   'UTE',
   'VAN',
@@ -315,6 +341,26 @@ export const CLOX_VEHICLE_SPECS: readonly VehicleClassSpec[] = [
 export const VEHICLE_CLASS_RANK: Record<string, number> = Object.fromEntries(
   CLOX_VEHICLE_SPECS.map((s) => [s.code, s.rank]),
 );
+
+/** Default min licence per vehicle class (overridden by /jobs/meta/vehicle-classes). */
+export const VEHICLE_MIN_LICENCE: Record<string, string> = Object.fromEntries(
+  CLOX_VEHICLE_SPECS.map((c) => [c.code, c.minLicence]),
+);
+
+/** True if driver licence covers the vehicle class (same rule as API assignment gates). */
+export function licenceCoversVehicleClass(
+  licenceClass: string | null | undefined,
+  vehicleClass: string | null | undefined,
+  minLicenceMap?: Record<string, string>,
+): boolean {
+  if (!vehicleClass) return Boolean(licenceClass);
+  const map = minLicenceMap
+    ? { ...VEHICLE_MIN_LICENCE, ...minLicenceMap }
+    : VEHICLE_MIN_LICENCE;
+  const minLicence = map[vehicleClass.toUpperCase()];
+  if (!minLicence) return false;
+  return licenceClassRank(licenceClass) >= licenceClassRank(minLicence);
+}
 
 export type {
   LoadTypeParentMeta as CloxLoadTypeMeta,

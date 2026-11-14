@@ -81,6 +81,10 @@ import {
   statusAccentClass,
   type ListStatusTone,
 } from '@/lib/status-list';
+import {
+  resolveSenderAssignmentStatusLabel,
+  resolveSenderJobLifecycleDisplay,
+} from '@/lib/sender-job-lifecycle';
 import { jobStatusTone } from '@/lib/status-tone';
 import {
   AU_STATE_OPTIONS,
@@ -229,17 +233,23 @@ export function JobsListPage() {
 
   const jobCard = (j: JobSummary) => {
     const bucket = senderJobBucket(j);
+    const lifecycle = resolveSenderJobLifecycleDisplay(j);
     const created = formatWhen(j.createdAt);
     const completed = formatWhen(j.completedAt);
     const pickup = formatPickupWhen(j.pickupAt);
     const openBids = j.openProposalCount ?? 0;
     const hasOpenBids = openBids > 0;
+    const accentTone = lifecycle.isPendingPayment
+      ? 'warn'
+      : lifecycle.isPaidAndLocked
+        ? 'ok'
+        : SENDER_JOB_TONE[bucket];
     return (
       <Link
         to={`/jobs/${j.id}`}
         className={cn(
           'block h-full rounded-clox-md border p-4 shadow-clox-1 transition hover:border-clox-orange',
-          statusAccentClass(SENDER_JOB_TONE[bucket]),
+          statusAccentClass(accentTone),
           hasOpenBids && 'ring-1 ring-[var(--status-warn)]/50',
         )}
       >
@@ -254,8 +264,8 @@ export function JobsListPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-1.5">
-            <StatusPill tone={jobStatusTone(j.status)}>
-              {t(`jobStatuses.${j.status}`, { defaultValue: j.status })}
+            <StatusPill tone={lifecycle.tone}>
+              {t(lifecycle.labelKey, { defaultValue: lifecycle.defaultLabel })}
             </StatusPill>
             {hasOpenBids ? (
               <StatusPill tone="warn">
@@ -369,12 +379,18 @@ export function JobsListPage() {
                   const openBids = j.openProposalCount ?? 0;
                   const hasOpenBids = openBids > 0;
                   const bucket = senderJobBucket(j);
+                  const lifecycle = resolveSenderJobLifecycleDisplay(j);
+                  const accentTone = lifecycle.isPendingPayment
+                    ? 'warn'
+                    : lifecycle.isPaidAndLocked
+                      ? 'ok'
+                      : SENDER_JOB_TONE[bucket];
                   return (
                     <tr
                       key={j.id}
                       className={cn(
                         'border-t border-clox-border-soft hover:bg-clox-surface-alt/60',
-                        statusAccentClass(SENDER_JOB_TONE[bucket]),
+                        statusAccentClass(accentTone),
                         hasOpenBids &&
                           'bg-[color-mix(in_srgb,var(--status-warn-bg)_35%,transparent)]',
                       )}
@@ -398,8 +414,8 @@ export function JobsListPage() {
                         ) : null}
                       </td>
                       <td className="px-4 py-3">
-                        <StatusPill tone={jobStatusTone(j.status)}>
-                          {t(`jobStatuses.${j.status}`, { defaultValue: j.status })}
+                        <StatusPill tone={lifecycle.tone}>
+                          {t(lifecycle.labelKey, { defaultValue: lifecycle.defaultLabel })}
                         </StatusPill>
                       </td>
                       <td className="px-4 py-3 text-clox-mute">{j.pricingModel}</td>
@@ -3792,9 +3808,14 @@ export function JobDetailPage() {
             ) : null}
           </div>
         </div>
-        <StatusPill tone={jobStatusTone(j.status)}>
-          {t(`jobStatuses.${j.status}`, { defaultValue: j.status })}
-        </StatusPill>
+        {(() => {
+          const lifecycle = resolveSenderJobLifecycleDisplay(j);
+          return (
+            <StatusPill tone={lifecycle.tone}>
+              {t(lifecycle.labelKey, { defaultValue: lifecycle.defaultLabel })}
+            </StatusPill>
+          );
+        })()}
       </div>
 
       {j.openException ? (
@@ -3973,20 +3994,14 @@ export function JobDetailPage() {
                 {j.assignment
                   ? detailRow(
                       t('jobs.view.assignmentStatus'),
-                      <span
-                        className={
-                          j.assignment.paidAndConfirmed
-                            ? 'text-[var(--status-ok)]'
-                            : undefined
-                        }
-                      >
-                        {j.assignment.status}
-                        {j.assignment.paidAndConfirmed
-                          ? ` ${t('jobs.assignmentPaid')}`
-                          : j.assignment.status === 'PENDING'
-                            ? ` ${t('jobs.assignmentPendingPayment')}`
-                            : ''}
-                      </span>,
+                      (() => {
+                        const asg = resolveSenderAssignmentStatusLabel(j.assignment!);
+                        return (
+                          <StatusPill tone={asg.tone}>
+                            {t(asg.labelKey, { defaultValue: asg.defaultLabel })}
+                          </StatusPill>
+                        );
+                      })(),
                     )
                   : null}
                 {j.payment
@@ -4259,8 +4274,14 @@ export function JobDetailPage() {
                         j.assignment &&
                         !j.assignment.paidAndConfirmed &&
                         j.assignment.status === 'PENDING'
-                          ? `${p.status} ${t('jobs.assignmentPendingPayment')}`
-                          : p.status}
+                          ? t('jobs.lifecycle.acceptedPendingPayment', {
+                              defaultValue: 'Accepted · pending payment',
+                            })
+                          : p.status === 'ACCEPTED' && j.assignment?.paidAndConfirmed
+                            ? t('jobs.lifecycle.acceptedPaidLocked', {
+                                defaultValue: 'Accepted · paid & locked',
+                              })
+                            : p.status}
                       </StatusPill>
                     </div>
                     {p.status === 'SUBMITTED' && (!j.assignment || j.assignment.status === 'CANCELLED') ? (

@@ -52,7 +52,11 @@ import {
   statusAccentClass,
   type ListStatusTone,
 } from '@/lib/status-list';
-import { isVehicleAdequateForJob } from '@/lib/validation';
+import {
+  isDriverLicenceExpiryValid,
+  isVehicleAdequateForJob,
+  licenceCoversVehicleClass,
+} from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -149,20 +153,6 @@ export function MarketBoardPage() {
 
   const [jobId, setJobId] = useState<string | null>(null);
 
-  const driverBidCheckQuery = useQuery({
-    queryKey: ['carrier', 'drivers', 'bid-check', jobId],
-    queryFn: () => checkFleetDriversBid(jobId!),
-    enabled: role === AppRole.TRANSPORT_COMPANY && Boolean(jobId),
-    staleTime: 5_000,
-  });
-
-  const driverEligibilityMap = useMemo(() => {
-    const map = new Map<string, { isEligible: boolean; reason?: string | null }>();
-    for (const d of driverBidCheckQuery.data?.drivers ?? []) {
-      map.set(d.id, { isEligible: d.isEligible, reason: d.reason });
-    }
-    return map;
-  }, [driverBidCheckQuery.data?.drivers]);
   const [statusFilter, setStatusFilter] = useState<MarketFilter>('available');
   const [viewMode, setViewMode] = useDataViewMode('market', 'list');
   const toast = useToast();
@@ -236,6 +226,85 @@ export function MarketBoardPage() {
   const vehicleIdWatch = form.watch('vehicleId');
   const driverIdWatch = form.watch('driverId');
 
+  const minLicences = vehicleClassesMeta.data?.minLicences;
+
+  const driverBidCheckQuery = useQuery({
+    queryKey: ['carrier', 'drivers', 'bid-check', jobId, vehicleIdWatch || null],
+    queryFn: () => checkFleetDriversBid(jobId!, vehicleIdWatch || undefined),
+    enabled: role === AppRole.TRANSPORT_COMPANY && Boolean(jobId),
+    staleTime: 5_000,
+  });
+
+  const driverEligibilityMap = useMemo(() => {
+    const map = new Map<
+      string,
+      { isEligible: boolean; reason?: string | null; code?: string | null }
+    >();
+    for (const d of driverBidCheckQuery.data?.drivers ?? []) {
+      map.set(d.id, {
+        isEligible: d.isEligible,
+        reason: d.reason,
+        code: d.code,
+      });
+    }
+    return map;
+  }, [driverBidCheckQuery.data?.drivers]);
+
+  const selectedVehicle = activeVehicles.find((v) => v.id === vehicleIdWatch);
+
+  const assessDriverForBid = (
+    driver: (typeof activeDrivers)[number],
+    vehicleClass: string | null | undefined,
+  ): { ok: boolean; reason: string } => {
+    if (driver.bidAvailable === false) {
+      return { ok: false, reason: t('market.errorDriverBusy') };
+    }
+    if (!isDriverLicenceExpiryValid(driver.licenceExpiry)) {
+      return {
+        ok: false,
+        reason: t('market.driverLicenceExpired', {
+          defaultValue: 'Licence expired or missing',
+        }),
+      };
+    }
+    if (!licenceCoversVehicleClass(driver.licenceClass, vehicleClass, minLicences)) {
+      return {
+        ok: false,
+        reason: t('market.driverLicenceMismatch', {
+          licence: driver.licenceClass ?? t('dash'),
+          vehicleClass: vehicleClass ?? t('dash'),
+          defaultValue: 'Licence {{licence}} does not cover {{vehicleClass}}',
+        }),
+      };
+    }
+    const check = driverEligibilityMap.get(driver.id);
+    if (check && !check.isEligible) {
+      return {
+        ok: false,
+        reason:
+          check.reason ||
+          t('market.driverUnavailableScheduled', {
+            defaultValue: 'Unavailable (scheduled leave)',
+          }),
+      };
+    }
+    return { ok: true, reason: '' };
+  };
+
+  const suggestedDriverId = useMemo(() => {
+    const vehicleClass =
+      selectedVehicle?.vehicleClass ?? selectedJob?.minVehicleClass ?? null;
+    const match = selectableDrivers.find((d) => assessDriverForBid(d, vehicleClass).ok);
+    return match?.id ?? '';
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- assess uses stable t/maps; deps list the inputs
+  }, [
+    selectableDrivers,
+    selectedVehicle?.vehicleClass,
+    selectedJob?.minVehicleClass,
+    driverEligibilityMap,
+    minLicences,
+  ]);
+
   useEffect(() => {
     if (!selectedJob) return;
     const eligibleVehicle =
@@ -251,7 +320,6 @@ export function MarketBoardPage() {
           (!selectedJob.requiresDg || Boolean(v.hasDg && v.dgDocumentId)),
       ) ?? null;
     const nextVehicleId = eligibleVehicle?.id ?? '';
-    const nextDriverId = selectableDrivers[0]?.id ?? '';
     const grossCents =
       selectedJob.minBidIncGstCents ?? selectedJob.estimateIncGstCents ?? null;
     const nextAmount =
@@ -265,16 +333,38 @@ export function MarketBoardPage() {
     form.setValue('amountAud', nextAmount);
     form.setValue('etaMinutes', nextEta);
     form.setValue('vehicleId', nextVehicleId);
-    form.setValue('driverId', nextDriverId);
-    const t = window.setTimeout(() => {
+    form.setValue('driverId', '');
+    const timer = window.setTimeout(() => {
       document
         .getElementById('market-bid-form')
         ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 50);
-    return () => window.clearTimeout(t);
-  }, [selectedJob, selectableVehicles, selectableDrivers, form, dynamicRanks, dynamicMaxChargeable]);
+    return () => window.clearTimeout(timer);
+  }, [selectedJob, selectableVehicles, form, dynamicRanks, dynamicMaxChargeable]);
 
-  const selectedVehicle = activeVehicles.find((v) => v.id === vehicleIdWatch);
+  // Suggest a driver that matches the selected vehicle (licence + schedule + availability).
+  useEffect(() => {
+    if (!selectedJob || !vehicleIdWatch) return;
+    const current = form.getValues('driverId');
+    const currentDriver = activeDrivers.find((d) => d.id === current);
+    const currentOk = currentDriver
+      ? assessDriverForBid(currentDriver, selectedVehicle?.vehicleClass).ok
+      : false;
+    if (!currentOk && suggestedDriverId) {
+      form.setValue('driverId', suggestedDriverId);
+    } else if (!currentOk && !suggestedDriverId) {
+      form.setValue('driverId', '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedJob,
+    vehicleIdWatch,
+    selectedVehicle?.vehicleClass,
+    suggestedDriverId,
+    driverEligibilityMap,
+    form,
+  ]);
+
   const selectedVehicleDgOk =
     !selectedJob?.requiresDg ||
     Boolean(selectedVehicle?.hasDg && selectedVehicle?.dgDocumentId);
@@ -290,7 +380,10 @@ export function MarketBoardPage() {
       dynamicMaxChargeable,
     );
   const selectedDriver = activeDrivers.find((d) => d.id === driverIdWatch);
-  const driverEligible = !!selectedDriver && selectedDriver.bidAvailable !== false;
+  const selectedDriverAssessment = selectedDriver
+    ? assessDriverForBid(selectedDriver, selectedVehicle?.vehicleClass)
+    : { ok: false, reason: '' };
+  const driverEligible = selectedDriverAssessment.ok;
 
   const bid = useMutation({
     mutationFn: (values: BidForm) => {
@@ -320,17 +413,11 @@ export function MarketBoardPage() {
       if (vehicle?.bidAvailable === false) {
         throw new Error(t('market.errorVehicleBusy'));
       }
-      if (driver?.bidAvailable === false) {
-        throw new Error(t('market.errorDriverBusy'));
-      }
-      const driverCheck = driverEligibilityMap.get(values.driverId);
-      if (driverCheck && !driverCheck.isEligible) {
-        throw new Error(
-          driverCheck.reason ||
-            t('market.driverUnavailableScheduled', {
-              defaultValue: 'Selected driver has scheduled leave during this job window.',
-            }),
-        );
+      const driverGate = driver
+        ? assessDriverForBid(driver, vehicle?.vehicleClass)
+        : { ok: false, reason: t('market.errorSelectDriver') };
+      if (!driverGate.ok) {
+        throw new Error(driverGate.reason || t('market.errorDriverBusy'));
       }
       return submitBid({
         jobId,
@@ -820,41 +907,41 @@ export function MarketBoardPage() {
             className="mb-3"
             label={t('market.assignDriver')}
             required
+            hint={
+              suggestedDriverId
+                ? t('market.driverSuggestedHint', {
+                    defaultValue:
+                      'Suggested drivers match licence class for the selected vehicle, schedule, and availability.',
+                  })
+                : undefined
+            }
             error={form.formState.errors.driverId?.message}
             value={driverIdWatch}
             {...form.register('driverId')}
           >
             <option value="">{t('market.selectDriver')}</option>
             {activeDrivers.map((d) => {
-              const check = driverEligibilityMap.get(d.id);
-              const scheduleUnavailable = check && !check.isEligible;
-              const busy = d.bidAvailable === false || scheduleUnavailable;
-              const busyHint = busy
-                ? scheduleUnavailable
-                  ? (check?.reason ??
-                    t('market.driverUnavailableScheduled', {
-                      defaultValue: 'Unavailable (scheduled leave)',
-                    }))
-                  : d.activityStatus === 'BID_COMMITTED'
-                    ? t('market.busyOpenBid')
-                    : d.activityStatus === 'PENDING_ASSIGNMENT'
-                      ? t('market.busyPendingAssign')
-                      : t('market.busyOnTrip')
-                : '';
+              const assessment = assessDriverForBid(d, selectedVehicle?.vehicleClass);
+              const disabled = !assessment.ok;
+              const suggested = d.id === suggestedDriverId;
               return (
-                <option key={d.id} value={d.id} disabled={busy}>
+                <option key={d.id} value={d.id} disabled={disabled}>
                   {carrierDriverSelectLabel(d)}
-                  {busy ? ` · ${busyHint}` : ''}
+                  {d.licenceClass ? ` · ${d.licenceClass}` : ''}
+                  {suggested && !disabled
+                    ? ` · ${t('market.suggested', { defaultValue: 'Suggested' })}`
+                    : ''}
+                  {disabled ? ` · ${assessment.reason}` : ''}
                 </option>
               );
             })}
           </Select>
 
-          {driverIdWatch && driverEligibilityMap.get(driverIdWatch)?.isEligible === false ? (
+          {driverIdWatch && !selectedDriverAssessment.ok ? (
             <Notice tone="warn" className="mb-3">
-              {driverEligibilityMap.get(driverIdWatch)?.reason ??
+              {selectedDriverAssessment.reason ||
                 t('market.driverUnavailableScheduled', {
-                  defaultValue: 'This driver has scheduled leave during the job execution window.',
+                  defaultValue: 'This driver cannot be assigned for this bid.',
                 })}
             </Notice>
           ) : null}
@@ -882,14 +969,20 @@ export function MarketBoardPage() {
               {t('market.errorVehicleUndersize')}
             </Notice>
           ) : null}
-          {driverIdWatch && !driverEligible ? (
-            <Notice tone="warn" className="mb-3">
-              {t('market.errorDriverBusy')}
-            </Notice>
-          ) : null}
           {selectableVehicles.length === 0 || selectableDrivers.length === 0 ? (
             <Notice tone="info" className="mb-3">
               {t('market.noFleetAvailable')}
+            </Notice>
+          ) : null}
+          {vehicleIdWatch &&
+          selectableDrivers.length > 0 &&
+          !suggestedDriverId &&
+          !driverBidCheckQuery.isLoading ? (
+            <Notice tone="warn" className="mb-3">
+              {t('market.noSuitableDriver', {
+                defaultValue:
+                  'No active driver matches this vehicle’s licence class, schedule, and availability. Pick another vehicle or update driver licences.',
+              })}
             </Notice>
           ) : null}
 

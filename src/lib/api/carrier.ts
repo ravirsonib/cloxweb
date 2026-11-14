@@ -374,6 +374,8 @@ export type DriverBidEligibilityItem = {
   name: string;
   email: string | null;
   licenceClass: string | null;
+  /** Vehicle class used for licence gate (selected vehicle or job min class). */
+  vehicleClass?: string | null;
   isEligible: boolean;
   code: string | null;
   reason: string | null;
@@ -382,6 +384,8 @@ export type DriverBidEligibilityItem = {
 
 export type FleetBidCheckResult = {
   jobId: string;
+  vehicleId?: string | null;
+  vehicleClass?: string | null;
   jobWindow: {
     startAt: string;
     endAt: string;
@@ -411,9 +415,11 @@ export type DriverScheduleEntryItem = {
   };
 };
 
-export function checkFleetDriversBid(jobId: string) {
+export function checkFleetDriversBid(jobId: string, vehicleId?: string | null) {
   return http
-    .get<FleetBidCheckResult>(`/carrier/fleet/drivers/bid-check/${jobId}`)
+    .get<FleetBidCheckResult>(`/carrier/fleet/drivers/bid-check/${jobId}`, {
+      params: vehicleId ? { vehicleId } : undefined,
+    })
     .then((r) => r.data);
 }
 

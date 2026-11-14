@@ -48,6 +48,13 @@ export type JobSummary = {
   };
   openProposalCount?: number;
   editability?: { mode: JobEditMode; reason: string };
+  /** Present on sender list + detail — used for Pending payment vs Paid & locked chips. */
+  assignment?: {
+    id: string;
+    status: string;
+    lockedAt: string | null;
+    paidAndConfirmed: boolean;
+  } | null;
   trip?: { id: string; status: string; completedAt?: string | null } | null;
   proposals?: Array<{
     id: string;
@@ -80,12 +87,6 @@ export type JobSummary = {
     dgDocumentFilename?: string | null;
     netToCarrierCents: number;
   }>;
-  assignment?: {
-    id: string;
-    status: string;
-    lockedAt: string | null;
-    paidAndConfirmed: boolean;
-  } | null;
   payment?: {
     id: string;
     status: string;

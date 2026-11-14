@@ -3579,15 +3579,8 @@ export function JobDetailPage() {
       setAcceptMsg(
         `${res.mock ? t('jobs.paidAndLockedMock') : t('jobs.paidAndLocked')}${res.idempotentReplay ? ` · ${t('jobs.idempotentReplay')}` : ''}`,
       );
-    } else if (
-      (res.stripeStatus === 'requires_action' ||
-        res.stripeStatus === 'requires_payment_method' ||
-        res.stripeStatus === 'requires_confirmation' ||
-        res.paymentStatus === 'PENDING' ||
-        res.paymentStatus === 'REQUIRES_ACTION') &&
-      res.clientSecret &&
-      res.publishableKey
-    ) {
+    } else if (res.clientSecret && res.publishableKey) {
+      // Always open pay sheet on accept (saved/default card or new card) — never silent lock.
       setAcceptMsg(
         res.stripeStatus === 'requires_action'
           ? t('jobs.scaRequired')

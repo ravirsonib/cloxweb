@@ -573,3 +573,15 @@ export function optionalNumberFromInputSchema(max: number): z.ZodType<number | u
     z.number().int().positive().max(max),
   ]);
 }
+
+/**
+ * Same empty/NaN handling as {@link optionalNumberFromInputSchema} but allows
+ * non-negative decimals (e.g. $/km rates, AUD amounts) instead of positive ints.
+ */
+export function optionalDecimalFromInputSchema(max: number): z.ZodType<number | undefined> {
+  return z.union([
+    z.undefined(),
+    z.nan().transform(() => undefined),
+    z.number().min(0).max(max),
+  ]);
+}

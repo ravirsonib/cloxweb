@@ -26,6 +26,7 @@ import {
 } from '@/lib/api';
 import {
   Button,
+  ChoiceCheck,
   DataCardList,
   Field,
   FileInput,
@@ -42,8 +43,16 @@ import { LoadingBlock } from '@/components/status-blocks';
 import { cn } from '@/lib/cn';
 import { formatDollars } from '@/lib/currency';
 import { fileToCompressedJpegDataUrl } from '@/lib/image-data-url';
+import {
+  NHVR_FATIGUE_GUIDE_URL,
+  NHVR_VEHICLE_SAFETY_GUIDE_URL,
+  TRIP_SAFETY_CHECK_ITEMS,
+  hasAllTripSafetyCheckItems,
+  type TripSafetyCheckItemId,
+} from '@/lib/trip-safety-checklist';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
+import { ExternalLink } from 'lucide-react';
 
 /** Rough distance in metres (WGS84); enough for “near stop?” checks. */
 function distanceMeters(
@@ -253,6 +262,9 @@ export function DriverTripDetailPage() {
   const [massKg, setMassKg] = useState('');
   const [odometerStartKm, setOdometerStartKm] = useState('');
   const [odometerEndKm, setOdometerEndKm] = useState('');
+  const [safetyChecked, setSafetyChecked] = useState<
+    Partial<Record<TripSafetyCheckItemId, boolean>>
+  >({});
   const [showReport, setShowReport] = useState(false);
   const [reportKind, setReportKind] = useState<TripExceptionKind>('DRIVER_UNAVAILABLE');
   const [reportReason, setReportReason] = useState('');
@@ -309,6 +321,10 @@ export function DriverTripDetailPage() {
     setLocalSignaturePreview(null);
     setLocalPhotoPreviews([]);
   }, [previewStopId]);
+
+  useEffect(() => {
+    setSafetyChecked({});
+  }, [tripId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -430,10 +446,19 @@ export function DriverTripDetailPage() {
     onError: (e) => setMsg(getErrorDetail(e)),
   });
 
+  const safetyCheckedIds = TRIP_SAFETY_CHECK_ITEMS.map((item) => item.id).filter(
+    (id) => safetyChecked[id],
+  );
+  const allSafetyItemsChecked = hasAllTripSafetyCheckItems(safetyCheckedIds);
+
   const safety = useMutation({
-    mutationFn: (passed: boolean) => tripSafetyCheck(tripId, passed),
-    onSuccess: async () => {
+    mutationFn: (passed: boolean) =>
+      tripSafetyCheck(tripId, passed, {
+        checkedItemIds: safetyCheckedIds,
+      }),
+    onSuccess: async (_data, passed) => {
       setMsg(t('trips.msgSafetyUpdated'));
+      if (passed) setSafetyChecked({});
       await refresh();
     },
     onError: (e) => setMsg(getErrorDetail(e)),
@@ -1033,34 +1058,94 @@ export function DriverTripDetailPage() {
                 </StatusPill>
               ) : null}
             </div>
+            <p className="mt-1 text-xs text-clox-mute">
+              {t('trips.safetyChecklistHint', {
+                defaultValue:
+                  'Confirm each NHVR-aligned walk-around item. All items are required to pass Gate A.',
+              })}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+              <a
+                href={NHVR_VEHICLE_SAFETY_GUIDE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 font-medium text-clox-orange hover:underline"
+              >
+                {t('trips.nhvrVehicleGuide', {
+                  defaultValue: 'NHVR vehicle safety guide',
+                })}
+                <ExternalLink className="h-3 w-3" aria-hidden />
+              </a>
+              <a
+                href={NHVR_FATIGUE_GUIDE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 font-medium text-clox-orange hover:underline"
+              >
+                {t('trips.nhvrFatigueGuide', {
+                  defaultValue: 'NHVR fatigue / work-rest rules',
+                })}
+                <ExternalLink className="h-3 w-3" aria-hidden />
+              </a>
+            </div>
             {!tripData.gates.safetyOk ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="cta"
-                  disabled={safety.isPending}
-                  onClick={() => safety.mutate(true)}
-                >
-                  {t('trips.passSafety')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  disabled={safety.isPending}
-                  onClick={() => {
-                    void (async () => {
-                      const ok = await confirm({
-                        title: t('confirm.safetyFailTitle'),
-                        description: t('confirm.safetyFailBody'),
-                        confirmLabel: t('trips.failLockVehicle'),
-                        tone: 'destructive',
-                      });
-                      if (ok) safety.mutate(false);
-                    })();
-                  }}
-                >
-                  {t('trips.failLockVehicle')}
-                </Button>
+              <div className="mt-3 space-y-2">
+                {TRIP_SAFETY_CHECK_ITEMS.map((item) => (
+                  <ChoiceCheck
+                    key={item.id}
+                    checked={Boolean(safetyChecked[item.id])}
+                    disabled={safety.isPending}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setSafetyChecked((prev) => ({
+                        ...prev,
+                        [item.id]: checked,
+                      }));
+                    }}
+                  >
+                    <span className="font-medium text-clox-ink">
+                      {t(item.labelKey, { defaultValue: item.defaultLabel })}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] text-clox-mute">
+                      {t(item.hintKey, { defaultValue: item.defaultHint })}
+                    </span>
+                  </ChoiceCheck>
+                ))}
+                {!allSafetyItemsChecked ? (
+                  <p className="text-xs text-clox-mute">
+                    {t('trips.safetyItemsRequired', {
+                      defaultValue: 'Tick every item before you can pass the safety check.',
+                    })}
+                  </p>
+                ) : null}
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button
+                    type="button"
+                    variant="cta"
+                    disabled={safety.isPending || !allSafetyItemsChecked}
+                    onClick={() => safety.mutate(true)}
+                  >
+                    {t('trips.passSafety')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={safety.isPending}
+                    onClick={() => {
+                      void (async () => {
+                        const ok = await confirm({
+                          title: t('confirm.safetyFailTitle'),
+                          description: t('confirm.safetyFailBody'),
+                          confirmLabel: t('trips.failLockVehicle'),
+                          tone: 'destructive',
+                        });
+                        if (ok) safety.mutate(false);
+                      })();
+                    }}
+                  >
+                    {t('trips.failLockVehicle')}
+                  </Button>
+                </div>
               </div>
             ) : (
               <p className="mt-1 text-xs text-clox-mute">

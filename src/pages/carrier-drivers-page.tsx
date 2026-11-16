@@ -1,22 +1,27 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { Ban, FileText, RotateCcw, Search, Send, Trash2 } from 'lucide-react';
 import { z } from 'zod';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
+import { cn } from '@/lib/cn';
 import {
   ActionGroup,
   Button,
   DataCardList,
   DataTable,
+  DropdownMenu,
+  type DropdownMenuItem,
   EmailLink,
   Field,
   Notice,
   PaginationBar,
   ResponsiveDataView,
   Select,
+  StatusFilterChips,
   StatusPill,
   dataCardClassName,
   useClientPagination,
@@ -46,6 +51,7 @@ import {
   isDatetimeLocalNotInPast,
   minDatetimeLocalValue,
 } from '@/lib/datetime';
+import { countByBucket, filterAndSortByBucket } from '@/lib/status-list';
 
 type InviteForm = {
   name: string;
@@ -88,6 +94,54 @@ function activityStatusTone(activity: string): StatusTone {
   }
 }
 
+function licenceExpiryTone(expiry: string | null): StatusTone {
+  if (!expiry) return 'warn';
+  const ms = new Date(expiry).getTime() - Date.now();
+  if (Number.isNaN(ms) || ms <= 0) return 'danger';
+  if (ms <= 30 * 24 * 60 * 60 * 1000) return 'warn';
+  return 'ok';
+}
+
+/** Summary strip buckets — tap-to-filter overview distinct from the raw status dropdown. */
+type DriverSummaryBucket =
+  | 'onTrip'
+  | 'expiring'
+  | 'pendingReview'
+  | 'active'
+  | 'parked'
+  | 'other';
+type DriverSummaryFilter = 'all' | DriverSummaryBucket;
+
+const DRIVER_SUMMARY_FILTERS = [
+  'all',
+  'active',
+  'pendingReview',
+  'expiring',
+  'onTrip',
+  'parked',
+] as const satisfies readonly DriverSummaryFilter[];
+
+const DRIVER_SUMMARY_SORT: Record<DriverSummaryBucket, number> = {
+  onTrip: 0,
+  expiring: 1,
+  pendingReview: 2,
+  active: 3,
+  parked: 4,
+  other: 5,
+};
+
+function driverSummaryBucket(row: CarrierDriverListItem): DriverSummaryBucket {
+  if (row.currentTrip) return 'onTrip';
+  if (row.status === 'SUSPENDED' || row.status === 'DISABLED') return 'parked';
+  if (row.status === 'PENDING_REVIEW') return 'pendingReview';
+  if (row.status === 'ACTIVE') {
+    const tone = licenceExpiryTone(row.licenceExpiry);
+    if (tone === 'warn' || tone === 'danger') return 'expiring';
+    return 'active';
+  }
+  return 'other';
+}
+
 export function CarrierDriversPage() {
   const { t } = useTranslation('common');
   const toast = useToast();
@@ -100,6 +154,9 @@ export function CarrierDriversPage() {
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [summaryFilter, setSummaryFilter] = useState<DriverSummaryFilter>('all');
   const [lastInvite, setLastInvite] = useState<{
     inviteUrl: string;
     debugToken?: string;
@@ -374,12 +431,45 @@ export function CarrierDriversPage() {
   });
 
   const items = driversQuery.data?.items ?? [];
+
+  const summaryCounts = useMemo(
+    () => countByBucket(items, driverSummaryBucket, DRIVER_SUMMARY_FILTERS),
+    [items],
+  );
+
+  const filteredItems = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const bySearchAndStatus = items.filter((row) => {
+      if (statusFilter && row.status !== statusFilter) return false;
+      if (!query) return true;
+      const haystack = [row.user.name, row.user.email, row.licenceNo, row.licenceClass]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+    return filterAndSortByBucket(
+      bySearchAndStatus,
+      driverSummaryBucket,
+      summaryFilter,
+      DRIVER_SUMMARY_SORT,
+    );
+  }, [items, search, statusFilter, summaryFilter]);
+
+  const hasActiveFilters = Boolean(search.trim()) || statusFilter !== '' || summaryFilter !== 'all';
+
+  function clearFilters() {
+    setSearch('');
+    setStatusFilter('');
+    setSummaryFilter('all');
+  }
+
   const {
     page,
     setPage,
     totalPages,
     pagedItems: pagedDrivers,
-  } = useClientPagination(items, 10);
+  } = useClientPagination(filteredItems, 10);
   const inviting = inviteMutation.isPending;
   const busy =
     inviting ||
@@ -468,14 +558,6 @@ export function CarrierDriversPage() {
     );
   }
 
-  function licenceExpiryTone(expiry: string | null): StatusTone {
-    if (!expiry) return 'warn';
-    const ms = new Date(expiry).getTime() - Date.now();
-    if (Number.isNaN(ms) || ms <= 0) return 'danger';
-    if (ms <= 30 * 24 * 60 * 60 * 1000) return 'warn';
-    return 'ok';
-  }
-
   function renderLicenceExpiry(row: CarrierDriverListItem) {
     if (!row.licenceExpiry) {
       return <StatusPill tone="warn">{t('drivers.licenceMissing')}</StatusPill>;
@@ -502,8 +584,40 @@ export function CarrierDriversPage() {
     }
   }
 
+  /**
+   * Row actions: the frequent, state-critical actions (documents, reactivate,
+   * resend invite) stay visible and labeled; Disable/Delete collapse into a
+   * single overflow "Actions" menu so dangerous actions aren't one tap away.
+   */
   function renderActions(row: CarrierDriverListItem) {
     const isSuspended = row.status === 'SUSPENDED' || row.status === 'DISABLED';
+    const canDisable = !isSuspended && row.status !== 'INVITED';
+
+    const overflowItems: DropdownMenuItem[] = [
+      {
+        key: 'disable',
+        label: t('drivers.disable'),
+        icon: Ban,
+        tone: 'destructive',
+        hidden: !canDisable,
+        disabled: busy,
+        onSelect: () => {
+          setActionError(null);
+          setReason('');
+          setNote('');
+          setDisableTarget(row);
+        },
+      },
+      {
+        key: 'delete',
+        label: t('drivers.delete'),
+        icon: Trash2,
+        tone: 'destructive',
+        disabled: busy,
+        onSelect: () => void onDelete(row),
+      },
+    ];
+
     return (
       <ActionGroup className="max-w-full flex-wrap sm:flex-nowrap">
         <Button
@@ -513,16 +627,18 @@ export function CarrierDriversPage() {
           disabled={busy}
           onClick={() => setDocsTarget(row)}
         >
+          <FileText className="h-4 w-4" aria-hidden />
           {t('drivers.documents')}
         </Button>
         {isSuspended ? (
           <Button
             type="button"
-            variant="secondary"
+            variant="primary"
             size="sm"
             disabled={busy}
             onClick={() => void onReactivate(row)}
           >
+            <RotateCcw className="h-4 w-4" aria-hidden />
             {t('drivers.reactivate')}
           </Button>
         ) : null}
@@ -534,34 +650,16 @@ export function CarrierDriversPage() {
             disabled={busy}
             onClick={() => resendMutation.mutate(row.id)}
           >
+            <Send className="h-4 w-4" aria-hidden />
             {t('carrierOnboarding.resend')}
           </Button>
         ) : null}
-        {!isSuspended && row.status !== 'INVITED' ? (
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            disabled={busy}
-            onClick={() => {
-              setActionError(null);
-              setReason('');
-              setNote('');
-              setDisableTarget(row);
-            }}
-          >
-            {t('drivers.disable')}
-          </Button>
-        ) : null}
-        <Button
-          type="button"
-          variant={isSuspended ? 'destructive' : 'ghost'}
+        <DropdownMenu
+          items={overflowItems}
+          label={t('drivers.moreActions', { defaultValue: 'More actions' })}
           size="sm"
           disabled={busy}
-          onClick={() => void onDelete(row)}
-        >
-          {t('drivers.delete')}
-        </Button>
+        />
       </ActionGroup>
     );
   }
@@ -636,30 +734,47 @@ export function CarrierDriversPage() {
         </div>
       </div>
 
-      <div className="mt-4 mb-6 flex border-b border-clox-border">
+      <div
+        className="mt-4 mb-6 inline-flex flex-wrap rounded-clox-sm border border-clox-border bg-clox-surface p-0.5"
+        role="tablist"
+        aria-label={t('drivers.sectionsLabel', { defaultValue: 'Drivers sections' })}
+      >
         <button
           type="button"
-          className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
+          role="tab"
+          aria-selected={activeTab === 'drivers'}
+          className={cn(
+            'rounded-[5px] px-4 py-2 text-sm font-semibold transition',
             activeTab === 'drivers'
-              ? 'border-clox-orange text-clox-ink font-bold'
-              : 'border-transparent text-clox-mute hover:text-clox-ink'
-          }`}
+              ? 'bg-clox-navy-ink text-white shadow-sm'
+              : 'text-clox-mute hover:bg-clox-surface-alt hover:text-clox-ink',
+          )}
           onClick={() => setActiveTab('drivers')}
         >
           {t('drivers.tabDrivers', { defaultValue: 'All Drivers' })} ({items.length})
         </button>
         <button
           type="button"
-          className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${
+          role="tab"
+          aria-selected={activeTab === 'schedule'}
+          className={cn(
+            'flex items-center gap-1.5 rounded-[5px] px-4 py-2 text-sm font-semibold transition',
             activeTab === 'schedule'
-              ? 'border-clox-orange text-clox-ink font-bold'
-              : 'border-transparent text-clox-mute hover:text-clox-ink'
-          }`}
+              ? 'bg-clox-navy-ink text-white shadow-sm'
+              : 'text-clox-mute hover:bg-clox-surface-alt hover:text-clox-ink',
+          )}
           onClick={() => setActiveTab('schedule')}
         >
           {t('drivers.tabSchedule', { defaultValue: 'Schedule & Time-Off' })}
           {pendingSchedulesCount > 0 ? (
-            <span className="rounded-full bg-amber-500/20 px-1.5 py-0.2 text-xs font-bold text-amber-600 dark:text-amber-400">
+            <span
+              className={cn(
+                'rounded-full px-1.5 py-0.5 text-[11px] font-bold leading-none',
+                activeTab === 'schedule'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-amber-500/20 text-amber-600 dark:text-amber-400',
+              )}
+            >
               {pendingSchedulesCount}
             </span>
           ) : null}
@@ -668,6 +783,58 @@ export function CarrierDriversPage() {
 
       {activeTab === 'drivers' ? (
         <>
+          {items.length > 0 ? (
+            <StatusFilterChips
+              options={DRIVER_SUMMARY_FILTERS}
+              value={summaryFilter}
+              counts={summaryCounts}
+              onChange={setSummaryFilter}
+              getLabel={(key) => t(`drivers.summary.${key}`)}
+              aria-label={t('drivers.summaryLabel', { defaultValue: 'Driver overview filters' })}
+            />
+          ) : null}
+
+          {items.length > 0 ? (
+            <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_14rem]">
+              <label className="mb-0 block">
+                <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
+                  {t('search')}
+                </span>
+                <div className="relative">
+                  <Search
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-clox-faint"
+                    aria-hidden
+                  />
+                  <input
+                    className="clox-field-control pl-9"
+                    placeholder={t('drivers.toolbarSearchPlaceholder', {
+                      defaultValue: 'Search by name, email, or licence…',
+                    })}
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                  />
+                </div>
+              </label>
+              <Select
+                className="mb-0"
+                label={t('drivers.colStatus')}
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+              >
+                <option value="">
+                  {t('drivers.toolbarAllStatuses', { defaultValue: 'All statuses' })}
+                </option>
+                {(['INVITED', 'PENDING_REVIEW', 'ACTIVE', 'SUSPENDED', 'DISABLED'] as const).map(
+                  (status) => (
+                    <option key={status} value={status}>
+                      {statusLabel(status)}
+                    </option>
+                  ),
+                )}
+              </Select>
+            </div>
+          ) : null}
+
           {actionError ? (
             <Notice tone="error" className="mt-4">
               {actionError}
@@ -756,7 +923,33 @@ export function CarrierDriversPage() {
       {!driversQuery.isLoading && !driversQuery.isError ? (
         items.length === 0 ? (
           <div className="mt-6">
-            <EmptyBlock title={t('drivers.emptyTitle')} description={t('drivers.emptyHint')} />
+            <EmptyBlock
+              title={t('drivers.emptyTitle')}
+              description={t('drivers.emptyHint')}
+              action={
+                <Button type="button" variant="primary" onClick={() => setShowForm(true)}>
+                  {t('drivers.inviteDriver')}
+                </Button>
+              }
+            />
+          </div>
+        ) : filteredItems.length === 0 ? (
+          <div className="mt-6">
+            <EmptyBlock
+              title={t('drivers.emptyFilteredTitle', {
+                defaultValue: 'No drivers match your filters.',
+              })}
+              description={t('drivers.emptyFilteredHint', {
+                defaultValue: 'Try clearing the search or filter to see your full driver list.',
+              })}
+              action={
+                hasActiveFilters ? (
+                  <Button type="button" variant="secondary" onClick={clearFilters}>
+                    {t('drivers.clearFilters', { defaultValue: 'Clear filters' })}
+                  </Button>
+                ) : undefined
+              }
+            />
           </div>
         ) : (
           <>
@@ -879,6 +1072,11 @@ export function CarrierDriversPage() {
               description={t('drivers.scheduleEmptyDesc', {
                 defaultValue: 'No scheduled leaves, rostered off days, or time-off requests recorded for your fleet.',
               })}
+              action={
+                <Button type="button" variant="primary" onClick={() => setShowScheduleModal(true)}>
+                  {t('drivers.btnAddSchedule', { defaultValue: '+ Schedule Block-out' })}
+                </Button>
+              }
             />
           ) : (
             <>

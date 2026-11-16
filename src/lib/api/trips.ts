@@ -167,9 +167,18 @@ export function getDriverTrip(tripId: string) {
   return http.get<TripSummary>(`/trips/${tripId}`).then((r) => r.data);
 }
 
-export function tripSafetyCheck(tripId: string, passed: boolean) {
+export function tripSafetyCheck(
+  tripId: string,
+  passed: boolean,
+  options?: { checkedItemIds?: string[]; notes?: string },
+) {
   return http
-    .post<TripSummary>(`/trips/${tripId}/safety-check`, { passed, online: true })
+    .post<TripSummary>(`/trips/${tripId}/safety-check`, {
+      passed,
+      online: true,
+      ...(options?.checkedItemIds ? { checkedItemIds: options.checkedItemIds } : {}),
+      ...(options?.notes ? { notes: options.notes } : {}),
+    })
     .then((r) => r.data);
 }
 

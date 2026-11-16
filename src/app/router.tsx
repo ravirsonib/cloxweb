@@ -19,6 +19,7 @@ import { AccountPage } from '@/pages/account-page';
 import { CarrierRegisterPage } from '@/pages/carrier-register-page';
 import { CarrierOnboardingPage } from '@/pages/carrier-onboarding-page';
 import { CarrierFleetPage } from '@/pages/carrier-fleet-page';
+import { CarrierFleetAnalyticsPage } from '@/pages/carrier-fleet-analytics-page';
 import { CarrierDriversPage } from '@/pages/carrier-drivers-page';
 import { DriverInvitePage } from '@/pages/driver-invite-page';
 import { DriverOnboardingPage } from '@/pages/driver-onboarding-page';
@@ -42,6 +43,7 @@ import { OpsExceptionsPage } from '@/pages/ops-exceptions-page';
 import { OpsDisputeDetailPage, OpsDisputesPage } from '@/pages/ops-disputes-page';
 import { OpsTeamDetailPage, OpsTeamPage } from '@/pages/ops-team-page';
 import { DriverTripsPage, DriverTripDetailPage } from '@/pages/driver-trips-page';
+import { DriverSchedulePage } from '@/pages/driver-schedule-page';
 import { SenderTrackPage } from '@/pages/sender-track-page';
 import { SenderRegisterPage } from '@/pages/sender-register-page';
 import { SenderOnboardingPage } from '@/pages/sender-onboarding-page';
@@ -313,6 +315,14 @@ export function AppRouter() {
           }
         />
         <Route
+          path="/carrier/fleet/analytics"
+          element={
+            <RequireRoles roles={[AppRole.TRANSPORT_COMPANY]}>
+              <CarrierFleetAnalyticsPage />
+            </RequireRoles>
+          }
+        />
+        <Route
           path="/carrier/drivers"
           element={
             <RequireRoles roles={[AppRole.TRANSPORT_COMPANY]}>
@@ -441,6 +451,14 @@ export function AppRouter() {
           element={
             <RequireRoles roles={[AppRole.DRIVER]}>
               <DriverTripDetailPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/driver/schedule"
+          element={
+            <RequireRoles roles={[AppRole.DRIVER]}>
+              <DriverSchedulePage />
             </RequireRoles>
           }
         />

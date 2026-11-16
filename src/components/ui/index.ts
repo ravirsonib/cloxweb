@@ -39,6 +39,7 @@ export { StepChips, type StepChipItem } from './step-chips';
 export { ToastProvider, useToast, type ToastInput, type ToastTone } from './toast';
 export { RoleBadge } from './role-badge';
 export { StatusFilterChips } from './status-filter-chips';
+export { DropdownMenu, type DropdownMenuItem, type DropdownMenuProps } from './dropdown-menu';
 export { StatusPill, type StatusPillTone } from './status-pill';
 export {
   Tooltip,

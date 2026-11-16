@@ -1,5 +1,10 @@
 import { http } from '@/lib/http';
 import { createHttpClient, toApiError } from '@/lib/http/client';
+import type { DriverScheduleEntryItem } from './carrier';
+
+// Re-exported so callers can `import { type DriverScheduleEntryItem } from '@/lib/api/driver'`
+// without duplicating the shape already defined for the carrier fleet schedule view.
+export type { DriverScheduleEntryItem } from './carrier';
 
 const publicHttp = createHttpClient();
 publicHttp.interceptors.response.use(
@@ -85,5 +90,43 @@ export function getDriverAssignability() {
     .get<{ canBeAssigned: boolean; reason: string | null; goNoGo: DriverOnboarding['goNoGo'] }>(
       '/driver/assignability',
     )
+    .then((r) => r.data);
+}
+
+/** Matches `driverScheduleRequestSchema` (api/src/shared/types.ts). */
+export type DriverTimeOffType =
+  | 'ANNUAL_LEAVE'
+  | 'MEDICAL_LEAVE'
+  | 'ROSTERED_OFF'
+  | 'PERSONAL'
+  | 'OVERTIME_AVAILABLE';
+
+export type DriverTimeOffRequestInput = {
+  startAt: string;
+  endAt: string;
+  type?: DriverTimeOffType;
+  isAllDay?: boolean;
+  reason?: string;
+  notes?: string;
+};
+
+/** Own schedule / time-off entries for the signed-in driver. */
+export function getMyDriverSchedule(from?: string, to?: string) {
+  return http
+    .get<DriverScheduleEntryItem[]>('/driver/schedule', {
+      params: { from, to },
+    })
+    .then((r) => r.data);
+}
+
+/** Request time-off / set an availability window for the signed-in driver. */
+export function requestDriverTimeOff(payload: DriverTimeOffRequestInput) {
+  return http.post<DriverScheduleEntryItem>('/driver/schedule', payload).then((r) => r.data);
+}
+
+/** Cancel a pending or future schedule entry owned by the signed-in driver. */
+export function cancelDriverSchedule(id: string) {
+  return http
+    .delete<DriverScheduleEntryItem>(`/driver/schedule/${id}`)
     .then((r) => r.data);
 }

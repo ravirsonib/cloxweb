@@ -3,15 +3,21 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Archive,
   Ban,
+  ChevronDown,
+  ChevronUp,
   Eye,
   FileWarning,
+  IdCard,
   Loader2,
   Pencil,
+  Rocket,
   RotateCcw,
+  Search,
   Trash2,
   Upload,
+  Wrench,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm, type Resolver } from 'react-hook-form';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -23,6 +29,8 @@ import {
   ChoiceCheck,
   DataCardList,
   DataTable,
+  DropdownMenu,
+  type DropdownMenuItem,
   Field,
   FileInput,
   IconButton,
@@ -31,6 +39,7 @@ import {
   PaginationBar,
   ResponsiveDataView,
   Select,
+  StatusFilterChips,
   StatusPill,
   ViewModeToggle,
   dataCardClassName,
@@ -39,25 +48,32 @@ import {
   useDataViewMode,
   useToast,
 } from '@/components/ui';
+import { countByBucket, filterAndSortByBucket } from '@/lib/status-list';
 import {
   addCarrierVehicle,
   deleteCarrierVehicle,
   disableCarrierVehicle,
   getCarrierOnboarding,
   getErrorDetail,
+  getFleetPlus,
   listCarrierVehicles,
+  logVehicleService,
   openDocumentContent,
   reactivateCarrierVehicle,
   retireCarrierVehicle,
+  startFleetPlusTrial,
   updateCarrierCapabilities,
   updateCarrierVehicle,
+  updateVehicleCostProfile,
   uploadAndConfirmDocument,
   getVehicleClassesMeta,
   type CarrierVehicleListItem,
+  type VehicleCostProfileInput,
 } from '@/lib/api';
 import { formatCalendarDate } from '@/lib/datetime';
 import { cn } from '@/lib/cn';
 import {
+  optionalDecimalFromInputSchema,
   optionalNumberFromInputSchema,
   suggestedGvmKgForClass,
   suggestedTareKgForClass,
@@ -95,6 +111,47 @@ function defaultVehicleFormValues(): VehicleForm {
   };
 }
 
+/** Fleet+ cost & service profile — progressive disclosure accordion on the edit form. */
+type CostProfileForm = {
+  fuelType: string;
+  serviceIntervalKm?: number;
+  lastServiceOdometerKm?: number;
+  maintenanceRatePerKm?: number;
+  costProfileUnit: '' | 'PER_KM' | 'PER_HR';
+  costProfileRate?: number;
+  purchasePriceAud?: number;
+  residualValueAud?: number;
+  lifecycleMonths?: number;
+};
+
+function defaultCostProfileFormValues(row?: CarrierVehicleListItem | null): CostProfileForm {
+  return {
+    fuelType: row?.fuelType ?? '',
+    serviceIntervalKm: row?.serviceIntervalKm ?? undefined,
+    lastServiceOdometerKm: row?.lastServiceOdometerKm ?? undefined,
+    maintenanceRatePerKm: row?.maintenanceRatePerKm ?? undefined,
+    costProfileUnit: (row?.costProfileUnit as CostProfileForm['costProfileUnit']) ?? '',
+    costProfileRate: row?.costProfileRate ?? undefined,
+    purchasePriceAud: row?.purchasePriceAud ?? undefined,
+    residualValueAud: row?.residualValueAud ?? undefined,
+    lifecycleMonths: row?.lifecycleMonths ?? undefined,
+  };
+}
+
+function toCostProfilePayload(values: CostProfileForm): VehicleCostProfileInput {
+  return {
+    fuelType: values.fuelType.trim() ? values.fuelType.trim() : null,
+    serviceIntervalKm: values.serviceIntervalKm ?? null,
+    lastServiceOdometerKm: values.lastServiceOdometerKm ?? null,
+    maintenanceRatePerKm: values.maintenanceRatePerKm ?? null,
+    costProfileUnit: values.costProfileUnit || null,
+    costProfileRate: values.costProfileRate ?? null,
+    purchasePriceAud: values.purchasePriceAud ?? null,
+    residualValueAud: values.residualValueAud ?? null,
+    lifecycleMonths: values.lifecycleMonths ?? null,
+  };
+}
+
 async function uploadVehicleRwc(companyId: string, vehicleId: string, file: File) {
   await uploadAndConfirmDocument({
     companyId,
@@ -112,6 +169,20 @@ async function uploadVehicleDgDoc(companyId: string, vehicleId: string, file: Fi
     docType: 'DG_LICENCE',
     file,
     filenameFallback: 'dg-licence',
+  });
+}
+
+// TODO(backend): carrier.service.ts listVehicles() doesn't return a per-vehicle
+// VEHICLE_REGO document id / compliance state yet (unlike RWC + DG_LICENCE), so
+// there is no badge/"View" action for it below — only upload. Wire a
+// `compliance.rego` field (Wave 2 fleet schema) to show status + enable "View".
+async function uploadVehicleRego(companyId: string, vehicleId: string, file: File) {
+  await uploadAndConfirmDocument({
+    companyId,
+    vehicleId,
+    docType: 'VEHICLE_REGO',
+    file,
+    filenameFallback: 'vehicle-rego',
   });
 }
 
@@ -153,6 +224,51 @@ function activityStatusTone(activity: string): StatusTone {
   }
 }
 
+/** Summary strip buckets — tap-to-filter overview distinct from the raw status dropdown. */
+type FleetSummaryBucket =
+  | 'onTrip'
+  | 'expiring'
+  | 'pendingReview'
+  | 'active'
+  | 'parked'
+  | 'other';
+type FleetSummaryFilter = 'all' | FleetSummaryBucket;
+
+const FLEET_SUMMARY_FILTERS = [
+  'all',
+  'active',
+  'pendingReview',
+  'expiring',
+  'onTrip',
+  'parked',
+] as const satisfies readonly FleetSummaryFilter[];
+
+const FLEET_SUMMARY_SORT: Record<FleetSummaryBucket, number> = {
+  onTrip: 0,
+  expiring: 1,
+  pendingReview: 2,
+  active: 3,
+  parked: 4,
+  other: 5,
+};
+
+function fleetRwcNeedsAttention(row: CarrierVehicleListItem): boolean {
+  const state = row.compliance?.rwc?.state;
+  return state === 'EXPIRING' || state === 'EXPIRED' || state === 'MISSING';
+}
+
+function fleetSummaryBucket(row: CarrierVehicleListItem): FleetSummaryBucket {
+  if (row.currentTrip) return 'onTrip';
+  if (row.status === 'RETIRED' || row.status === 'DRAFT') {
+    return row.status === 'RETIRED' ? 'parked' : 'other';
+  }
+  if (fleetRwcNeedsAttention(row)) return 'expiring';
+  if (row.status === 'PENDING_REVIEW') return 'pendingReview';
+  if (row.status === 'SUSPENDED') return 'parked';
+  if (row.status === 'ACTIVE') return 'active';
+  return 'other';
+}
+
 function rwcTone(state: string): StatusTone {
   switch (state) {
     case 'OK':
@@ -187,8 +303,10 @@ export function CarrierFleetPage() {
   const [editingCaps, setEditingCaps] = useState<string[]>([]);
   const [rwcFormError, setRwcFormError] = useState<string | null>(null);
   const [uploadingVehicleId, setUploadingVehicleId] = useState<string | null>(null);
-  const [uploadingDgVehicleId, setUploadingDgVehicleId] = useState<string | null>(null);
   const [openingDocId, setOpeningDocId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [summaryFilter, setSummaryFilter] = useState<FleetSummaryFilter>('all');
   const [reasonTarget, setReasonTarget] = useState<{
     row: CarrierVehicleListItem;
     action: ReasonAction;
@@ -196,6 +314,12 @@ export function CarrierFleetPage() {
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [costProfileOpen, setCostProfileOpen] = useState(false);
+  const [serviceLogTarget, setServiceLogTarget] = useState<CarrierVehicleListItem | null>(null);
+  const [serviceOdometerKm, setServiceOdometerKm] = useState('');
+  const [serviceNotes, setServiceNotes] = useState('');
+  const [clearMaintenanceChecked, setClearMaintenanceChecked] = useState(true);
+  const [serviceLogError, setServiceLogError] = useState<string | null>(null);
   const lastSuggestedClass = useRef<string | null>(null);
 
   const vehiclesQuery = useQuery({
@@ -213,6 +337,13 @@ export function CarrierFleetPage() {
     staleTime: 60_000,
   });
   const companyId = companyQuery.data?.company.id ?? null;
+
+  const fleetPlusQuery = useQuery({
+    queryKey: ['carrier', 'fleet-plus'],
+    queryFn: () => getFleetPlus(),
+    staleTime: 30_000,
+  });
+  const fleetPlusEntitled = fleetPlusQuery.data?.entitled ?? false;
 
   const schema = z
     .object({
@@ -277,6 +408,23 @@ export function CarrierFleetPage() {
   const capacityLocked = Boolean(editingVehicle?.currentTrip);
   const isEditing = editingVehicle != null;
 
+  const costProfileSchema = z.object({
+    fuelType: z.string().trim().max(40).optional().or(z.literal('')),
+    serviceIntervalKm: optionalNumberFromInputSchema(500_000),
+    lastServiceOdometerKm: optionalNumberFromInputSchema(10_000_000),
+    maintenanceRatePerKm: optionalDecimalFromInputSchema(100),
+    costProfileUnit: z.union([z.literal(''), z.literal('PER_KM'), z.literal('PER_HR')]),
+    costProfileRate: optionalDecimalFromInputSchema(10_000),
+    purchasePriceAud: optionalDecimalFromInputSchema(10_000_000),
+    residualValueAud: optionalDecimalFromInputSchema(10_000_000),
+    lifecycleMonths: optionalNumberFromInputSchema(600),
+  });
+
+  const costProfileForm = useForm<CostProfileForm>({
+    resolver: zodResolver(costProfileSchema) as Resolver<CostProfileForm>,
+    defaultValues: defaultCostProfileFormValues(null),
+  });
+
   const invalidate = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['carrier', 'vehicles'] }),
@@ -297,6 +445,8 @@ export function CarrierFleetPage() {
     setHasCurtainsider(false);
     setRwcFormError(null);
     setShowForm(false);
+    setCostProfileOpen(false);
+    costProfileForm.reset(defaultCostProfileFormValues(null));
   }
 
   function openAddForm() {
@@ -331,6 +481,8 @@ export function CarrierFleetPage() {
     setDgFile(null);
     setRwcFormError(null);
     setShowForm(true);
+    setCostProfileOpen(false);
+    costProfileForm.reset(defaultCostProfileFormValues(row));
   }
 
   const addMutation = useMutation({
@@ -447,16 +599,33 @@ export function CarrierFleetPage() {
       if (!companyId) {
         throw new Error(getErrorDetail(companyQuery.error) || t('loading'));
       }
-      setUploadingDgVehicleId(vehicleId);
       await uploadVehicleDgDoc(companyId, vehicleId, file);
     },
     onSuccess: async () => {
-      setUploadingDgVehicleId(null);
-        toast.success(t('fleet.dgUploadSuccess'));
+      toast.success(t('fleet.dgUploadSuccess'));
       await invalidate();
     },
     onError: (error) => {
-      setUploadingDgVehicleId(null);
+      setActionError(getErrorDetail(error));
+    },
+  });
+
+  const regoUploadMutation = useMutation({
+    mutationFn: async ({ vehicleId, file }: { vehicleId: string; file: File }) => {
+      if (!companyId) {
+        throw new Error(getErrorDetail(companyQuery.error) || t('loading'));
+      }
+      await uploadVehicleRego(companyId, vehicleId, file);
+    },
+    onSuccess: async () => {
+      toast.success(
+        t('fleet.regoUploadSuccess', {
+          defaultValue: 'Vehicle registration document uploaded.',
+        }),
+      );
+      await invalidate();
+    },
+    onError: (error) => {
       setActionError(getErrorDetail(error));
     },
   });
@@ -502,18 +671,110 @@ export function CarrierFleetPage() {
     onError: (error) => setActionError(getErrorDetail(error)),
   });
 
+  const trialMutation = useMutation({
+    mutationFn: () => startFleetPlusTrial(),
+    onSuccess: async () => {
+      toast.success(t('fleetPlus.startTrialSuccess', { defaultValue: 'Fleet+ trial started.' }));
+      await queryClient.invalidateQueries({ queryKey: ['carrier', 'fleet-plus'] });
+    },
+    onError: (error) => toast.error(getErrorDetail(error)),
+  });
+
+  const costProfileMutation = useMutation({
+    mutationFn: (values: CostProfileForm) => {
+      if (!editingVehicle) throw new Error(t('loading'));
+      return updateVehicleCostProfile(editingVehicle.id, toCostProfilePayload(values));
+    },
+    onSuccess: async () => {
+      toast.success(
+        t('fleetPlus.costProfileSaved', { defaultValue: 'Cost & service profile updated.' }),
+      );
+      await invalidate();
+    },
+    onError: (error) => toast.error(getErrorDetail(error)),
+  });
+
+  const serviceLogMutation = useMutation({
+    mutationFn: (payload: { odometerKm: number; notes?: string; clearMaintenance: boolean }) => {
+      if (!serviceLogTarget) throw new Error(t('loading'));
+      return logVehicleService(serviceLogTarget.id, payload);
+    },
+    onSuccess: async () => {
+      setServiceLogTarget(null);
+      setServiceLogError(null);
+      toast.success(t('fleetPlus.serviceLogged', { defaultValue: 'Service logged.' }));
+      await invalidate();
+    },
+    onError: (error) => setServiceLogError(getErrorDetail(error)),
+  });
+
+  function openServiceLog(row: CarrierVehicleListItem) {
+    setServiceLogTarget(row);
+    setServiceOdometerKm(row.lastServiceOdometerKm != null ? String(row.lastServiceOdometerKm) : '');
+    setServiceNotes('');
+    setClearMaintenanceChecked(row.status === 'MAINTENANCE');
+    setServiceLogError(null);
+  }
+
+  function submitServiceLog() {
+    const odometerKm = Number(serviceOdometerKm);
+    if (!serviceOdometerKm.trim() || !Number.isFinite(odometerKm) || odometerKm < 0) {
+      setServiceLogError(t('fleetPlus.odometerKmRequired', { defaultValue: 'Enter a valid odometer reading (km).' }));
+      return;
+    }
+    setServiceLogError(null);
+    serviceLogMutation.mutate({
+      odometerKm: Math.round(odometerKm),
+      notes: serviceNotes.trim() || undefined,
+      clearMaintenance: clearMaintenanceChecked,
+    });
+  }
+
   const items = vehiclesQuery.data?.items ?? [];
-  const {
-    page,
-    setPage,
-    totalPages,
-    pagedItems: pagedVehicles,
-  } = useClientPagination(items, 10);
   const missingRwcCount = items.filter((row) => {
     if (row.status === 'RETIRED' || row.status === 'DRAFT') return false;
     const state = row.compliance?.rwc?.state;
     return !state || state === 'MISSING' || state === 'EXPIRED';
   }).length;
+
+  const summaryCounts = useMemo(
+    () => countByBucket(items, fleetSummaryBucket, FLEET_SUMMARY_FILTERS),
+    [items],
+  );
+
+  const filteredItems = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const bySearchAndStatus = items.filter((row) => {
+      if (statusFilter && row.status !== statusFilter) return false;
+      if (!query) return true;
+      const haystack = [row.registration, row.label, row.vehicleClass]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+    return filterAndSortByBucket(
+      bySearchAndStatus,
+      fleetSummaryBucket,
+      summaryFilter,
+      FLEET_SUMMARY_SORT,
+    );
+  }, [items, search, statusFilter, summaryFilter]);
+
+  const hasActiveFilters = Boolean(search.trim()) || statusFilter !== '' || summaryFilter !== 'all';
+
+  function clearFilters() {
+    setSearch('');
+    setStatusFilter('');
+    setSummaryFilter('all');
+  }
+
+  const {
+    page,
+    setPage,
+    totalPages,
+    pagedItems: pagedVehicles,
+  } = useClientPagination(filteredItems, 10);
   const busy =
     addMutation.isPending ||
     updateMutation.isPending ||
@@ -521,7 +782,8 @@ export function CarrierFleetPage() {
     reactivateMutation.isPending ||
     deleteMutation.isPending ||
     rwcUploadMutation.isPending ||
-    dgUploadMutation.isPending;
+    dgUploadMutation.isPending ||
+    regoUploadMutation.isPending;
 
   function statusLabel(status: string) {
     return t(`fleet.statuses.${status}`, { defaultValue: status });
@@ -662,48 +924,147 @@ export function CarrierFleetPage() {
     return `${row.gvmKg}`;
   }
 
-  function renderActions(row: CarrierVehicleListItem, opts?: { showLabel?: boolean }) {
-    const showLabel = opts?.showLabel ?? false;
+  /**
+   * Row actions: primary labeled buttons stay visible (edit, urgent RWC
+   * upload, reactivate); everything else collapses into a single overflow
+   * "Actions" menu so dense rows don't turn into a wall of icon buttons.
+   */
+  function renderActions(row: CarrierVehicleListItem, opts?: { layout?: 'row' | 'card' }) {
+    const layout = opts?.layout ?? 'row';
     const canEdit = row.status !== 'RETIRED';
     const isParked = row.status === 'SUSPENDED' || row.status === 'RETIRED';
     const rwcDocId = row.compliance?.rwc?.documentId ?? null;
     const openingRwc = rwcDocId != null && openingDocId === rwcDocId;
     const openingDg = row.dgDocumentId != null && openingDocId === row.dgDocumentId;
+    const urgentRwcUpload = needsRwcUpload(row);
+    const dgInputId = `dg-upload-${row.id}`;
+    const rwcOverflowInputId = `rwc-upload-overflow-${row.id}`;
+    const regoInputId = `rego-upload-${row.id}`;
+
+    const overflowItems: DropdownMenuItem[] = [
+      {
+        key: 'view-rwc',
+        label: t('fleet.rwcView'),
+        icon: openingRwc ? Loader2 : Eye,
+        hidden: !rwcDocId,
+        disabled: busy || openingRwc,
+        onSelect: () => void viewRwc(rwcDocId!),
+      },
+      {
+        key: 'upload-rwc',
+        label: t('fleet.rwcUpdate', { defaultValue: 'Update RWC' }),
+        icon: Upload,
+        // Already covered by the urgent primary button below when required.
+        hidden: urgentRwcUpload || isParked || !canEdit || !companyId,
+        disabled: busy,
+        onSelect: () => document.getElementById(rwcOverflowInputId)?.click(),
+      },
+      {
+        key: 'view-dg',
+        label: t('fleet.dgView'),
+        icon: openingDg ? Loader2 : Eye,
+        hidden: !row.dgDocumentId,
+        disabled: busy || openingDg,
+        onSelect: () => void viewRwc(row.dgDocumentId!),
+      },
+      {
+        key: 'upload-dg',
+        label: row.dgDocumentId ? t('fleet.dgUpdate') : t('fleet.dgUpload'),
+        icon: FileWarning,
+        hidden: isParked || !companyId,
+        disabled: busy,
+        onSelect: () => document.getElementById(dgInputId)?.click(),
+      },
+      {
+        key: 'upload-rego',
+        label: t('fleet.regoUpload', { defaultValue: 'Upload Rego' }),
+        icon: IdCard,
+        hidden: isParked || !companyId,
+        disabled: busy,
+        onSelect: () => document.getElementById(regoInputId)?.click(),
+      },
+      {
+        key: 'disable',
+        label: t('fleet.disable'),
+        icon: Ban,
+        tone: 'destructive',
+        hidden: isParked,
+        disabled: busy,
+        onSelect: () => openReason(row, 'disable'),
+      },
+      {
+        key: 'retire',
+        label: t('fleet.retire'),
+        icon: Archive,
+        tone: 'destructive',
+        hidden: isParked,
+        disabled: busy,
+        onSelect: () => openReason(row, 'retire'),
+      },
+      {
+        key: 'delete',
+        label: t('fleet.delete'),
+        icon: Trash2,
+        tone: 'destructive',
+        disabled: busy,
+        onSelect: () => void onDelete(row),
+      },
+    ];
 
     return (
-      <ActionGroup wrap={showLabel}>
+      <ActionGroup wrap={layout === 'card'} align={layout === 'card' ? 'start' : 'end'}>
+        {/* Hidden pickers for overflow-triggered uploads (non-urgent RWC replace, DG, Rego). */}
+        <input
+          id={rwcOverflowInputId}
+          type="file"
+          accept=".pdf,image/jpeg,image/png,image/webp"
+          className="sr-only"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (file) rwcUploadMutation.mutate({ vehicleId: row.id, file });
+          }}
+        />
+        <input
+          id={dgInputId}
+          type="file"
+          accept=".pdf,image/jpeg,image/png,image/webp"
+          className="sr-only"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (file) dgUploadMutation.mutate({ vehicleId: row.id, file });
+          }}
+        />
+        <input
+          id={regoInputId}
+          type="file"
+          accept=".pdf,image/jpeg,image/png,image/webp"
+          className="sr-only"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (file) regoUploadMutation.mutate({ vehicleId: row.id, file });
+          }}
+        />
+
         {canEdit ? (
           <IconButton
             icon={Pencil}
             label={t('fleet.edit')}
-            tooltip={t('fleet.edit')}
-            showLabel={showLabel}
+            showLabel
             variant="primary"
             size="sm"
             disabled={busy}
             onClick={() => openEditForm(row)}
           />
         ) : null}
-        {rwcDocId ? (
-          <IconButton
-            icon={openingRwc ? Loader2 : Eye}
-            label={t('fleet.rwcView')}
-            tooltip={t('fleet.rwcView')}
-            showLabel={showLabel}
-            variant="secondary"
-            size="sm"
-            disabled={busy || openingRwc}
-            className={openingRwc ? '[&_svg]:animate-spin' : undefined}
-            onClick={() => void viewRwc(rwcDocId)}
-          />
-        ) : null}
-        {needsRwcUpload(row) ? (
+        {urgentRwcUpload ? (
           <IconFileButton
             icon={Upload}
             label={t('fleet.rwcUpload')}
-            tooltip={t('fleet.rwcUpload')}
-            showLabel={showLabel}
-            variant="secondary"
+            showLabel
+            variant="destructive"
             size="sm"
             inputId={`rwc-upload-${row.id}`}
             accept=".pdf,image/jpeg,image/png,image/webp"
@@ -712,78 +1073,23 @@ export function CarrierFleetPage() {
             onFile={(file) => rwcUploadMutation.mutate({ vehicleId: row.id, file })}
           />
         ) : null}
-        {row.dgDocumentId ? (
-          <IconButton
-            icon={openingDg ? Loader2 : Eye}
-            label={t('fleet.dgView')}
-            tooltip={t('fleet.dgView')}
-            showLabel={showLabel}
-            variant="secondary"
-            size="sm"
-            disabled={busy || openingDg}
-            className={openingDg ? '[&_svg]:animate-spin' : undefined}
-            onClick={() => void viewRwc(row.dgDocumentId!)}
-          />
-        ) : null}
-        {!isParked ? (
-          <IconFileButton
-            icon={FileWarning}
-            label={row.dgDocumentId ? t('fleet.dgUpdate') : t('fleet.dgUpload')}
-            tooltip={row.dgDocumentId ? t('fleet.dgUpdate') : t('fleet.dgUpload')}
-            showLabel={showLabel}
-            variant="secondary"
-            size="sm"
-            inputId={`dg-upload-${row.id}`}
-            accept=".pdf,image/jpeg,image/png,image/webp"
-            disabled={busy || !companyId}
-            loading={uploadingDgVehicleId === row.id}
-            onFile={(file) => dgUploadMutation.mutate({ vehicleId: row.id, file })}
-          />
-        ) : null}
         {isParked ? (
           <IconButton
             icon={RotateCcw}
             label={t('fleet.reactivate')}
-            tooltip={t('fleet.reactivate')}
-            showLabel={showLabel}
+            showLabel
             variant="success"
             size="sm"
             disabled={busy}
             onClick={() => void onReactivate(row)}
           />
-        ) : (
-          <>
-            <IconButton
-              icon={Ban}
-              label={t('fleet.disable')}
-              tooltip={t('fleet.disable')}
-              showLabel={showLabel}
-              variant="destructive"
-              size="sm"
-              disabled={busy}
-              onClick={() => openReason(row, 'disable')}
-            />
-            <IconButton
-              icon={Archive}
-              label={t('fleet.retire')}
-              tooltip={t('fleet.retire')}
-              showLabel={showLabel}
-              variant="destructive"
-              size="sm"
-              disabled={busy}
-              onClick={() => openReason(row, 'retire')}
-            />
-          </>
-        )}
-        <IconButton
-          icon={Trash2}
-          label={t('fleet.delete')}
-          tooltip={t('fleet.delete')}
-          showLabel={showLabel}
-          variant={isParked ? 'destructive' : 'ghost'}
-          size="sm"
+        ) : null}
+        <DropdownMenu
+          items={overflowItems}
+          label={t('fleet.moreActions', { defaultValue: 'More actions' })}
+          showTriggerLabel={layout === 'card'}
+          size={layout === 'card' ? 'md' : 'sm'}
           disabled={busy}
-          onClick={() => void onDelete(row)}
         />
       </ActionGroup>
     );
@@ -834,7 +1140,7 @@ export function CarrierFleetPage() {
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-clox-faint">
             {t('fleet.colActions')}
           </p>
-          {renderActions(row, { showLabel: true })}
+          {renderActions(row, { layout: 'card' })}
         </div>
       </div>
     );
@@ -892,9 +1198,151 @@ export function CarrierFleetPage() {
         </div>
       </div>
 
+      {!fleetPlusQuery.isLoading && fleetPlusEntitled && fleetPlusQuery.data?.billingEnabled === false ? (
+        <Notice tone="success" className="mt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>
+              {t('fleetPlus.complimentaryBanner', {
+                defaultValue: 'Fleet+ is included free on this platform (subscription billing is off).',
+              })}
+            </span>
+            <Link
+              to="/carrier/fleet/analytics"
+              className="font-semibold text-clox-orange hover:underline shrink-0 text-xs"
+            >
+              {t('fleetPlus.viewAnalytics', { defaultValue: 'View analytics →' })}
+            </Link>
+          </div>
+        </Notice>
+      ) : null}
+
+      {!fleetPlusQuery.isLoading &&
+      fleetPlusQuery.data?.billingEnabled !== false &&
+      !fleetPlusEntitled ? (
+        <Notice tone="info" className="mt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-semibold">
+                {t('fleetPlus.bannerTitle', { defaultValue: 'Fleet+' })}
+              </p>
+              <p className="mt-0.5 text-xs">
+                {t('fleetPlus.startTrialBody', {
+                  defaultValue:
+                    'Unlock profit analytics, cost tracking, and maintenance alerts for your fleet.',
+                })}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="cta"
+              size="sm"
+              className="gap-1.5"
+              disabled={trialMutation.isPending}
+              onClick={() => trialMutation.mutate()}
+            >
+              <Rocket className="h-3.5 w-3.5" aria-hidden />
+              {trialMutation.isPending
+                ? t('loading')
+                : t('fleetPlus.startTrialCta', { defaultValue: 'Start 14-day free trial' })}
+            </Button>
+          </div>
+        </Notice>
+      ) : null}
+
+      {fleetPlusEntitled &&
+      fleetPlusQuery.data?.billingEnabled !== false &&
+      fleetPlusQuery.data?.status === 'TRIALING' ? (
+        <Notice tone="info" className="mt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>
+              {t('fleetPlus.trialStatusBanner', {
+                defaultValue: 'Fleet+ trial active.',
+              })}
+            </span>
+            <Link
+              to="/carrier/fleet/analytics"
+              className="font-semibold text-clox-orange hover:underline shrink-0 text-xs"
+            >
+              {t('fleetPlus.viewAnalytics', { defaultValue: 'View analytics →' })}
+            </Link>
+          </div>
+        </Notice>
+      ) : null}
+
+      {fleetPlusEntitled &&
+      fleetPlusQuery.data?.billingEnabled !== false &&
+      fleetPlusQuery.data?.status !== 'TRIALING' ? (
+        <Notice tone="success" className="mt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>
+              {t('fleetPlus.activeStatusBanner', { defaultValue: 'Fleet+ is active on this account.' })}
+            </span>
+            <Link
+              to="/carrier/fleet/analytics"
+              className="font-semibold text-clox-orange hover:underline shrink-0 text-xs"
+            >
+              {t('fleetPlus.viewAnalytics', { defaultValue: 'View analytics →' })}
+            </Link>
+          </div>
+        </Notice>
+      ) : null}
+
       <div className="mt-4 sm:hidden">
         <ViewModeToggle value={viewMode} onChange={setViewMode} />
       </div>
+
+      {items.length > 0 ? (
+        <StatusFilterChips
+          className="mt-4"
+          options={FLEET_SUMMARY_FILTERS}
+          value={summaryFilter}
+          counts={summaryCounts}
+          onChange={setSummaryFilter}
+          getLabel={(key) => t(`fleet.summary.${key}`)}
+          aria-label={t('fleet.summaryLabel', { defaultValue: 'Fleet overview filters' })}
+        />
+      ) : null}
+
+      {items.length > 0 ? (
+        <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_14rem]">
+          <label className="mb-0 block">
+            <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
+              {t('search')}
+            </span>
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-clox-faint"
+                aria-hidden
+              />
+              <input
+                className="clox-field-control pl-9"
+                placeholder={t('fleet.toolbarSearchPlaceholder', {
+                  defaultValue: 'Search by registration, label, or class…',
+                })}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
+          </label>
+          <Select
+            className="mb-0"
+            label={t('fleet.colStatus')}
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+          >
+            <option value="">
+              {t('fleet.toolbarAllStatuses', { defaultValue: 'All statuses' })}
+            </option>
+            {(['DRAFT', 'PENDING_REVIEW', 'ACTIVE', 'SUSPENDED', 'RETIRED'] as const).map(
+              (status) => (
+                <option key={status} value={status}>
+                  {statusLabel(status)}
+                </option>
+              ),
+            )}
+          </Select>
+        </div>
+      ) : null}
 
       {actionError ? (
         <Notice tone="error" className="mt-4">
@@ -913,6 +1361,71 @@ export function CarrierFleetPage() {
           {t('fleet.rwcMissingBanner')}
         </Notice>
       ) : null}
+
+      {items
+        .filter((row) => row.status === 'MAINTENANCE')
+        .map((row) => {
+          const cause = row.maintenanceCause ?? 'MANUAL';
+          const rwcDocId = row.compliance?.rwc?.documentId ?? null;
+          const openingRwc = rwcDocId != null && openingDocId === rwcDocId;
+          const maintenanceUploadInputId = `maintenance-rwc-upload-${row.id}`;
+          return (
+            <Notice key={row.id} tone="error" className="mt-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold">
+                    {t('fleet.maintenance.bannerTitle', {
+                      rego: row.registration ?? row.label ?? row.id,
+                      defaultValue: `${row.registration ?? row.label ?? row.id} is in maintenance`,
+                    })}
+                  </p>
+                  <p className="mt-0.5 text-xs">
+                    {t(`fleet.maintenance.cause.${cause}`, { defaultValue: cause })}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {cause === 'RWC_EXPIRED' ? (
+                    rwcDocId ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        disabled={openingRwc}
+                        onClick={() => void viewRwc(rwcDocId)}
+                      >
+                        {openingRwc ? t('loading') : t('fleet.rwcView')}
+                      </Button>
+                    ) : null
+                  ) : null}
+                  {cause === 'RWC_EXPIRED' ? (
+                    <IconFileButton
+                      icon={uploadingVehicleId === row.id ? Loader2 : Upload}
+                      label={t('fleet.maintenance.uploadRwcCta', { defaultValue: 'Upload RWC' })}
+                      showLabel
+                      size="sm"
+                      variant="destructive"
+                      inputId={maintenanceUploadInputId}
+                      accept=".pdf,image/jpeg,image/png,image/webp"
+                      disabled={!companyId}
+                      loading={uploadingVehicleId === row.id}
+                      onFile={(file) => rwcUploadMutation.mutate({ vehicleId: row.id, file })}
+                    />
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => openServiceLog(row)}
+                  >
+                    <Wrench className="h-3.5 w-3.5" aria-hidden />
+                    {t('fleet.maintenance.logServiceCta', { defaultValue: 'Log service' })}
+                  </Button>
+                </div>
+              </div>
+            </Notice>
+          );
+        })}
 
       {/* Fleet Capabilities & Load Types Card */}
       <div className="clox-card mt-5 p-4 sm:p-5">
@@ -1040,7 +1553,33 @@ export function CarrierFleetPage() {
       {!vehiclesQuery.isLoading && !vehiclesQuery.isError ? (
         items.length === 0 ? (
           <div className="mt-6">
-            <EmptyBlock title={t('fleet.emptyTitle')} description={t('fleet.emptyHint')} />
+            <EmptyBlock
+              title={t('fleet.emptyTitle')}
+              description={t('fleet.emptyHint')}
+              action={
+                <Button type="button" variant="primary" onClick={() => openAddForm()}>
+                  {t('fleet.addVehicle')}
+                </Button>
+              }
+            />
+          </div>
+        ) : filteredItems.length === 0 ? (
+          <div className="mt-6">
+            <EmptyBlock
+              title={t('fleet.emptyFilteredTitle', {
+                defaultValue: 'No vehicles match your filters.',
+              })}
+              description={t('fleet.emptyFilteredHint', {
+                defaultValue: 'Try clearing the search or filter to see your full fleet.',
+              })}
+              action={
+                hasActiveFilters ? (
+                  <Button type="button" variant="secondary" onClick={clearFilters}>
+                    {t('fleet.clearFilters', { defaultValue: 'Clear filters' })}
+                  </Button>
+                ) : undefined
+              }
+            />
           </div>
         ) : viewMode === 'grid' ? (
           <>
@@ -1308,6 +1847,159 @@ export function CarrierFleetPage() {
                     </>
                   ) : null}
                 </div>
+
+                {isEditing && fleetPlusEntitled ? (
+                  <div className="mt-5 border-t border-clox-border-soft pt-4">
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-2 text-left"
+                      onClick={() => setCostProfileOpen((prev) => !prev)}
+                      aria-expanded={costProfileOpen}
+                    >
+                      <span className="text-sm font-semibold text-clox-ink">
+                        {t('fleetPlus.costServiceTitle', {
+                          defaultValue: 'Cost & Service Profile (Fleet+)',
+                        })}
+                      </span>
+                      {costProfileOpen ? (
+                        <ChevronUp className="h-4 w-4 shrink-0 text-clox-faint" aria-hidden />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 shrink-0 text-clox-faint" aria-hidden />
+                      )}
+                    </button>
+                    <p className="mt-1 text-xs text-clox-mute">
+                      {t('fleetPlus.costServiceHint', {
+                        defaultValue: 'Used to calculate profit per trip and maintenance alerts.',
+                      })}
+                    </p>
+                    {costProfileOpen ? (
+                      <>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                          <Field
+                            label={t('fleetPlus.fuelTypeLabel', { defaultValue: 'Fuel type' })}
+                            placeholder="Diesel"
+                            {...costProfileForm.register('fuelType')}
+                          />
+                          <Field
+                            type="number"
+                            label={t('fleetPlus.serviceIntervalKmLabel', {
+                              defaultValue: 'Service interval (km)',
+                            })}
+                            error={costProfileForm.formState.errors.serviceIntervalKm?.message}
+                            {...costProfileForm.register('serviceIntervalKm', { valueAsNumber: true })}
+                          />
+                          <Field
+                            type="number"
+                            label={t('fleetPlus.lastServiceOdometerKmLabel', {
+                              defaultValue: 'Last service odometer (km)',
+                            })}
+                            error={costProfileForm.formState.errors.lastServiceOdometerKm?.message}
+                            {...costProfileForm.register('lastServiceOdometerKm', {
+                              valueAsNumber: true,
+                            })}
+                          />
+                          <Field
+                            type="number"
+                            step="0.01"
+                            label={t('fleetPlus.maintenanceRatePerKmLabel', {
+                              defaultValue: 'Maintenance rate ($/km)',
+                            })}
+                            error={costProfileForm.formState.errors.maintenanceRatePerKm?.message}
+                            {...costProfileForm.register('maintenanceRatePerKm', {
+                              valueAsNumber: true,
+                            })}
+                          />
+                          <Select
+                            label={t('fleetPlus.costProfileUnitLabel', {
+                              defaultValue: 'Cost profile unit',
+                            })}
+                            value={costProfileForm.watch('costProfileUnit')}
+                            {...costProfileForm.register('costProfileUnit')}
+                          >
+                            <option value="">{t('dash')}</option>
+                            <option value="PER_KM">
+                              {t('fleetPlus.unitPerKm', { defaultValue: 'Per km' })}
+                            </option>
+                            <option value="PER_HR">
+                              {t('fleetPlus.unitPerHr', { defaultValue: 'Per hour' })}
+                            </option>
+                          </Select>
+                          <Field
+                            type="number"
+                            step="0.01"
+                            label={t('fleetPlus.costProfileRateLabel', {
+                              defaultValue: 'Cost profile rate',
+                            })}
+                            hint={t('fleetPlus.costProfileRateHint', {
+                              defaultValue: 'Used by smart allocation to rank "Most profitable".',
+                            })}
+                            error={costProfileForm.formState.errors.costProfileRate?.message}
+                            {...costProfileForm.register('costProfileRate', { valueAsNumber: true })}
+                          />
+                          {fleetPlusQuery.data?.tier === 'ENTERPRISE' ? (
+                            <>
+                              <Field
+                                type="number"
+                                step="0.01"
+                                label={t('fleetPlus.purchasePriceAudLabel', {
+                                  defaultValue: 'Purchase price (AUD)',
+                                })}
+                                error={costProfileForm.formState.errors.purchasePriceAud?.message}
+                                {...costProfileForm.register('purchasePriceAud', {
+                                  valueAsNumber: true,
+                                })}
+                              />
+                              <Field
+                                type="number"
+                                step="0.01"
+                                label={t('fleetPlus.residualValueAudLabel', {
+                                  defaultValue: 'Residual value (AUD)',
+                                })}
+                                error={costProfileForm.formState.errors.residualValueAud?.message}
+                                {...costProfileForm.register('residualValueAud', {
+                                  valueAsNumber: true,
+                                })}
+                              />
+                              <Field
+                                type="number"
+                                label={t('fleetPlus.lifecycleMonthsLabel', {
+                                  defaultValue: 'Lifecycle (months)',
+                                })}
+                                error={costProfileForm.formState.errors.lifecycleMonths?.message}
+                                {...costProfileForm.register('lifecycleMonths', {
+                                  valueAsNumber: true,
+                                })}
+                              />
+                            </>
+                          ) : null}
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            disabled={costProfileMutation.isPending}
+                            onClick={costProfileForm.handleSubmit((values) =>
+                              costProfileMutation.mutate(values),
+                            )}
+                          >
+                            {costProfileMutation.isPending
+                              ? t('saving')
+                              : t('fleetPlus.saveCostProfile', {
+                                  defaultValue: 'Save cost profile',
+                                })}
+                          </Button>
+                          {costProfileMutation.isError ? (
+                            <span className="text-xs text-[var(--status-danger)]">
+                              {getErrorDetail(costProfileMutation.error)}
+                            </span>
+                          ) : null}
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 {rwcFormError || addMutation.isError || updateMutation.isError ? (
                   <Notice tone="error" className="mt-4">
                     {rwcFormError ??
@@ -1416,6 +2108,88 @@ export function CarrierFleetPage() {
                   : reasonTarget.action === 'retire'
                     ? t('fleet.retireConfirm')
                     : t('fleet.disableConfirm')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {serviceLogTarget ? (
+        <div
+          className="clox-dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !serviceLogMutation.isPending) {
+              setServiceLogTarget(null);
+            }
+          }}
+        >
+          <div className="clox-dialog" role="dialog" aria-modal="true">
+            <h2 className="font-display text-lg font-semibold text-clox-ink">
+              {t('fleetPlus.logServiceTitle', { defaultValue: 'Log service' })}
+            </h2>
+            <p className="mt-2 text-sm text-clox-mute">
+              {t('fleetPlus.logServiceHint', {
+                rego: serviceLogTarget.registration ?? serviceLogTarget.label ?? '',
+                defaultValue:
+                  'Record an odometer reading for {{rego}}. If this vehicle is in maintenance for a service interval or safety check, you can clear it below.',
+              })}
+            </p>
+            <Field
+              type="number"
+              className="mt-4"
+              label={t('fleetPlus.odometerKmLabel', { defaultValue: 'Odometer (km)' })}
+              required
+              value={serviceOdometerKm}
+              onChange={(event) => setServiceOdometerKm(event.target.value)}
+            />
+            <label className="mt-3 block">
+              <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
+                {t('fleetPlus.notesLabel', { defaultValue: 'Notes (optional)' })}
+              </span>
+              <textarea
+                className="clox-field-control min-h-[3.5rem]"
+                value={serviceNotes}
+                onChange={(event) => setServiceNotes(event.target.value)}
+                placeholder={t('fleetPlus.notesPlaceholder', {
+                  defaultValue: 'e.g. Oil + filter change, brake inspection',
+                })}
+                maxLength={2000}
+              />
+            </label>
+            <div className="mt-3">
+              <ChoiceCheck
+                checked={clearMaintenanceChecked}
+                onChange={(e) => setClearMaintenanceChecked(e.target.checked)}
+              >
+                {t('fleetPlus.clearMaintenanceLabel', {
+                  defaultValue: 'Clear MAINTENANCE status for this vehicle',
+                })}
+              </ChoiceCheck>
+            </div>
+            {serviceLogError || serviceLogMutation.isError ? (
+              <Notice tone="error" className="mt-3">
+                {serviceLogError ?? getErrorDetail(serviceLogMutation.error)}
+              </Notice>
+            ) : null}
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={serviceLogMutation.isPending}
+                onClick={() => setServiceLogTarget(null)}
+              >
+                {t('confirm.cancel')}
+              </Button>
+              <Button
+                type="button"
+                variant="cta"
+                disabled={serviceLogMutation.isPending}
+                onClick={submitServiceLog}
+              >
+                {serviceLogMutation.isPending
+                  ? t('loading')
+                  : t('fleetPlus.logService', { defaultValue: 'Log service' })}
               </Button>
             </div>
           </div>

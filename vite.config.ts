@@ -54,6 +54,8 @@ export default defineConfig({
       },
       workbox: {
         // App shell offline; never cache Nest API — always hit the real backend.
+        // Main bundle can exceed Workbox's 2 MiB default after Fleet+ / role apps landed.
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api/, /\/v1\//],
         runtimeCaching: [

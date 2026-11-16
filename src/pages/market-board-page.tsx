@@ -16,6 +16,7 @@ import {
   listTripExceptions,
   openDocumentContent,
   submitBid,
+  suggestFleetAssetsForJob,
   withdrawProposalByJobId,
   type MarketBoardJob,
 } from '@/lib/api';
@@ -233,6 +234,15 @@ export function MarketBoardPage() {
     queryFn: () => checkFleetDriversBid(jobId!, vehicleIdWatch || undefined),
     enabled: role === AppRole.TRANSPORT_COMPANY && Boolean(jobId),
     staleTime: 5_000,
+  });
+
+  // Fleet+ smart allocation (AC6) — non-blocking: bid composer works fine if this fails or is empty.
+  const fleetSuggestQuery = useQuery({
+    queryKey: ['carrier', 'fleet', 'suggest', jobId],
+    queryFn: () => suggestFleetAssetsForJob(jobId!),
+    enabled: role === AppRole.TRANSPORT_COMPANY && Boolean(jobId),
+    staleTime: 15_000,
+    retry: false,
   });
 
   const driverEligibilityMap = useMemo(() => {
@@ -826,6 +836,50 @@ export function MarketBoardPage() {
                   {t('market.viewDoc', { defaultValue: 'View Document' })}
                 </Button>
               </div>
+            </div>
+          ) : null}
+
+          {fleetSuggestQuery.data &&
+          (fleetSuggestQuery.data.suggestions.closest ||
+            fleetSuggestQuery.data.suggestions.leastIdle ||
+            fleetSuggestQuery.data.suggestions.mostProfitable) ? (
+            <div className="mb-3">
+              <p className="mb-1.5 text-[12.5px] font-semibold text-clox-ink">
+                {t('fleetPlus.suggestions.title', { defaultValue: 'Smart suggestions' })}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {(
+                  [
+                    ['closest', fleetSuggestQuery.data.suggestions.closest, t('fleetPlus.suggestions.closest', { defaultValue: 'Closest' })],
+                    ['leastIdle', fleetSuggestQuery.data.suggestions.leastIdle, t('fleetPlus.suggestions.leastIdle', { defaultValue: 'Least idle' })],
+                    ['mostProfitable', fleetSuggestQuery.data.suggestions.mostProfitable, t('fleetPlus.suggestions.mostProfitable', { defaultValue: 'Most profitable' })],
+                  ] as const
+                ).map(([key, suggestion, label]) =>
+                  suggestion ? (
+                    <button
+                      key={key}
+                      type="button"
+                      className={cn(
+                        'rounded-full border px-3 py-1 text-xs font-semibold transition',
+                        vehicleIdWatch === suggestion.vehicleId
+                          ? 'border-clox-orange bg-clox-orange/10 text-clox-orange'
+                          : 'border-clox-border bg-clox-surface text-clox-mute hover:border-clox-orange hover:text-clox-orange',
+                      )}
+                      title={suggestion.reason}
+                      onClick={() =>
+                        form.setValue('vehicleId', suggestion.vehicleId, { shouldValidate: true })
+                      }
+                    >
+                      {label}: {suggestion.registration ?? suggestion.label ?? t('dash')}
+                    </button>
+                  ) : null,
+                )}
+              </div>
+              <p className="mt-1 text-[11px] text-clox-faint">
+                {t('fleetPlus.suggestions.hint', {
+                  defaultValue: 'Tap a suggestion to assign that vehicle.',
+                })}
+              </p>
             </div>
           ) : null}
 

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CloxLoader } from '@/components/clox-loader';
 
@@ -19,14 +20,18 @@ export function LoadingBlock({ label }: { label?: string }) {
 export function EmptyBlock({
   title,
   description,
+  action,
 }: {
   title: string;
   description?: string;
+  /** Optional CTA (e.g. "Add vehicle" or "Clear filters") rendered below the hint. */
+  action?: ReactNode;
 }) {
   return (
     <div className="rounded-clox-md border border-dashed border-clox-border bg-clox-surface-alt/60 px-4 py-10 text-center">
       <p className="font-display text-base font-semibold text-clox-ink">{title}</p>
       {description ? <p className="mt-2 text-sm text-clox-mute">{description}</p> : null}
+      {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
     </div>
   );
 }

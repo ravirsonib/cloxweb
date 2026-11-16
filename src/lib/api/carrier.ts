@@ -156,6 +156,19 @@ export type CarrierVehicleListItem = {
   disabledNote: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Fleet+ AC5 — set when status === 'MAINTENANCE' (RWC expired / service interval / safety fail / manual). */
+  maintenanceCause?: 'RWC_EXPIRED' | 'SERVICE_INTERVAL' | 'SAFETY_FAIL' | 'MANUAL' | null;
+  maintenanceStartedAt?: string | null;
+  /** Fleet+ cost / service profile — only meaningful once entitled (editable via updateVehicleCostProfile). */
+  fuelType?: string | null;
+  serviceIntervalKm?: number | null;
+  lastServiceOdometerKm?: number | null;
+  maintenanceRatePerKm?: number | null;
+  costProfileUnit?: 'PER_KM' | 'PER_HR' | null;
+  costProfileRate?: number | null;
+  purchasePriceAud?: number | null;
+  residualValueAud?: number | null;
+  lifecycleMonths?: number | null;
   compliance?: {
     rwc: FleetRwcCompliance;
   };
@@ -456,5 +469,184 @@ export function reviewDriverSchedule(
 ) {
   return http
     .patch<DriverScheduleEntryItem>(`/carrier/fleet/schedule/${id}/review`, payload)
+    .then((r) => r.data);
+}
+
+// ─── Fleet+ (Wave 2-5): entitlement, profit analytics, cost profile, maintenance, smart allocation ───
+
+export type FleetPlusTier = 'FREE_TRIAL' | 'STARTER' | 'GROWTH' | 'ENTERPRISE';
+export type FleetPlusStatus = 'NONE' | 'TRIALING' | 'ACTIVE' | 'PAST_DUE' | 'CANCELED';
+
+export type FleetPlusEntitlement = {
+  companyId: string;
+  entitled: boolean;
+  /** false = platform giveaway; trial/upgrade UI hidden. true = enforce SaaS billing. */
+  billingEnabled: boolean;
+  tier: FleetPlusTier | null;
+  status: FleetPlusStatus;
+  trialEndsAt: string | null;
+  currentPeriodEnd: string | null;
+  stripeSubscriptionId: string | null;
+};
+
+export function getFleetPlus() {
+  return http.get<FleetPlusEntitlement>('/carrier/fleet-plus').then((r) => r.data);
+}
+
+export function startFleetPlusTrial() {
+  return http
+    .post<FleetPlusEntitlement>('/carrier/fleet-plus/start-trial')
+    .then((r) => r.data);
+}
+
+export function upgradeFleetPlus(tier: 'STARTER' | 'GROWTH' | 'ENTERPRISE') {
+  return http
+    .post<FleetPlusEntitlement>('/carrier/fleet-plus/upgrade', { tier })
+    .then((r) => r.data);
+}
+
+export type VehicleProfitRow = {
+  vehicleId: string;
+  registration: string | null;
+  label: string | null;
+  status: string;
+  revenueNetAud: number;
+  fuelAud: number;
+  wagesAud: number;
+  tollsAud: number;
+  maintenanceAud: number;
+  depreciationAud: number;
+  distanceKm: number;
+  profitAud: number;
+  marginPct: number | null;
+  idlePct: number;
+  flaggedLowMargin: boolean;
+  flaggedHighIdle: boolean;
+  maintenanceCause: string | null;
+};
+
+export type FleetAnalytics = {
+  entitled: boolean;
+  tier: FleetPlusTier | null;
+  window: { from: string; to: string };
+  summary: {
+    vehicleCount: number;
+    flaggedCount: number;
+    totalRevenueNetAud: number;
+    totalProfitAud: number;
+    avgUtilisationPct: number;
+  };
+  vehicles: VehicleProfitRow[];
+};
+
+export function getFleetAnalytics(params?: { from?: string; to?: string }) {
+  return http.get<FleetAnalytics>('/carrier/fleet/analytics', { params }).then((r) => r.data);
+}
+
+export type VehicleCostProfileInput = {
+  fuelType?: string | null;
+  serviceIntervalKm?: number | null;
+  lastServiceOdometerKm?: number | null;
+  maintenanceRatePerKm?: number | null;
+  costProfileUnit?: 'PER_KM' | 'PER_HR' | null;
+  costProfileRate?: number | null;
+  purchasePriceAud?: number | null;
+  residualValueAud?: number | null;
+  lifecycleMonths?: number | null;
+};
+
+export function updateVehicleCostProfile(vehicleId: string, payload: VehicleCostProfileInput) {
+  return http
+    .patch<CarrierVehicleListItem>(`/carrier/vehicles/${vehicleId}/cost-profile`, payload)
+    .then((r) => r.data);
+}
+
+export type VehicleFuelLogInput = {
+  liters: number;
+  amountAud: number;
+  odometerKm?: number;
+  notes?: string;
+  loggedAt?: string;
+};
+
+export function addVehicleFuelLog(vehicleId: string, payload: VehicleFuelLogInput) {
+  return http
+    .post(`/carrier/vehicles/${vehicleId}/fuel-logs`, payload)
+    .then((r) => r.data);
+}
+
+export type VehicleCostEntryInput = {
+  kind: 'FUEL' | 'WAGE' | 'TOLL' | 'MAINTENANCE' | 'OTHER';
+  amountAud: number;
+  tripId?: string;
+  notes?: string;
+  loggedAt?: string;
+};
+
+export function addVehicleCostEntry(vehicleId: string, payload: VehicleCostEntryInput) {
+  return http
+    .post(`/carrier/vehicles/${vehicleId}/cost-entries`, payload)
+    .then((r) => r.data);
+}
+
+export type VehicleServiceLogInput = {
+  odometerKm: number;
+  notes?: string;
+  clearMaintenance?: boolean;
+};
+
+export function logVehicleService(vehicleId: string, payload: VehicleServiceLogInput) {
+  return http
+    .post<CarrierVehicleListItem>(`/carrier/vehicles/${vehicleId}/service-log`, payload)
+    .then((r) => r.data);
+}
+
+export type VehicleMaintenanceWorkOrder = {
+  id: string;
+  vehicleId: string;
+  companyId: string;
+  cause: 'RWC_EXPIRED' | 'SERVICE_INTERVAL' | 'SAFETY_FAIL' | 'MANUAL';
+  notes: string | null;
+  tripId: string | null;
+  openedAt: string;
+  clearedAt: string | null;
+  clearedNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export function listVehicleMaintenanceOrders(vehicleId: string) {
+  return http
+    .get<VehicleMaintenanceWorkOrder[]>(`/carrier/vehicles/${vehicleId}/maintenance-orders`)
+    .then((r) => r.data);
+}
+
+export type FleetAssetSuggestion = {
+  vehicleId: string;
+  registration: string | null;
+  label: string | null;
+  vehicleClass: string | null;
+  undersized: boolean;
+  classDelta: number;
+  idleScore: number;
+  profitScore: number;
+  busy: boolean;
+  reason: string;
+};
+
+export type FleetAssetSuggestions = {
+  jobId: string;
+  minVehicleClass: string | null;
+  suggestions: {
+    closest: FleetAssetSuggestion | null;
+    leastIdle: FleetAssetSuggestion | null;
+    mostProfitable: FleetAssetSuggestion | null;
+  };
+  eligibleCount: number;
+};
+
+export function suggestFleetAssetsForJob(jobId: string) {
+  return http
+    .get<FleetAssetSuggestions>(`/carrier/fleet/suggest/${jobId}`)
     .then((r) => r.data);
 }

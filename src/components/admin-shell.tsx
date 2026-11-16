@@ -282,7 +282,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           <SidebarSubMenu
             label={t('nav.menuFleet', { defaultValue: 'Fleet & Jobs' })}
             icon={Truck}
-            activePaths={['/market', '/assignments', '/carrier/fleet', '/carrier/drivers', '/carrier/exceptions']}
+            activePaths={['/market', '/assignments', '/carrier/fleet', '/carrier/fleet/analytics', '/carrier/drivers', '/carrier/exceptions']}
           >
             <SidebarSubLink to="/market" icon={navIconForPath('/market')} onNavigate={onNavigate}>
               {t('nav.jobBoard')}
@@ -292,6 +292,13 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
             </SidebarSubLink>
             <SidebarSubLink to="/carrier/fleet" icon={navIconForPath('/carrier/fleet')} onNavigate={onNavigate}>
               {t('nav.fleet')}
+            </SidebarSubLink>
+            <SidebarSubLink
+              to="/carrier/fleet/analytics"
+              icon={navIconForPath('/carrier/fleet/analytics')}
+              onNavigate={onNavigate}
+            >
+              {t('nav.fleetAnalytics', { defaultValue: 'Fleet+ Analytics' })}
             </SidebarSubLink>
             <SidebarSubLink to="/carrier/drivers" icon={navIconForPath('/carrier/drivers')} onNavigate={onNavigate}>
               {t('nav.drivers')}
@@ -449,6 +456,9 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           <SidebarLink to="/trips" icon={navIconForPath('/trips')} onNavigate={onNavigate}>
             {t('nav.myTrips')}
           </SidebarLink>
+          <SidebarLink to="/driver/schedule" icon={navIconForPath('/driver/schedule')} onNavigate={onNavigate}>
+            {t('nav.driverSchedule', { defaultValue: 'My Schedule' })}
+          </SidebarLink>
           <SidebarSubMenu
             label={t('nav.menuCompliance', { defaultValue: 'Licence & Documents' })}
             icon={ShieldCheck}
@@ -565,6 +575,11 @@ function DriverCabShell({ children }: { children?: ReactNode }) {
       <nav className="cab-tabbar" aria-label={t('nav.main')}>
         <CabTab to="/" end label={t('nav.cabHome')} icon={navIconForPath('/')} />
         <CabTab to="/trips" label={t('nav.cabTrips')} icon={navIconForPath('/trips')} />
+        <CabTab
+          to="/driver/schedule"
+          label={t('nav.cabSchedule', { defaultValue: 'Schedule' })}
+          icon={navIconForPath('/driver/schedule')}
+        />
         <CabTab
           to="/driver/onboarding"
           label={t('nav.cabOnboarding')}

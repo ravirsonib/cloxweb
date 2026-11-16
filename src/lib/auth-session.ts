@@ -41,9 +41,11 @@ const SAFE_NEXT_PATHS = new Set([
   '/documents/upload',
   '/carrier/onboarding',
   '/carrier/fleet',
+  '/carrier/fleet/analytics',
   '/carrier/drivers',
   '/sender/onboarding',
   '/driver/onboarding',
+  '/driver/schedule',
   '/market',
   '/jobs',
   '/assignments',
@@ -150,6 +152,7 @@ export function roleCanAccessPath(role: AppRole | null | undefined, path: string
   if (
     pathname === '/carrier/onboarding' ||
     pathname === '/carrier/fleet' ||
+    pathname === '/carrier/fleet/analytics' ||
     pathname === '/carrier/drivers' ||
     pathname === '/market' ||
     pathname === '/assignments'
@@ -172,7 +175,11 @@ export function roleCanAccessPath(role: AppRole | null | undefined, path: string
   ) {
     return role === AppRole.TRANSPORT_COMPANY;
   }
-  if (pathname === '/driver/onboarding' || pathname === '/trips') {
+  if (
+    pathname === '/driver/onboarding' ||
+    pathname === '/driver/schedule' ||
+    pathname === '/trips'
+  ) {
     return role === AppRole.DRIVER;
   }
   if (pathname === '/account') return true;

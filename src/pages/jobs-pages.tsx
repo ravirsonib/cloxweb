@@ -29,6 +29,7 @@ import {
   listSenderJobs,
   openDocumentContent,
   previewJobRoute,
+  previewProposalCharge,
   publishJob,
   recommendVehicle,
   rejectTripExceptionReplacement,
@@ -4004,14 +4005,24 @@ export function JobDetailPage() {
                       })(),
                     )
                   : null}
-                {j.payment
+                {j.payment || j.assignment?.paidAndConfirmed
                   ? detailRow(
                       t('jobs.view.paymentStatus'),
                       <span className="font-mono text-xs">
-                        {t('jobs.paymentLine', {
-                          status: j.payment.status,
-                          pi: j.payment.stripePaymentIntentId ?? t('dash'),
-                        })}
+                        {j.payment
+                          ? j.payment.stripePaymentIntentId
+                            ? t('jobs.paymentLine', {
+                                status: j.payment.status,
+                                pi: j.payment.stripePaymentIntentId,
+                                defaultValue: `Fare ${j.payment.status} · ${j.payment.stripePaymentIntentId}`,
+                              })
+                            : t('jobs.paymentLineNoPi', {
+                                status: j.payment.status,
+                                defaultValue: `Fare ${j.payment.status}`,
+                              })
+                          : t('jobs.paymentPaidNoEvent', {
+                              defaultValue: 'Fare paid',
+                            })}
                       </span>,
                     )
                   : null}
@@ -4291,9 +4302,42 @@ export function JobDetailPage() {
                         disabled={accept.isPending}
                         onClick={() => {
                           void (async () => {
+                            let feeLine = '';
+                            try {
+                              const preview = await previewProposalCharge(id, p.id);
+                              if (preview.feePercent > 0) {
+                                feeLine =
+                                  preview.mode === 'EXCLUSIVE'
+                                    ? `\n\n${t('jobs.feeExclusiveBreakdown', {
+                                        defaultValue:
+                                          'Platform fee {{feePercent}}% (exclusive): base {{base}} + fee {{fee}} = charge {{total}}',
+                                        feePercent: preview.feePercent,
+                                        base: formatDollars(preview.baseIncGstCents),
+                                        fee: formatDollars(preview.feeIncGstCents),
+                                        total: formatDollars(preview.chargeIncGstCents),
+                                      })}`
+                                    : `\n\n${t('jobs.feeInclusiveBreakdown', {
+                                        defaultValue:
+                                          'Total {{total}} includes {{feePercent}}% platform fee (≈ {{fee}})',
+                                        feePercent: preview.feePercent,
+                                        fee: formatDollars(preview.feeIncGstCents),
+                                        total: formatDollars(preview.chargeIncGstCents),
+                                      })}`;
+                              } else {
+                                feeLine = `\n\n${t('jobs.feeNoneBreakdown', {
+                                  defaultValue: 'Charge total: {{total}} (no platform fee)',
+                                  total: formatDollars(preview.chargeIncGstCents),
+                                })}`;
+                              }
+                            } catch {
+                              feeLine = `\n\n${t('jobs.feePreviewUnavailable', {
+                                defaultValue: `Proposal amount ${formatDollars(p.amountIncGstCents)} (fee preview unavailable)`,
+                                amount: formatDollars(p.amountIncGstCents),
+                              })}`;
+                            }
                             const ok = await confirm({
                               title: t('confirm.acceptProposalTitle'),
-                              description: t('confirm.acceptProposalBody'),
+                              description: `${t('confirm.acceptProposalBody')}${feeLine}`,
                               confirmLabel: t('jobs.acceptAndCharge'),
                             });
                             if (ok) accept.mutate(p.id);

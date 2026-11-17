@@ -28,7 +28,9 @@ import {
 import { formatDateTime } from '@/lib/leads';
 import { formatCalendarDate } from '@/lib/datetime';
 import { companyStatusTone, complianceCaseStatusTone } from '@/lib/status-tone';
-import { CompanyStatus, CompanyType } from '@/shared/types';
+import { CompanyRevenuePolicyPanel } from '@/components/company-revenue-policy-panel';
+import { CompanyStatus, CompanyType, AdminRole } from '@/shared/types';
+import { useAuthStore } from '@/stores/auth-store';
 
 type TabKey = 'overview' | 'documents' | 'vehicles' | 'drivers' | 'team' | 'compliance';
 
@@ -61,6 +63,8 @@ export function CompanyDetailPage() {
   const confirm = useConfirm();
   const toast = useToast();
   const queryClient = useQueryClient();
+  const role = useAuthStore((s) => s.role);
+  const isSuper = role === AdminRole.SUPER_ADMIN;
 
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [openingDocId, setOpeningDocId] = useState<string | null>(null);
@@ -511,6 +515,12 @@ export function CompanyDetailPage() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {activeTab === 'overview' &&
+      isSuper &&
+      (company.type === CompanyType.CARRIER || company.type === CompanyType.SENDER) ? (
+        <CompanyRevenuePolicyPanel companyId={company.id} companyType={company.type} />
       ) : null}
 
       {/* Tab: Company Documents */}

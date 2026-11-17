@@ -208,6 +208,17 @@ export function listLeads(
     .then((res) => res.data);
 }
 
+export type CompanyRevenuePolicySummary = {
+  hasCustomPolicy: boolean;
+  nationalCarrierPercent: number;
+  nationalFeePercent: number;
+  minPlatformPercent: number;
+  bonusPercent?: number;
+  effectiveCarrierPercent?: number;
+  feePercent?: number;
+  inheritNational?: boolean;
+};
+
 export type CompanyListItem = {
   id: string;
   type: 'SENDER' | 'CARRIER';
@@ -227,6 +238,7 @@ export type CompanyListItem = {
   homeRegion: { code: string; name: string } | null;
   openCase: { id: string; status: string; caseType: string } | null;
   counts: { users: number; vehicles: number; drivers: number };
+  revenuePolicy?: CompanyRevenuePolicySummary;
 };
 
 export type PlatformSettings = {
@@ -245,6 +257,9 @@ export type PlatformSettings = {
   settlementCycleCadenceDays?: number;
   settlementCutoffHour?: number;
   enableStateMasterTier?: boolean;
+  senderPlatformFeePercent?: number;
+  senderPlatformFeeMode?: 'EXCLUSIVE' | 'INCLUSIVE';
+  minPlatformPercent?: number;
   updatedAt: string;
 };
 
@@ -263,6 +278,9 @@ export type PlatformSettingsPatch = {
   settlementCycleCadenceDays?: number;
   settlementCutoffHour?: number;
   enableStateMasterTier?: boolean;
+  senderPlatformFeePercent?: number;
+  senderPlatformFeeMode?: 'EXCLUSIVE' | 'INCLUSIVE';
+  minPlatformPercent?: number;
 };
 
 export function getPlatformSettings(options?: { signal?: AbortSignal }) {
@@ -668,6 +686,15 @@ export type RevenueSplitPercents = {
   superPercent: number;
   statePercent: number;
   localPercent: number;
+  cloxSuperPercent?: number;
+  cloxStatePercent?: number;
+  cloxLocalPercent?: number;
+};
+
+export type CloxPoolPercents = {
+  cloxSuperPercent: number;
+  cloxStatePercent: number;
+  cloxLocalPercent: number;
 };
 
 export type RevenueSplitSettings = {
@@ -675,9 +702,11 @@ export type RevenueSplitSettings = {
   carrierPercent?: number;
   platformPercentFixed: number;
   platformPercent?: number;
+  cloxPool?: CloxPoolPercents;
   effective: {
     policyVersionId: string | null;
     percents: RevenueSplitPercents;
+    cloxPool?: CloxPoolPercents;
     payload: unknown;
     publishedAt: string | null;
     version: number | null;
@@ -759,9 +788,12 @@ export function listRevenueSplitScopes(options?: { signal?: AbortSignal }) {
 export function draftRevenueSplit(
   input: {
     carrierPercent?: number;
-    superPercent: number;
-    statePercent: number;
-    localPercent: number;
+    superPercent?: number;
+    statePercent?: number;
+    localPercent?: number;
+    cloxSuperPercent?: number;
+    cloxStatePercent?: number;
+    cloxLocalPercent?: number;
     notes?: string;
   },
   options?: { signal?: AbortSignal },
@@ -778,6 +810,9 @@ export function publishRevenueSplit(
     superPercent?: number;
     statePercent?: number;
     localPercent?: number;
+    cloxSuperPercent?: number;
+    cloxStatePercent?: number;
+    cloxLocalPercent?: number;
     notes?: string;
     effectiveFrom?: string;
   },
@@ -843,6 +878,84 @@ export function publishAdminRevenueSplitPackage(
 ) {
   return http
     .post('/admin/settings/revenue-split/admin-packages', input, {
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export type CompanyRevenueUpliftItem = {
+  id: string;
+  companyId: string;
+  bonusPercent: number;
+  effectiveFrom: string;
+  publishedAt: string | null;
+  notes: string | null;
+  publisher?: { id: string; email: string; name: string | null } | null;
+};
+
+export type CompanySenderFeeOverrideItem = {
+  id: string;
+  companyId: string;
+  feePercent: number;
+  inheritNational?: boolean;
+  effectiveFrom: string;
+  publishedAt: string | null;
+  notes: string | null;
+  publisher?: { id: string; email: string; name: string | null } | null;
+};
+
+export function listCarrierRevenueUplifts(
+  companyId: string,
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .get<{ items: CompanyRevenueUpliftItem[] }>(
+      `/admin/settings/revenue-split/carrier-uplifts/${companyId}`,
+      { signal: options?.signal },
+    )
+    .then((res) => res.data);
+}
+
+export function publishCarrierRevenueUplift(
+  input: {
+    companyId: string;
+    bonusPercent: number;
+    notes?: string;
+    effectiveFrom?: string;
+  },
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .post('/admin/settings/revenue-split/carrier-uplifts', input, {
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export function listSenderFeeOverrides(
+  companyId: string,
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .get<{ items: CompanySenderFeeOverrideItem[] }>(
+      `/admin/settings/revenue-split/sender-fee-overrides/${companyId}`,
+      { signal: options?.signal },
+    )
+    .then((res) => res.data);
+}
+
+export function publishSenderFeeOverride(
+  input: {
+    companyId: string;
+    feePercent?: number;
+    inheritNational?: boolean;
+    notes?: string;
+    effectiveFrom?: string;
+  },
+  options?: { signal?: AbortSignal },
+) {
+  return http
+    .post('/admin/settings/revenue-split/sender-fee-overrides', input, {
       signal: options?.signal,
     })
     .then((res) => res.data);

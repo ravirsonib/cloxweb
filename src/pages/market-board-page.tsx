@@ -1057,8 +1057,10 @@ export function MarketBoardPage() {
           />
           <p className="mb-4 text-xs text-clox-mute">
             {t('market.yourNetApprox', {
-              amount: formatDollarsAmount((Number(amountWatch) || 0) * 0.7),
-              percent: 70,
+              amount: formatDollarsAmount(
+                ((Number(amountWatch) || 0) * (board.data?.carrierPercent ?? 70)) / 100,
+              ),
+              percent: board.data?.carrierPercent ?? 70,
             })}
           </p>
           <Button

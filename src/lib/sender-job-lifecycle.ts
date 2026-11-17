@@ -17,14 +17,16 @@ export type SenderJobLifecycleDisplay = {
   tone: StatusTone;
   /** True only when accept happened and card payment is still owed. */
   isPendingPayment: boolean;
-  /** True when assignment is paid (LOCKED or COMPLETED). */
+  /** True when fare is paid and assignment is LOCKED (trip not finished). */
   isPaidAndLocked: boolean;
 };
 
 /**
  * Sender-facing job chip — never show "Locked" while assignment is PENDING,
  * and never show "Pending payment" after paidAndConfirmed (LOCKED/COMPLETED).
- * Other job statuses keep the standard jobStatuses.* labels.
+ *
+ * "Paid & locked" = paid fare, trip still active (assignment LOCKED).
+ * Finished trips must show "Completed" even if job.status was left as ASSIGNED.
  */
 export function resolveSenderJobLifecycleDisplay(
   job: SenderJobLifecycleInput,
@@ -34,10 +36,15 @@ export function resolveSenderJobLifecycleDisplay(
     job.status === 'ASSIGNED' &&
     assignment?.status === 'PENDING' &&
     !assignment.paidAndConfirmed;
+
+  const isTripFinished =
+    job.status === 'COMPLETED' || assignment?.status === 'COMPLETED';
+
   const isPaidAndLocked =
+    !isTripFinished &&
     job.status === 'ASSIGNED' &&
     Boolean(assignment?.paidAndConfirmed) &&
-    (assignment?.status === 'LOCKED' || assignment?.status === 'COMPLETED');
+    assignment?.status === 'LOCKED';
 
   if (isPendingPayment) {
     return {
@@ -45,6 +52,16 @@ export function resolveSenderJobLifecycleDisplay(
       defaultLabel: 'Pending payment',
       tone: 'warn',
       isPendingPayment: true,
+      isPaidAndLocked: false,
+    };
+  }
+
+  if (isTripFinished) {
+    return {
+      labelKey: 'jobStatuses.COMPLETED',
+      defaultLabel: 'Completed',
+      tone: jobStatusTone('COMPLETED'),
+      isPendingPayment: false,
       isPaidAndLocked: false,
     };
   }

@@ -24,7 +24,7 @@ import {
   StatusPill,
   useToast,
 } from '@/components/ui';
-import { RevenueSplitBar } from '@/components/revenue-split-bar';
+import { RevenueSplitStages } from '@/components/revenue-split-stages';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import { formatDollars } from '@/lib/currency';
 import { adminPartnerStatusTone } from '@/lib/status-tone';
@@ -75,9 +75,10 @@ export function PartnerPerformancePage() {
   const [searchDraft, setSearchDraft] = useState(q);
 
   const [adjustTarget, setAdjustTarget] = useState<PartnerPerformanceItem | null>(null);
-  const [superP, setSuperP] = useState('15');
-  const [stateP, setStateP] = useState('10');
-  const [localP, setLocalP] = useState('5');
+  /** CLOX pool-relative % (sum 100) */
+  const [superP, setSuperP] = useState('50');
+  const [stateP, setStateP] = useState('30');
+  const [localP, setLocalP] = useState('20');
   const [notes, setNotes] = useState('');
 
   useEffect(() => {
@@ -115,11 +116,20 @@ export function PartnerPerformancePage() {
     adjustTarget?.split.national.carrierPercent ??
     perf.data?.national.carrierPercent ??
     70;
-  const targetPool = 100 - nationalCarrier;
+  const cloxPoolPercent = 100 - nationalCarrier;
 
   const poolSum =
     (Number(superP) || 0) + (Number(stateP) || 0) + (Number(localP) || 0);
-  const isPoolValid = poolSum === targetPool;
+  const isPoolValid = poolSum === 100;
+
+  function toPoolPercents(superAbs: number, stateAbs: number, localAbs: number) {
+    const sum = superAbs + stateAbs + localAbs;
+    if (sum === 100) return { super: superAbs, state: stateAbs, local: localAbs };
+    if (sum <= 0) return { super: 50, state: 30, local: 20 };
+    const s = Math.round((superAbs * 100) / sum);
+    const st = Math.round((stateAbs * 100) / sum);
+    return { super: s, state: st, local: 100 - s - st };
+  }
 
   function updateFilter(key: string, value: string) {
     const next = new URLSearchParams(searchParams);
@@ -134,19 +144,16 @@ export function PartnerPerformancePage() {
   const openAdjust = (row: PartnerPerformanceItem) => {
     setAdjustTarget(row);
     const pkg = row.split.package;
-    setSuperP(
-      String(pkg?.superPercent ?? row.split.effectiveSuperPercent ?? row.split.national.superPercent),
-    );
-    setStateP(
-      String(
-        pkg?.statePercent ?? row.split.effectiveStatePercent ?? row.split.national.statePercent,
-      ),
-    );
-    setLocalP(
-      String(
-        pkg?.localPercent ?? row.split.effectiveLocalPercent ?? row.split.national.localPercent,
-      ),
-    );
+    const rawSuper =
+      pkg?.superPercent ?? row.split.effectiveSuperPercent ?? row.split.national.superPercent;
+    const rawState =
+      pkg?.statePercent ?? row.split.effectiveStatePercent ?? row.split.national.statePercent;
+    const rawLocal =
+      pkg?.localPercent ?? row.split.effectiveLocalPercent ?? row.split.national.localPercent;
+    const pool = toPoolPercents(rawSuper, rawState, rawLocal);
+    setSuperP(String(pool.super));
+    setStateP(String(pool.state));
+    setLocalP(String(pool.local));
     setNotes('');
   };
 
@@ -216,58 +223,30 @@ export function PartnerPerformancePage() {
                 <p className="text-xs text-clox-faint">
                   {t('partnerPerformance.adjustHint', {
                     carrier: nationalCarrier,
-                    target: targetPool,
+                    target: 100,
+                    defaultValue: `Stage 1 is national (Carrier ${nationalCarrier}% / CLOX ${cloxPoolPercent}%). Edit only Stage 2 for this partner.`,
                   })}
                 </p>
 
-                {/* Live Revenue Split Bar for proposed personal package */}
-                <RevenueSplitBar
-                  carrier={nationalCarrier}
-                  superAdmin={Number(superP) || 0}
-                  stateMaster={Number(stateP) || 0}
-                  localBde={Number(localP) || 0}
-                  showCards={false}
+                <RevenueSplitStages
+                  carrierPercent={nationalCarrier}
+                  cloxSuperPercent={Number(superP) || 0}
+                  cloxStatePercent={Number(stateP) || 0}
+                  cloxLocalPercent={Number(localP) || 0}
+                  stage1Editable={false}
+                  cloxSuperValue={superP}
+                  cloxStateValue={stateP}
+                  cloxLocalValue={localP}
+                  onCloxSuperChange={setSuperP}
+                  onCloxStateChange={setStateP}
+                  onCloxLocalChange={setLocalP}
                 />
 
-                <div className="grid gap-3 sm:grid-cols-3 pt-1">
-                  <Field
-                    label={t('revenueSplit.superPercent')}
-                    value={superP}
-                    onChange={(e) => setSuperP(e.target.value)}
-                    inputMode="numeric"
-                  />
-                  <Field
-                    label={t('revenueSplit.statePercent')}
-                    value={stateP}
-                    onChange={(e) => setStateP(e.target.value)}
-                    inputMode="numeric"
-                  />
-                  <Field
-                    label={t('revenueSplit.localPercent')}
-                    value={localP}
-                    onChange={(e) => setLocalP(e.target.value)}
-                    inputMode="numeric"
-                  />
-                </div>
                 <Field
                   label={t('revenueSplit.notes')}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                 />
-                <p
-                  className={
-                    isPoolValid
-                      ? 'text-xs font-semibold text-[var(--status-ok)]'
-                      : 'text-xs font-semibold text-[var(--status-danger)]'
-                  }
-                >
-                  {t('revenueSplit.poolSumAdmin', {
-                    sum: poolSum,
-                    target: targetPool,
-                    carrier: nationalCarrier,
-                    defaultValue: `Admin pool sum: ${poolSum} / ${targetPool}% (National Carrier: ${nationalCarrier}%)`,
-                  })}
-                </p>
               </div>
               <div className="border-t border-clox-border px-4 py-4">
                 <Button

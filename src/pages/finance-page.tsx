@@ -35,6 +35,7 @@ import {
   getActiveSettlementCycle,
   getErrorDetail,
   getReconciliationReport,
+  getRevenueSplitSettings,
   getSettlementCycleDetail,
   getSuperFinance,
   listSettlementCycles,
@@ -90,6 +91,37 @@ export function FinancePage() {
     queryFn: ({ signal }) => getSuperFinance(query, { signal }),
     enabled: role === AdminRole.SUPER_ADMIN,
   });
+
+  const revenueSplitQuery = useQuery({
+    queryKey: ['admin', 'revenue-split'],
+    queryFn: ({ signal }) => getRevenueSplitSettings({ signal }),
+    enabled: role === AdminRole.SUPER_ADMIN,
+  });
+  const nationalCarrierPercent =
+    revenueSplitQuery.data?.carrierPercent ??
+    revenueSplitQuery.data?.effective.percents.carrierPercent ??
+    70;
+  const nationalCloxPoolPercent = Math.max(0, 100 - nationalCarrierPercent);
+  const nationalCloxPool =
+    revenueSplitQuery.data?.cloxPool ??
+    revenueSplitQuery.data?.effective.cloxPool ??
+    (revenueSplitQuery.data?.effective.percents.cloxSuperPercent != null
+      ? {
+          cloxSuperPercent: revenueSplitQuery.data.effective.percents.cloxSuperPercent,
+          cloxStatePercent: revenueSplitQuery.data.effective.percents.cloxStatePercent ?? 30,
+          cloxLocalPercent: revenueSplitQuery.data.effective.percents.cloxLocalPercent ?? 20,
+        }
+      : { cloxSuperPercent: 50, cloxStatePercent: 30, cloxLocalPercent: 20 });
+  // Gross-equivalent admin shares (for money-chart context only)
+  const nationalSuperPercent =
+    revenueSplitQuery.data?.effective.percents.superPercent ??
+    Math.round((nationalCloxPoolPercent * nationalCloxPool.cloxSuperPercent) / 100);
+  const nationalStatePercent =
+    revenueSplitQuery.data?.effective.percents.statePercent ??
+    Math.round((nationalCloxPoolPercent * nationalCloxPool.cloxStatePercent) / 100);
+  const nationalLocalPercent =
+    revenueSplitQuery.data?.effective.percents.localPercent ??
+    Math.max(0, nationalCloxPoolPercent - nationalSuperPercent - nationalStatePercent);
 
   // Query 2: Fortnightly Settlement Cycles
   const cyclesQuery = useQuery({
@@ -198,30 +230,42 @@ export function FinancePage() {
       ]
     : [];
 
-  // Chart 3: 70/30 Revenue Split Distribution
+  // Chart 3: Revenue split distribution (labels follow national policy; values are ledger cents)
   const splitItems: ChartDataItem[] = data?.summary
     ? [
         {
           id: 'split-carrier',
-          label: t('finance.charts.splitCarrier', { defaultValue: 'Carriers (70%)' }),
+          label: t('finance.charts.splitCarrier', {
+            defaultValue: `Carriers (~${nationalCarrierPercent}%)`,
+            percent: nationalCarrierPercent,
+          }),
           value: data.summary.carrierPayoutsCents / 100,
           color: '#2563eb',
         },
         {
           id: 'split-hq',
-          label: t('finance.charts.splitHq', { defaultValue: 'Clox HQ (15%)' }),
+          label: t('finance.charts.splitHq', {
+            defaultValue: `Clox HQ (~${nationalSuperPercent}%)`,
+            percent: nationalSuperPercent,
+          }),
           value: data.summary.hqShareCents / 100,
           color: '#f97316',
         },
         {
           id: 'split-state',
-          label: t('finance.charts.splitState', { defaultValue: 'State masters (10%)' }),
+          label: t('finance.charts.splitState', {
+            defaultValue: `State masters (~${nationalStatePercent}%)`,
+            percent: nationalStatePercent,
+          }),
           value: data.summary.stateCommissionsCents / 100,
           color: '#0284c7',
         },
         {
           id: 'split-local',
-          label: t('finance.charts.splitLocal', { defaultValue: 'Local partners (5%)' }),
+          label: t('finance.charts.splitLocal', {
+            defaultValue: `Local partners (~${nationalLocalPercent}%)`,
+            percent: nationalLocalPercent,
+          }),
           value: data.summary.localCommissionsCents / 100,
           color: '#fb923c',
         },
@@ -659,8 +703,15 @@ export function FinancePage() {
                 defaultValue: 'How freight money is shared',
               })}
               subtitle={t('finance.charts.splitSubtitle', {
-                defaultValue:
-                  'Carriers get most of each payment; Clox and partners share the rest (default 70% / 15% / 10% / 5%)',
+                defaultValue: `Carrier ${nationalCarrierPercent}% · CLOX ${nationalCloxPoolPercent}% of gross; CLOX pool Super ${nationalCloxPool.cloxSuperPercent}% / State ${nationalCloxPool.cloxStatePercent}% / Local ${nationalCloxPool.cloxLocalPercent}% (≈ ${nationalSuperPercent}/${nationalStatePercent}/${nationalLocalPercent}% of gross)`,
+                carrier: nationalCarrierPercent,
+                clox: nationalCloxPoolPercent,
+                cloxSuper: nationalCloxPool.cloxSuperPercent,
+                cloxState: nationalCloxPool.cloxStatePercent,
+                cloxLocal: nationalCloxPool.cloxLocalPercent,
+                super: nationalSuperPercent,
+                state: nationalStatePercent,
+                local: nationalLocalPercent,
               })}
               items={splitItems}
               defaultVisual="pie"
@@ -848,7 +899,7 @@ export function FinancePage() {
                       <th className="pb-3 font-medium">{t('finance.leaderboard.rank', { defaultValue: 'Rank' })}</th>
                       <th className="pb-3 font-medium">{t('finance.leaderboard.carrierOrg', { defaultValue: 'Transport Carrier' })}</th>
                       <th className="pb-3 font-medium">{t('finance.leaderboard.trips', { defaultValue: 'Completed Trips' })}</th>
-                      <th className="pb-3 font-medium">{t('finance.leaderboard.netEarned', { defaultValue: 'Net Earnings (70%)' })}</th>
+                      <th className="pb-3 font-medium">{t('finance.leaderboard.netEarned', { defaultValue: 'Net earnings (carrier share)' })}</th>
                       <th className="pb-3 font-medium">{t('finance.carrier.paidOut', { defaultValue: 'Paid via Stripe' })}</th>
                       <th className="pb-3 font-medium">
                         {clearingDays === 0
@@ -1028,7 +1079,7 @@ export function FinancePage() {
                   </div>
                 </div>
                 <div className="rounded-clox-sm bg-clox-surface-alt/50 p-3">
-                  <span className="text-xs text-clox-mute">Carrier Payout (70%)</span>
+                  <span className="text-xs text-clox-mute">Carrier payout</span>
                   <div className="mt-1 font-display text-base font-bold text-blue-700">
                     {formatDollars(activeCycleQuery.data.carrierPayoutCents)}
                   </div>
@@ -1078,8 +1129,8 @@ export function FinancePage() {
                     <th className="pb-3 font-medium">Period Window</th>
                     <th className="pb-3 font-medium">Scheduled Payout</th>
                     <th className="pb-3 font-medium">Accrued / Disbursed</th>
-                    <th className="pb-3 font-medium">Carrier (70%)</th>
-                    <th className="pb-3 font-medium">Partner (15%)</th>
+                    <th className="pb-3 font-medium">Carrier share</th>
+                    <th className="pb-3 font-medium">Partner / admin</th>
                     <th className="pb-3 font-medium">HQ Holding</th>
                     <th className="pb-3 font-medium">Status</th>
                     <th className="pb-3 font-medium text-right">Actions</th>
@@ -1365,7 +1416,7 @@ export function FinancePage() {
                         Zero Discrepancies Detected
                       </h4>
                       <p className="mt-1 text-xs text-clox-mute">
-                        All platform gross volume, carrier 70% accruals, partner shares, and Stripe payment transfers reconcile perfectly.
+                        All platform gross volume, carrier accruals, partner shares, and Stripe payment transfers reconcile perfectly.
                       </p>
                     </div>
                   )}
@@ -1467,10 +1518,10 @@ export function FinancePage() {
                       Lines Matched: <strong>{lastRunResult.lineCount}</strong>
                     </div>
                     <div>
-                      Carrier 70% Payout: <strong>{formatDollars(lastRunResult.carrierPayoutCents)}</strong>
+                      Carrier payout: <strong>{formatDollars(lastRunResult.carrierPayoutCents)}</strong>
                     </div>
                     <div>
-                      Admin 15% Payout: <strong>{formatDollars(lastRunResult.adminPayoutCents)}</strong>
+                      Admin / partner payout: <strong>{formatDollars(lastRunResult.adminPayoutCents)}</strong>
                     </div>
                     <div>
                       HQ Holding Ledger: <strong>{formatDollars(lastRunResult.hqHoldingCents)}</strong>

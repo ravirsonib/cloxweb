@@ -92,6 +92,7 @@ export type JobSummary = {
     status: string;
     amountIncGstCents: number;
     stripePaymentIntentId: string | null;
+    type?: string;
   } | null;
   openException?: {
     id: string;
@@ -128,6 +129,14 @@ export type JobSummary = {
   }>;
 };
 
+export type SenderFeeBreakdown = {
+  mode: 'EXCLUSIVE' | 'INCLUSIVE';
+  feePercent: number;
+  baseIncGstCents: number;
+  feeIncGstCents: number;
+  chargeIncGstCents: number;
+};
+
 export type AcceptProposalResult = {
   paymentEventId: string;
   paymentStatus: string;
@@ -144,6 +153,18 @@ export type AcceptProposalResult = {
   stripeStatus?: string;
   mock?: boolean;
   message?: string;
+  senderFee?: SenderFeeBreakdown;
+};
+
+export type ProposalChargePreview = {
+  proposalId: string;
+  jobId: string;
+  baseIncGstCents: number;
+  feeIncGstCents: number;
+  chargeIncGstCents: number;
+  feePercent: number;
+  mode: 'EXCLUSIVE' | 'INCLUSIVE';
+  senderFeeOverrideId: string | null;
 };
 
 export type CarrierAssignment = {
@@ -224,6 +245,9 @@ export type MarketBoardJob = {
 
 export type MarketBoard = {
   netPayoutHint: string;
+  /** Effective carrier % for this company (national ± uplift). */
+  carrierPercent?: number;
+  nationalCarrierPercent?: number;
   carrierReliabilityScore?: number;
   carrierReliabilityTier?: 'EXCELLENT' | 'GOOD' | 'FAIR' | 'CRITICAL';
   jobs: MarketBoardJob[];
@@ -280,6 +304,12 @@ export function withdrawProposal(proposalId: string) {
 export function withdrawProposalByJobId(jobId: string) {
   return http
     .post<{ id: string; jobId: string; status: string }>(`/matching/jobs/${jobId}/withdraw`, {})
+    .then((r) => r.data);
+}
+
+export function previewProposalCharge(jobId: string, proposalId: string) {
+  return http
+    .get<ProposalChargePreview>(`/jobs/${jobId}/proposals/${proposalId}/charge-preview`)
     .then((r) => r.data);
 }
 

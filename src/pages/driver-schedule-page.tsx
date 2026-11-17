@@ -107,7 +107,7 @@ export function DriverSchedulePage() {
       setReason('');
       await invalidate();
     },
-    onError: (err) => toast.error(getErrorDetail(err)),
+    // Inline Notice in the form shows the API error — do not also toast (duplicate).
   });
 
   const cancelMutation = useMutation({
@@ -233,7 +233,10 @@ export function DriverSchedulePage() {
               <Select
                 label={t('driverSchedule.typeLabel', { defaultValue: 'Type' })}
                 value={type}
-                onChange={(e) => setType(e.target.value as DriverTimeOffType)}
+                onChange={(e) => {
+                  requestMutation.reset();
+                  setType(e.target.value as DriverTimeOffType);
+                }}
               >
                 {TIME_OFF_TYPES.map((item) => (
                   <option key={item} value={item}>
@@ -246,7 +249,10 @@ export function DriverSchedulePage() {
                 type="datetime-local"
                 label={t('driverSchedule.startAt', { defaultValue: 'Start date & time' })}
                 value={startAt}
-                onChange={(e) => setStartAt(e.target.value)}
+                onChange={(e) => {
+                  requestMutation.reset();
+                  setStartAt(e.target.value);
+                }}
                 min={minDatetimeLocalValue()}
                 required
               />
@@ -254,7 +260,10 @@ export function DriverSchedulePage() {
                 type="datetime-local"
                 label={t('driverSchedule.endAt', { defaultValue: 'End date & time' })}
                 value={endAt}
-                onChange={(e) => setEndAt(e.target.value)}
+                onChange={(e) => {
+                  requestMutation.reset();
+                  setEndAt(e.target.value);
+                }}
                 min={startAt && startAt >= minDatetimeLocalValue() ? startAt : minDatetimeLocalValue()}
                 required
               />
@@ -263,7 +272,10 @@ export function DriverSchedulePage() {
               className="mt-3"
               label={t('driverSchedule.reasonLabel', { defaultValue: 'Reason (optional)' })}
               value={reason}
-              onChange={(e) => setReason(e.target.value)}
+              onChange={(e) => {
+                requestMutation.reset();
+                setReason(e.target.value);
+              }}
               placeholder={t('driverSchedule.reasonPlaceholder', {
                 defaultValue: 'e.g. Family holiday, medical appointment',
               })}

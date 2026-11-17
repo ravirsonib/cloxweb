@@ -544,6 +544,7 @@ export const adminCompanyListQuerySchema = z.object({
   ]).optional(),
   regionCode: z.string().trim().max(16).optional(),
   q: z.string().trim().max(200).optional(),
+  hasCustomPolicy: z.coerce.boolean().optional(),
 });
 
 export type AdminCompanyListQuery = z.infer<typeof adminCompanyListQuerySchema>;

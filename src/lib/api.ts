@@ -41,6 +41,10 @@ export {
   publishRevenueSplitOverride,
   listAdminRevenueSplitPackages,
   publishAdminRevenueSplitPackage,
+  listCarrierRevenueUplifts,
+  publishCarrierRevenueUplift,
+  listSenderFeeOverrides,
+  publishSenderFeeOverride,
   getPartnerPerformance,
   getSuperFinance,
   getCarrierFinance,
@@ -242,6 +246,7 @@ export {
   withdrawProposal,
   withdrawProposalByJobId,
   acceptProposal,
+  previewProposalCharge,
   syncJobPayment,
   recommendVehicle,
   previewJobRoute,
@@ -259,6 +264,7 @@ export {
   type MarketBoard,
   type MarketBoardJob,
   type AcceptProposalResult,
+  type ProposalChargePreview,
   type CarrierAssignment,
 } from '@/lib/api/jobs';
 export {

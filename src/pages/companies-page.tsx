@@ -83,6 +83,7 @@ export function CustomersPage() {
   const type = parseCustomerType(searchParams.get('type'));
   const status = searchParams.get('status') || '';
   const regionCode = searchParams.get('regionCode') || '';
+  const hasCustomPolicy = searchParams.get('hasCustomPolicy') === '1';
 
   // Keep URL + server filter aligned (default carriers).
   useEffect(() => {
@@ -101,8 +102,9 @@ export function CustomersPage() {
       type,
       status: parseCompanyStatus(status),
       regionCode: regionCode || undefined,
+      hasCustomPolicy: hasCustomPolicy || undefined,
     }),
-    [page, q, type, status, regionCode],
+    [page, q, type, status, regionCode, hasCustomPolicy],
   );
 
   const companiesQuery = useQuery({
@@ -235,6 +237,44 @@ export function CustomersPage() {
     deleteMutation.mutate(row.id);
   }
 
+  function revenuePolicyLabel(row: CompanyListItem): string | null {
+    const policy = row.revenuePolicy;
+    if (!policy?.hasCustomPolicy) return null;
+    if (row.type === CompanyType.CARRIER) {
+      const bonus = policy.bonusPercent ?? 0;
+      const effective = policy.effectiveCarrierPercent ?? policy.nationalCarrierPercent;
+      return t('companies.listUpliftBadge', {
+        defaultValue: `Preferred · ${effective}% (+${bonus})`,
+        effective,
+        bonus,
+      });
+    }
+    const fee = policy.feePercent ?? 0;
+    return t('companies.listFeeBadge', {
+      defaultValue: fee === 0 ? 'Fee 0% · exempt' : `Custom fee ${fee}%`,
+      fee,
+    });
+  }
+
+  function renderRevenuePolicyBadge(row: CompanyListItem) {
+    const label = revenuePolicyLabel(row);
+    if (!label) return null;
+    return <StatusPill tone="info">{label}</StatusPill>;
+  }
+
+  function renderRevenueCornerBadge(row: CompanyListItem) {
+    const label = revenuePolicyLabel(row);
+    if (!label) return null;
+    return (
+      <span
+        className="pointer-events-none absolute right-3 top-0 z-[1] max-w-[calc(100%-1.5rem)] truncate rounded-b-md bg-[var(--status-info)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm"
+        title={label}
+      >
+        {label}
+      </span>
+    );
+  }
+
   function renderActions(row: CompanyListItem) {
     const isDraft = row.status === CompanyStatus.DRAFT;
     const isSuspended = row.status === CompanyStatus.SUSPENDED;
@@ -298,26 +338,35 @@ export function CustomersPage() {
   }
 
   function renderCompanyCard(row: CompanyListItem) {
+    const hasPolicy = Boolean(row.revenuePolicy?.hasCustomPolicy);
     return (
-      <div className={`${dataCardClassName} h-full flex flex-col justify-between`}>
-        <div>
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <Link
-                to={`/customers/${row.id}`}
-                className="truncate font-medium text-clox-ink hover:text-clox-orange hover:underline block"
+      <div
+        className={cn(
+          dataCardClassName,
+          'relative h-full flex flex-col justify-between overflow-hidden',
+          hasPolicy &&
+            'ring-1 ring-[var(--status-info)]/35 bg-[color-mix(in_srgb,var(--status-info-bg)_40%,var(--clox-surface,white))]',
+        )}
+      >
+        {renderRevenueCornerBadge(row)}
+        <div className={cn(hasPolicy && 'pt-5')}>
+          <div className="min-w-0 space-y-1">
+            <Link
+              to={`/customers/${row.id}`}
+              className="block break-words font-medium leading-snug text-clox-ink hover:text-clox-orange hover:underline [overflow-wrap:anywhere]"
+              title={row.legalName}
+            >
+              {row.legalName}
+            </Link>
+            {row.tradingName ? (
+              <p
+                className="break-words text-xs leading-snug text-clox-faint [overflow-wrap:anywhere]"
+                title={row.tradingName}
               >
-                {row.legalName}
-              </Link>
-              {row.tradingName ? (
-                <p className="truncate text-xs text-clox-faint">{row.tradingName}</p>
-              ) : null}
-              <div className="mt-1.5 flex flex-col gap-1">
-                {row.phone ? <PhoneLink phone={row.phone} /> : null}
-                {row.email ? <EmailLink email={row.email} /> : null}
-              </div>
-            </div>
-            <div className="flex shrink-0 flex-col items-end gap-1">
+                {row.tradingName}
+              </p>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
               <StatusPill tone={companyStatusTone(row.status)}>
                 {t(`companyStatuses.${row.status}`, { defaultValue: row.status })}
               </StatusPill>
@@ -325,6 +374,12 @@ export function CustomersPage() {
                 <StatusPill tone="info">
                   {t('companies.reliabilityScore', { score: row.reliabilityScore })}
                 </StatusPill>
+              ) : null}
+            </div>
+            <div className="mt-1.5 flex min-w-0 flex-col gap-1">
+              {row.phone ? <PhoneLink phone={row.phone} /> : null}
+              {row.email ? (
+                <EmailLink email={row.email} maxWidthClassName="max-w-full" />
               ) : null}
             </div>
           </div>
@@ -349,7 +404,8 @@ export function CustomersPage() {
           </div>
           {row.status === CompanyStatus.SUSPENDED && row.suspendedReason ? (
             <p className="mt-2 text-xs text-clox-mute bg-clox-surface-alt/70 p-2 rounded border border-clox-border-soft">
-              <strong className="text-clox-danger">{t('companies.suspendedReasonLabel')}:</strong> {row.suspendedReason}
+              <strong className="text-clox-danger">{t('companies.suspendedReasonLabel')}:</strong>{' '}
+              {row.suspendedReason}
             </p>
           ) : null}
           {row.openCase ? (
@@ -431,7 +487,7 @@ export function CustomersPage() {
         })}
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:items-end">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 sm:items-end">
         <label className="mb-0 block sm:col-span-2">
           <span className="mb-1.5 block text-[12.5px] font-semibold text-clox-ink">
             {t('search')}
@@ -458,6 +514,23 @@ export function CustomersPage() {
               {t(`companyStatuses.${value}`, { defaultValue: value })}
             </option>
           ))}
+        </Select>
+        <Select
+          className="mb-0"
+          label={t('companies.policyFilter', { defaultValue: 'Revenue policy' })}
+          value={hasCustomPolicy ? 'custom' : ''}
+          onChange={(event) =>
+            updateFilter('hasCustomPolicy', event.target.value === 'custom' ? '1' : '')
+          }
+        >
+          <option value="">
+            {t('companies.policyFilterAll', { defaultValue: 'All companies' })}
+          </option>
+          <option value="custom">
+            {type === CompanyType.CARRIER
+              ? t('companies.policyFilterUplift', { defaultValue: 'Has uplift only' })
+              : t('companies.policyFilterFee', { defaultValue: 'Has custom fee only' })}
+          </option>
         </Select>
         <div className="flex flex-wrap items-end gap-2">
           <Select
@@ -556,7 +629,11 @@ export function CustomersPage() {
                   {items.map((row) => (
                     <tr
                       key={row.id}
-                      className="border-t border-clox-border-soft hover:bg-clox-surface-alt/60"
+                      className={cn(
+                        'border-t border-clox-border-soft hover:bg-clox-surface-alt/60',
+                        row.revenuePolicy?.hasCustomPolicy &&
+                          'bg-[color-mix(in_srgb,var(--status-info-bg)_45%,transparent)]',
+                      )}
                     >
                       <td className="px-4 py-3">
                         <Link
@@ -574,6 +651,7 @@ export function CustomersPage() {
                             <span className="text-xs text-clox-faint">{t('dash')}</span>
                           )}
                         </div>
+                        <div className="mt-1">{renderRevenuePolicyBadge(row)}</div>
                         {row.status === CompanyStatus.SUSPENDED && row.suspendedReason ? (
                           <div className="mt-1 text-xs text-clox-mute">
                             {t('companies.suspendedReasonLabel')}: {row.suspendedReason}

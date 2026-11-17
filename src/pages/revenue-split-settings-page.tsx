@@ -11,13 +11,10 @@ import {
 } from '@/lib/api';
 import { Button, Field, Notice, useToast } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
-import { RevenueSplitBar } from '@/components/revenue-split-bar';
+import { RevenueSplitStages } from '@/components/revenue-split-stages';
+import { RevenueSplitTree, grossAdminToCloxPool } from '@/components/revenue-split-tree';
 import { AdminRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
-
-function poolSum(carrierP: number, superP: number, stateP: number, localP: number) {
-  return carrierP + superP + stateP + localP;
-}
 
 export function RevenueSplitSettingsPage() {
   const { t } = useTranslation('common');
@@ -37,30 +34,38 @@ export function RevenueSplitSettingsPage() {
   });
 
   const [carrierP, setCarrierP] = useState('70');
-  const [superP, setSuperP] = useState('15');
-  const [stateP, setStateP] = useState('10');
-  const [localP, setLocalP] = useState('5');
+  const [cloxSuperP, setCloxSuperP] = useState('50');
+  const [cloxStateP, setCloxStateP] = useState('30');
+  const [cloxLocalP, setCloxLocalP] = useState('20');
   const [notes, setNotes] = useState('');
 
   useEffect(() => {
-    const p = settings.data?.effective.percents;
-    if (!p) return;
+    const data = settings.data;
+    if (!data) return;
+    const p = data.effective.percents;
+    const pool =
+      data.cloxPool ??
+      data.effective.cloxPool ??
+      (p.cloxSuperPercent != null
+        ? {
+            cloxSuperPercent: p.cloxSuperPercent,
+            cloxStatePercent: p.cloxStatePercent ?? 30,
+            cloxLocalPercent: p.cloxLocalPercent ?? 20,
+          }
+        : grossAdminToCloxPool(p.superPercent, p.statePercent, p.localPercent));
     setCarrierP(String(p.carrierPercent ?? 70));
-    setSuperP(String(p.superPercent));
-    setStateP(String(p.statePercent));
-    setLocalP(String(p.localPercent));
+    setCloxSuperP(String(pool.cloxSuperPercent));
+    setCloxStateP(String(pool.cloxStatePercent));
+    setCloxLocalP(String(pool.cloxLocalPercent));
   }, [settings.data]);
 
-  const nationalSum = useMemo(
+  const carrierPct = Number(carrierP) || 0;
+  const cloxPoolSum = useMemo(
     () =>
-      poolSum(
-        Number(carrierP) || 0,
-        Number(superP) || 0,
-        Number(stateP) || 0,
-        Number(localP) || 0,
-      ),
-    [carrierP, superP, stateP, localP],
+      (Number(cloxSuperP) || 0) + (Number(cloxStateP) || 0) + (Number(cloxLocalP) || 0),
+    [cloxSuperP, cloxStateP, cloxLocalP],
   );
+  const isPoolValid = cloxPoolSum === 100;
 
   const invalidate = async () => {
     await Promise.all([
@@ -72,10 +77,10 @@ export function RevenueSplitSettingsPage() {
   const draftMut = useMutation({
     mutationFn: () =>
       draftRevenueSplit({
-        carrierPercent: Math.round(Number(carrierP)),
-        superPercent: Math.round(Number(superP)),
-        statePercent: Math.round(Number(stateP)),
-        localPercent: Math.round(Number(localP)),
+        carrierPercent: Math.round(carrierPct),
+        cloxSuperPercent: Math.round(Number(cloxSuperP)),
+        cloxStatePercent: Math.round(Number(cloxStateP)),
+        cloxLocalPercent: Math.round(Number(cloxLocalP)),
         notes: notes.trim() || undefined,
       }),
     onSuccess: async () => {
@@ -89,10 +94,10 @@ export function RevenueSplitSettingsPage() {
     mutationFn: () =>
       publishRevenueSplit({
         draftId: settings.data?.draft?.id,
-        carrierPercent: Math.round(Number(carrierP)),
-        superPercent: Math.round(Number(superP)),
-        statePercent: Math.round(Number(stateP)),
-        localPercent: Math.round(Number(localP)),
+        carrierPercent: Math.round(carrierPct),
+        cloxSuperPercent: Math.round(Number(cloxSuperP)),
+        cloxStatePercent: Math.round(Number(cloxStateP)),
+        cloxLocalPercent: Math.round(Number(cloxLocalP)),
         notes: notes.trim() || undefined,
       }),
     onSuccess: async () => {
@@ -106,6 +111,22 @@ export function RevenueSplitSettingsPage() {
   if (settings.isLoading) return <LoadingBlock label={t('revenueSplit.loading')} />;
 
   const effective = settings.data?.effective.percents;
+  const effectivePool =
+    settings.data?.cloxPool ??
+    settings.data?.effective.cloxPool ??
+    (effective
+      ? effective.cloxSuperPercent != null
+        ? {
+            cloxSuperPercent: effective.cloxSuperPercent,
+            cloxStatePercent: effective.cloxStatePercent ?? 30,
+            cloxLocalPercent: effective.cloxLocalPercent ?? 20,
+          }
+        : grossAdminToCloxPool(
+            effective.superPercent,
+            effective.statePercent,
+            effective.localPercent,
+          )
+      : null);
 
   return (
     <div className="max-w-3xl space-y-8">
@@ -113,7 +134,12 @@ export function RevenueSplitSettingsPage() {
         <h1 className="font-display text-2xl font-bold text-clox-ink">
           {t('revenueSplit.title')}
         </h1>
-        <p className="mt-2 text-sm text-clox-mute">{t('revenueSplit.subtitle')}</p>
+        <p className="mt-2 text-sm text-clox-mute">
+          {t('revenueSplit.subtitle', {
+            defaultValue:
+              'Two steps: split gross between Carrier and CLOX, then split CLOX among Super / State / Local.',
+          })}
+        </p>
         <p className="mt-1 text-xs text-clox-faint">
           <Link to="/platform-settings" className="text-clox-orange hover:underline">
             {t('nav.platformSettings')}
@@ -126,14 +152,12 @@ export function RevenueSplitSettingsPage() {
       </div>
 
       <Notice tone="info">{t('revenueSplit.newAccrualsOnly')}</Notice>
-      <Notice tone="info">{t('revenueSplit.perAdminHint')}</Notice>
 
       {settings.isError ? (
         <Notice tone="error">{getErrorDetail(settings.error)}</Notice>
       ) : null}
 
-      {/* ─── Effective National Policy Card with 100% Bar ─── */}
-      {effective ? (
+      {effective && effectivePool ? (
         <section className="clox-card space-y-4 p-5">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-clox-border pb-3">
             <div>
@@ -142,22 +166,22 @@ export function RevenueSplitSettingsPage() {
               </h2>
               <p className="text-xs text-clox-mute">
                 {t('revenueSplit.effectiveSubtitle', {
-                  defaultValue: 'Live 100% revenue distribution applied to new shipments upon settlement.',
+                  defaultValue: 'Currently live nested split (read-only preview).',
                 })}
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
-                v{settings.data?.effective.version ?? 1} · {t('revenueSplit.active', { defaultValue: 'Live Policy' })}
-              </span>
-            </div>
+            <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
+              v{settings.data?.effective.version ?? 1} ·{' '}
+              {t('revenueSplit.active', { defaultValue: 'Live Policy' })}
+            </span>
           </div>
 
-          <RevenueSplitBar
-            carrier={effective.carrierPercent}
-            superAdmin={effective.superPercent}
-            stateMaster={effective.statePercent}
-            localBde={effective.localPercent}
+          <RevenueSplitTree
+            carrierPercent={effective.carrierPercent}
+            cloxSuperPercent={effectivePool.cloxSuperPercent}
+            cloxStatePercent={effectivePool.cloxStatePercent}
+            cloxLocalPercent={effectivePool.cloxLocalPercent}
+            showGrossHint={false}
           />
         </section>
       ) : null}
@@ -166,89 +190,53 @@ export function RevenueSplitSettingsPage() {
         className="clox-card space-y-4 p-5"
         onSubmit={(e) => {
           e.preventDefault();
+          if (!isPoolValid) return;
           publishMut.mutate();
         }}
         noValidate
       >
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-clox-border pb-3">
-          <div>
-            <h2 className="font-display text-base font-semibold text-clox-ink">
-              {t('revenueSplit.nationalTitle')}
-            </h2>
-            <p className="text-xs text-clox-faint">{t('revenueSplit.carrierDynamicHint')}</p>
-          </div>
-          <span className="text-xs text-clox-mute">
-            {t('revenueSplit.livePreview', { defaultValue: 'Live Edit Preview' })}
-          </span>
+        <div className="border-b border-clox-border pb-3">
+          <h2 className="font-display text-base font-semibold text-clox-ink">
+            {t('revenueSplit.nationalTitle')}
+          </h2>
+          <p className="text-xs text-clox-faint">
+            {t('revenueSplit.carrierDynamicHint', {
+              defaultValue: 'Edit Stage 1, then Stage 2. Publish when CLOX shares sum to 100%.',
+            })}
+          </p>
         </div>
 
-        {/* Live preview bar as user adjusts numbers */}
-        <RevenueSplitBar
-          carrier={Number(carrierP) || 0}
-          superAdmin={Number(superP) || 0}
-          stateMaster={Number(stateP) || 0}
-          localBde={Number(localP) || 0}
-          showCards={false}
+        <RevenueSplitStages
+          carrierPercent={carrierPct}
+          cloxSuperPercent={Number(cloxSuperP) || 0}
+          cloxStatePercent={Number(cloxStateP) || 0}
+          cloxLocalPercent={Number(cloxLocalP) || 0}
+          carrierValue={carrierP}
+          cloxSuperValue={cloxSuperP}
+          cloxStateValue={cloxStateP}
+          cloxLocalValue={cloxLocalP}
+          onCarrierChange={setCarrierP}
+          onCloxSuperChange={setCloxSuperP}
+          onCloxStateChange={setCloxStateP}
+          onCloxLocalChange={setCloxLocalP}
         />
 
-        <div className="grid gap-3 sm:grid-cols-4 pt-2">
-          <Field
-            label={t('revenueSplit.carrierPercent', { defaultValue: 'Carrier %' })}
-            value={carrierP}
-            onChange={(e) => setCarrierP(e.target.value)}
-            inputMode="numeric"
-            required
-          />
-          <Field
-            label={t('revenueSplit.superPercent')}
-            value={superP}
-            onChange={(e) => setSuperP(e.target.value)}
-            inputMode="numeric"
-            required
-          />
-          <Field
-            label={t('revenueSplit.statePercent')}
-            value={stateP}
-            onChange={(e) => setStateP(e.target.value)}
-            inputMode="numeric"
-            required
-          />
-          <Field
-            label={t('revenueSplit.localPercent')}
-            value={localP}
-            onChange={(e) => setLocalP(e.target.value)}
-            inputMode="numeric"
-            required
-          />
-        </div>
         <Field
           label={t('revenueSplit.notes')}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
         />
-        <p
-          className={
-            nationalSum === 100
-              ? 'text-xs font-semibold text-[var(--status-ok)]'
-              : 'text-xs font-semibold text-[var(--status-danger)]'
-          }
-        >
-          {t('revenueSplit.poolSum', { sum: nationalSum })}
-        </p>
+
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
             variant="secondary"
-            disabled={draftMut.isPending || nationalSum !== 100}
+            disabled={draftMut.isPending || !isPoolValid}
             onClick={() => draftMut.mutate()}
           >
             {draftMut.isPending ? t('saving') : t('revenueSplit.saveDraft')}
           </Button>
-          <Button
-            type="submit"
-            variant="cta"
-            disabled={publishMut.isPending || nationalSum !== 100}
-          >
+          <Button type="submit" variant="cta" disabled={publishMut.isPending || !isPoolValid}>
             {publishMut.isPending ? t('saving') : t('revenueSplit.publish')}
           </Button>
         </div>
@@ -263,8 +251,24 @@ export function RevenueSplitSettingsPage() {
               superPercent?: number;
               statePercent?: number;
               localPercent?: number;
+              cloxSuperPercent?: number;
+              cloxStatePercent?: number;
+              cloxLocalPercent?: number;
               notes?: string;
             };
+            const carrier = payload.carrierPercent ?? 70;
+            const pool =
+              payload.cloxSuperPercent != null
+                ? {
+                    cloxSuperPercent: payload.cloxSuperPercent,
+                    cloxStatePercent: payload.cloxStatePercent ?? 0,
+                    cloxLocalPercent: payload.cloxLocalPercent ?? 0,
+                  }
+                : grossAdminToCloxPool(
+                    payload.superPercent ?? 0,
+                    payload.statePercent ?? 0,
+                    payload.localPercent ?? 0,
+                  );
             return (
               <li
                 key={v.id}
@@ -272,7 +276,7 @@ export function RevenueSplitSettingsPage() {
               >
                 v{v.version}
                 {v.publishedAt ? ` · ${t('revenueSplit.published')}` : ` · ${t('revenueSplit.draft')}`}
-                {` · C${payload.carrierPercent ?? 70}/S${payload.superPercent}/St${payload.statePercent}/L${payload.localPercent}`}
+                {` · Carrier ${carrier}% / CLOX ${100 - carrier}% · pool ${pool.cloxSuperPercent}/${pool.cloxStatePercent}/${pool.cloxLocalPercent}`}
                 {payload.notes ? ` · ${payload.notes}` : ''}
               </li>
             );

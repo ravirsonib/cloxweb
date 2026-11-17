@@ -22,9 +22,10 @@ import {
   publishRevenueSplit,
   updateRegionEnabled,
 } from '@/lib/api';
-import { Button, Field, Notice, StatusPill, useConfirm, useToast } from '@/components/ui';
+import { Button, Field, Notice, Select, StatusPill, useConfirm, useToast } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
-import { RevenueSplitBar } from '@/components/revenue-split-bar';
+import { RevenueSplitStages } from '@/components/revenue-split-stages';
+import { grossAdminToCloxPool } from '@/components/revenue-split-tree';
 import { AdminRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -96,11 +97,16 @@ export function PlatformSettingsPage() {
   // State Master Tier governance toggle
   const [enableStateTier, setEnableStateTier] = useState<boolean>(false);
 
-  // Dynamic revenue split fields
+  // Stage 1: carrier % of gross. Stage 2: CLOX pool % (sum 100).
   const [carrierShare, setCarrierShare] = useState('70');
-  const [superShare, setSuperShare] = useState('15');
-  const [stateShare, setStateShare] = useState('10');
-  const [localShare, setLocalShare] = useState('5');
+  const [cloxSuperShare, setCloxSuperShare] = useState('50');
+  const [cloxStateShare, setCloxStateShare] = useState('30');
+  const [cloxLocalShare, setCloxLocalShare] = useState('20');
+
+  // Sender platform fee
+  const [senderFeePercent, setSenderFeePercent] = useState('0');
+  const [senderFeeMode, setSenderFeeMode] = useState<'EXCLUSIVE' | 'INCLUSIVE'>('EXCLUSIVE');
+  const [minPlatformPercent, setMinPlatformPercent] = useState('10');
 
   useEffect(() => {
     if (!settings.data) return;
@@ -135,25 +141,43 @@ export function PlatformSettingsPage() {
     if (settings.data.enableStateMasterTier != null) {
       setEnableStateTier(Boolean(settings.data.enableStateMasterTier));
     }
+    setSenderFeePercent(String(settings.data.senderPlatformFeePercent ?? 0));
+    setSenderFeeMode(
+      settings.data.senderPlatformFeeMode === 'INCLUSIVE' ? 'INCLUSIVE' : 'EXCLUSIVE',
+    );
+    setMinPlatformPercent(String(settings.data.minPlatformPercent ?? 10));
   }, [settings.data]);
 
   useEffect(() => {
-    const p = revenueSplit.data?.effective.percents;
-    if (!p) return;
+    const data = revenueSplit.data;
+    if (!data) return;
+    const p = data.effective.percents;
+    const pool =
+      data.cloxPool ??
+      data.effective.cloxPool ??
+      (p.cloxSuperPercent != null
+        ? {
+            cloxSuperPercent: p.cloxSuperPercent,
+            cloxStatePercent: p.cloxStatePercent ?? 30,
+            cloxLocalPercent: p.cloxLocalPercent ?? 20,
+          }
+        : grossAdminToCloxPool(p.superPercent ?? 15, p.statePercent ?? 10, p.localPercent ?? 5));
     setCarrierShare(String(p.carrierPercent ?? 70));
-    setSuperShare(String(p.superPercent ?? 15));
-    setStateShare(String(p.statePercent ?? 10));
-    setLocalShare(String(p.localPercent ?? 5));
+    setCloxSuperShare(String(pool.cloxSuperPercent));
+    setCloxStateShare(String(pool.cloxStatePercent));
+    setCloxLocalShare(String(pool.cloxLocalPercent));
   }, [revenueSplit.data]);
 
-  const splitTotal = useMemo(() => {
+  const cloxPoolSum = useMemo(() => {
     return (
-      (Number(carrierShare) || 0) +
-      (Number(superShare) || 0) +
-      (Number(stateShare) || 0) +
-      (Number(localShare) || 0)
+      (Number(cloxSuperShare) || 0) +
+      (Number(cloxStateShare) || 0) +
+      (Number(cloxLocalShare) || 0)
     );
-  }, [carrierShare, superShare, stateShare, localShare]);
+  }, [cloxSuperShare, cloxStateShare, cloxLocalShare]);
+
+  const carrierPct = Number(carrierShare) || 0;
+  const cloxPoolPct = Math.max(0, 100 - carrierPct);
 
   const save = useMutation({
     mutationFn: () => {
@@ -172,6 +196,8 @@ export function PlatformSettingsPage() {
 
       const cycleDays = Number(cadenceDays);
       const cycleCutoff = Number(cutoffHour);
+      const feePct = Number(senderFeePercent);
+      const minPlat = Number(minPlatformPercent);
 
       if (
         !Number.isFinite(rescueDiscountPercent) ||
@@ -198,7 +224,13 @@ export function PlatformSettingsPage() {
         cycleDays > 90 ||
         !Number.isFinite(cycleCutoff) ||
         cycleCutoff < 0 ||
-        cycleCutoff > 23
+        cycleCutoff > 23 ||
+        !Number.isFinite(feePct) ||
+        feePct < 0 ||
+        feePct > 30 ||
+        !Number.isFinite(minPlat) ||
+        minPlat < 1 ||
+        minPlat > 50
       ) {
         throw new Error(
           t('platformSettings.invalid', {
@@ -221,6 +253,9 @@ export function PlatformSettingsPage() {
         settlementCycleCadenceDays: Math.round(cycleDays),
         settlementCutoffHour: Math.round(cycleCutoff),
         enableStateMasterTier: enableStateTier,
+        senderPlatformFeePercent: Math.round(feePct),
+        senderPlatformFeeMode: senderFeeMode,
+        minPlatformPercent: Math.round(minPlat),
       });
     },
     onSuccess: async () => {
@@ -278,36 +313,73 @@ export function PlatformSettingsPage() {
   };
 
   const publishSplitMut = useMutation({
-    mutationFn: () => {
-      if (splitTotal !== 100) {
-        throw new Error(t('platformSettings.splitSumError', { sum: splitTotal }));
+    mutationFn: async () => {
+      if (cloxPoolSum !== 100) {
+        throw new Error(
+          t('platformSettings.cloxPoolSumError', {
+            sum: cloxPoolSum,
+            defaultValue: `CLOX pool shares must sum to 100% (got ${cloxPoolSum}%)`,
+          }),
+        );
       }
+      const feePct = Number(senderFeePercent);
+      const minPlat = Number(minPlatformPercent);
+      if (
+        !Number.isFinite(feePct) ||
+        feePct < 0 ||
+        feePct > 30 ||
+        !Number.isFinite(minPlat) ||
+        minPlat < 1 ||
+        minPlat > 50
+      ) {
+        throw new Error(
+          t('platformSettings.invalidFeeSettings', {
+            defaultValue: 'Sender fee must be 0–30 and Min CLOX pool must be 1–50.',
+          }),
+        );
+      }
+
+      // Fee / mode / min CLOX live in this card but are PlatformSettings — persist them here
+      // so "Publish" in this section does not silently drop fee changes.
+      await patchPlatformSettings({
+        senderPlatformFeePercent: Math.round(feePct),
+        senderPlatformFeeMode: senderFeeMode,
+        minPlatformPercent: Math.round(minPlat),
+      });
+
       return publishRevenueSplit({
-        carrierPercent: Math.round(Number(carrierShare)),
-        superPercent: Math.round(Number(superShare)),
-        statePercent: Math.round(Number(stateShare)),
-        localPercent: Math.round(Number(localShare)),
+        carrierPercent: Math.round(carrierPct),
+        cloxSuperPercent: Math.round(Number(cloxSuperShare)),
+        cloxStatePercent: Math.round(Number(cloxStateShare)),
+        cloxLocalPercent: Math.round(Number(cloxLocalShare)),
         notes: 'Updated from Platform Settings',
       });
     },
     onSuccess: async () => {
-      toast.success(t('platformSettings.saveSplitSuccess'));
-      await qc.invalidateQueries({ queryKey: ['admin', 'revenue-split'] });
+      toast.success(
+        t('platformSettings.saveSplitSuccess', {
+          defaultValue: 'Revenue split and sender fee settings published.',
+        }),
+      );
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['admin', 'revenue-split'] }),
+        qc.invalidateQueries({ queryKey: ['admin', 'platform-settings'] }),
+      ]);
     },
     onError: (err) => toast.error(getErrorDetail(err)),
   });
 
   const handlePublishSplit = async () => {
-    if (splitTotal !== 100) return;
+    if (cloxPoolSum !== 100) return;
     const ok = await confirm({
       title: t('platformSettings.confirmPublishSplitTitle', {
-        defaultValue: 'Publish Revenue Split Policy?',
+        defaultValue: 'Publish Revenue Split & Fee Settings?',
       }),
       description: t('platformSettings.confirmPublishSplitDesc', {
-        defaultValue: `This will update the national revenue distribution policy to Carrier: ${carrierShare}%, Super Admin: ${superShare}%, State Master: ${stateShare}%, and Local BDE: ${localShare}%. Future settlement accruals will apply this split.`,
+        defaultValue: `Carrier ${carrierPct}% · CLOX ${cloxPoolPct}% (Super ${cloxSuperShare}% / State ${cloxStateShare}% / Local ${cloxLocalShare}% of CLOX). Also saves sender fee ${senderFeePercent}% (${senderFeeMode}) and Min CLOX ${minPlatformPercent}%.`,
       }),
       confirmLabel: t('platformSettings.confirmPublishSplitAction', {
-        defaultValue: 'Publish Split Policy',
+        defaultValue: 'Publish',
       }),
       cancelLabel: t('cancel', { defaultValue: 'Cancel' }),
       tone: 'default',
@@ -435,12 +507,13 @@ export function PlatformSettingsPage() {
           <div>
             <h2 className="font-display text-base font-semibold text-clox-ink">
               {t('platformSettings.revenueSplitCardTitle', {
-                defaultValue: 'Carrier Share & Revenue Distribution',
+                defaultValue: 'Carrier | CLOX Revenue Split',
               })}
             </h2>
             <p className="text-xs text-clox-mute">
               {t('platformSettings.revenueSplitCardSubtitle', {
-                defaultValue: 'Configure dynamic carrier share and platform administrative revenue splits.',
+                defaultValue:
+                  'Two steps: first Carrier vs CLOX, then how CLOX is shared.',
               })}
             </p>
           </div>
@@ -452,70 +525,72 @@ export function PlatformSettingsPage() {
           </Link>
         </div>
 
-        {/* 100% Revenue Split Bar */}
-        <RevenueSplitBar
-          carrier={Number(carrierShare) || 0}
-          superAdmin={Number(superShare) || 0}
-          stateMaster={Number(stateShare) || 0}
-          localBde={Number(localShare) || 0}
-          showCards={true}
+        <RevenueSplitStages
+          carrierPercent={carrierPct}
+          cloxSuperPercent={Number(cloxSuperShare) || 0}
+          cloxStatePercent={Number(cloxStateShare) || 0}
+          cloxLocalPercent={Number(cloxLocalShare) || 0}
+          carrierValue={carrierShare}
+          cloxSuperValue={cloxSuperShare}
+          cloxStateValue={cloxStateShare}
+          cloxLocalValue={cloxLocalShare}
+          onCarrierChange={setCarrierShare}
+          onCloxSuperChange={setCloxSuperShare}
+          onCloxStateChange={setCloxStateShare}
+          onCloxLocalChange={setCloxLocalShare}
         />
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 pt-1">
+        <div className="grid gap-4 rounded-clox-md border border-clox-border bg-clox-surface-alt/40 p-4 sm:grid-cols-3">
           <Field
-            label={t('platformSettings.carrierShare', { defaultValue: 'Carrier Share %' })}
-            hint={t('platformSettings.carrierShareHint', { defaultValue: 'Net carrier payout' })}
-            value={carrierShare}
-            onChange={(e) => setCarrierShare(e.target.value)}
+            label={t('platformSettings.senderFeePercent', {
+              defaultValue: 'Sender platform fee %',
+            })}
+            hint={t('platformSettings.senderFeePercentHint', {
+              defaultValue:
+                'Usage fee on job base before Carrier|CLOX split (0–30). Saved when you Publish below.',
+            })}
+            value={senderFeePercent}
+            onChange={(e) => setSenderFeePercent(e.target.value)}
             inputMode="numeric"
-            required
           />
+          <Select
+            label={t('platformSettings.senderFeeMode', { defaultValue: 'Sender fee mode' })}
+            hint={t('platformSettings.senderFeeModeHint', {
+              defaultValue: 'Exclusive: $100 + 2% = $102 charged. Inclusive: listed amount all-in.',
+            })}
+            value={senderFeeMode}
+            onChange={(e) =>
+              setSenderFeeMode(e.target.value === 'INCLUSIVE' ? 'INCLUSIVE' : 'EXCLUSIVE')
+            }
+          >
+            <option value="EXCLUSIVE">Exclusive (add on top)</option>
+            <option value="INCLUSIVE">Inclusive (all-in price)</option>
+          </Select>
           <Field
-            label={t('platformSettings.superShare', { defaultValue: 'Super Admin %' })}
-            hint={t('platformSettings.superShareHint', { defaultValue: 'Platform HQ holding' })}
-            value={superShare}
-            onChange={(e) => setSuperShare(e.target.value)}
+            label={t('platformSettings.minPlatformPercent', {
+              defaultValue: 'Min CLOX pool %',
+            })}
+            hint={t('platformSettings.minPlatformPercentHint', {
+              defaultValue: 'Floor when applying carrier performance uplifts (default 10).',
+            })}
+            value={minPlatformPercent}
+            onChange={(e) => setMinPlatformPercent(e.target.value)}
             inputMode="numeric"
-            required
-          />
-          <Field
-            label={t('platformSettings.stateShare', { defaultValue: 'State Master %' })}
-            hint={t('platformSettings.stateShareHint', { defaultValue: 'State franchise commission' })}
-            value={stateShare}
-            onChange={(e) => setStateShare(e.target.value)}
-            inputMode="numeric"
-            required
-          />
-          <Field
-            label={t('platformSettings.localShare', { defaultValue: 'Local BDE %' })}
-            hint={t('platformSettings.localShareHint', { defaultValue: 'Local territory commission' })}
-            value={localShare}
-            onChange={(e) => setLocalShare(e.target.value)}
-            inputMode="numeric"
-            required
           />
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-clox-border-soft pt-3">
-          <div className="flex items-center gap-2">
-            <StatusPill
-              tone={splitTotal === 100 ? 'ok' : 'danger'}
-              className="text-xs px-3 py-1 font-semibold"
-            >
-              {t('revenueSplit.poolSum', {
-                sum: splitTotal,
-                defaultValue: `Total split sum: ${splitTotal} / 100%`,
-              })}
-            </StatusPill>
-          </div>
-
+        <div className="flex flex-wrap items-center justify-end gap-3 border-t border-clox-border-soft pt-3">
           <Button
             type="button"
             variant="cta"
-            disabled={publishSplitMut.isPending || splitTotal !== 100}
+            disabled={publishSplitMut.isPending || cloxPoolSum !== 100}
             onClick={handlePublishSplit}
           >
-            {publishSplitMut.isPending ? t('loading') : t('platformSettings.saveSplit', { defaultValue: 'Publish Split Policy' })}
+            {publishSplitMut.isPending
+              ? t('loading')
+              : t('platformSettings.saveSplit', {
+                  defaultValue: 'Publish split & fee settings',
+                })}
           </Button>
         </div>
       </section>

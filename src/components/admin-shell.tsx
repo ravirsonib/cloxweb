@@ -290,7 +290,12 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
             <SidebarSubLink to="/assignments" icon={navIconForPath('/assignments')} onNavigate={onNavigate}>
               {t('nav.assignments')}
             </SidebarSubLink>
-            <SidebarSubLink to="/carrier/fleet" icon={navIconForPath('/carrier/fleet')} onNavigate={onNavigate}>
+            <SidebarSubLink
+              to="/carrier/fleet"
+              end
+              icon={navIconForPath('/carrier/fleet')}
+              onNavigate={onNavigate}
+            >
               {t('nav.fleet')}
             </SidebarSubLink>
             <SidebarSubLink

@@ -33,6 +33,7 @@ import {
   useConfirm,
   useToast,
 } from '@/components/ui';
+import { adminPartnerDisplayName } from '@/lib/admin-partner-display-name';
 import { adminPartnerStatusTone, companyStatusTone } from '@/lib/status-tone';
 import { AdminRole, CompanyStatus } from '@/shared/types';
 
@@ -220,7 +221,7 @@ export function OpsPartnersPage() {
     const ok = await confirm({
       title: t('opsPartners.reactivateTitle'),
       description: t('opsPartners.reactivateBody', {
-        name: row.company?.legalName || row.name || row.email,
+        name: adminPartnerDisplayName(row),
       }),
       confirmLabel: t('opsPartners.reactivateConfirm'),
     });
@@ -232,7 +233,7 @@ export function OpsPartnersPage() {
     const ok = await confirm({
       title: t('opsPartners.deleteTitle'),
       description: t('opsPartners.deleteBody', {
-        name: row.company?.legalName || row.name || row.email,
+        name: adminPartnerDisplayName(row),
       }),
       confirmLabel: t('opsPartners.deleteConfirm'),
       tone: 'destructive',
@@ -460,7 +461,7 @@ export function OpsPartnersPage() {
                       <div className="flex min-w-0 items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="truncate font-medium text-clox-ink">
-                            {row.company?.legalName || row.name || row.email}
+                            {adminPartnerDisplayName(row)}
                           </p>
                           <p className="truncate text-xs text-clox-faint">{row.email}</p>
                         </div>
@@ -504,7 +505,7 @@ export function OpsPartnersPage() {
                     <tr key={row.id} className="border-t border-clox-border-soft">
                       <td className="px-4 py-3">
                         <p className="font-medium text-clox-ink">
-                          {row.company?.legalName || row.name || row.email}
+                          {adminPartnerDisplayName(row)}
                         </p>
                         <p className="text-xs text-clox-faint">{row.email}</p>
                         {row.company?.abn ? (
@@ -560,10 +561,7 @@ export function OpsPartnersPage() {
             </h3>
             <p className="mt-2 text-sm text-clox-mute">
               {t('opsPartners.disableBody', {
-                name:
-                  disableTarget.company?.legalName ||
-                  disableTarget.name ||
-                  disableTarget.email,
+                name: adminPartnerDisplayName(disableTarget),
               })}
             </p>
             <Field

@@ -31,6 +31,8 @@ export type JobSummary = {
   dgDocumentFilename?: string | null;
   createdAt?: string;
   publishedAt?: string | null;
+  /** Set when sender asked to go live but Ops/invoice still blocking. */
+  publishRequestedAt?: string | null;
   pickupAt?: string | null;
   /** Trip completion time when the job finished. */
   completedAt?: string | null;
@@ -289,6 +291,30 @@ export function updateJobReceiver(
 
 export function publishJob(id: string) {
   return http.post<JobSummary>(`/jobs/${id}/publish`, {}).then((r) => r.data);
+}
+
+export type RequestPublishResult = {
+  status: 'READY' | 'BLOCKED';
+  next: 'publish' | 'onboarding' | 'waiting_ops';
+  href: string | null;
+  goNoGo: {
+    opsApproved: boolean;
+    invoiceComplete: boolean;
+    paymentReady: boolean;
+    accountActive: boolean;
+    canDraft: boolean;
+    canPublishLive: boolean;
+    canBook: boolean;
+  };
+  blockers?: string[];
+  job: JobSummary;
+};
+
+/** Publishes when eligible; otherwise stamps publishRequestedAt and returns onboarding next. */
+export function requestPublishJob(id: string) {
+  return http
+    .post<RequestPublishResult>(`/jobs/${id}/request-publish`, {})
+    .then((r) => r.data);
 }
 
 export function cancelJob(id: string) {

@@ -8,6 +8,8 @@ export type SenderJobLifecycleAssignment = {
 export type SenderJobLifecycleInput = {
   status: string;
   assignment?: SenderJobLifecycleAssignment;
+  /** Set when sender asked to publish but Ops/invoice still blocking. */
+  publishRequestedAt?: string | null;
 };
 
 export type SenderJobLifecycleDisplay = {
@@ -73,6 +75,16 @@ export function resolveSenderJobLifecycleDisplay(
       tone: 'ok',
       isPendingPayment: false,
       isPaidAndLocked: true,
+    };
+  }
+
+  if (job.status === 'DRAFT' && job.publishRequestedAt) {
+    return {
+      labelKey: 'jobs.lifecycle.waitingVerification',
+      defaultLabel: 'Waiting for verification',
+      tone: 'warn',
+      isPendingPayment: false,
+      isPaidAndLocked: false,
     };
   }
 

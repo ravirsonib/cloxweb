@@ -26,6 +26,7 @@ import {
 } from '@/components/ui';
 import { RevenueSplitStages } from '@/components/revenue-split-stages';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
+import { adminPartnerDisplayName } from '@/lib/admin-partner-display-name';
 import { formatDollars } from '@/lib/currency';
 import { adminPartnerStatusTone } from '@/lib/status-tone';
 import { AdminRole } from '@/shared/types';
@@ -211,7 +212,7 @@ export function PartnerPerformancePage() {
                     {t('partnerPerformance.adjustTitle')}
                   </h2>
                   <p className="mt-1 truncate text-xs text-clox-mute">
-                    {adjustTarget.name ?? adjustTarget.email}
+                    {adminPartnerDisplayName(adjustTarget)}
                     {adjustTarget.primaryScope ? ` · ${adjustTarget.primaryScope.label}` : ''}
                   </p>
                 </div>
@@ -273,7 +274,7 @@ export function PartnerPerformancePage() {
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="truncate font-semibold text-clox-ink">
-              {row.name ?? row.email}
+              {adminPartnerDisplayName(row)}
             </p>
             <p className="mt-0.5 truncate font-mono text-xs text-clox-mute">{row.email}</p>
           </div>
@@ -469,7 +470,9 @@ export function PartnerPerformancePage() {
               {items.map((row) => (
                 <tr key={row.id} className="border-t border-clox-border">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-clox-ink">{row.name ?? row.email}</p>
+                    <p className="font-medium text-clox-ink">
+                      {adminPartnerDisplayName(row)}
+                    </p>
                     <p className="font-mono text-[11px] text-clox-faint">{row.email}</p>
                   </td>
                   <td className="px-4 py-3">

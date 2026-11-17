@@ -30,9 +30,9 @@ import {
   openDocumentContent,
   previewJobRoute,
   previewProposalCharge,
-  publishJob,
   recommendVehicle,
   rejectTripExceptionReplacement,
+  requestPublishJob,
   syncJobPayment,
   updateJob,
   updateJobReceiver,
@@ -197,6 +197,16 @@ export function JobsListPage() {
     queryFn: () => listSenderJobs(),
     enabled: role === AppRole.SENDER,
   });
+  const senderOnboarding = useQuery({
+    queryKey: ['sender', 'onboarding'],
+    queryFn: getSenderOnboarding,
+    enabled: role === AppRole.SENDER,
+    staleTime: 30_000,
+  });
+  const canPublishLive = Boolean(
+    senderOnboarding.data?.goNoGo.canPublishLive ??
+      senderOnboarding.data?.goNoGo.canBook,
+  );
 
   const items = jobs.data ?? [];
   const filterCounts = useMemo(
@@ -314,6 +324,20 @@ export function JobsListPage() {
       {jobs.isError ? (
         <Notice tone="error" className="mt-4">
           {getErrorDetail(jobs.error)}
+        </Notice>
+      ) : null}
+      {senderOnboarding.data && !canPublishLive ? (
+        <Notice tone="info" className="mt-4">
+          {t('jobs.draftFirstBanner', {
+            defaultValue:
+              'You can draft jobs now. Live marketplace publish needs Ops verification and a complete invoice profile.',
+          })}{' '}
+          <Link
+            to="/sender/onboarding"
+            className="font-semibold text-clox-orange hover:underline"
+          >
+            {t('jobs.continueVerification', { defaultValue: 'Continue verification' })}
+          </Link>
         </Notice>
       ) : null}
 
@@ -3585,9 +3609,47 @@ export function JobDetailPage() {
     amountIncGstCents?: number;
   } | null>(null);
 
+  const toast = useToast();
+  const navigate = useNavigate();
+
   const publish = useMutation({
-    mutationFn: () => publishJob(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['jobs', id] }),
+    mutationFn: () => requestPublishJob(id),
+    onSuccess: (res) => {
+      void qc.invalidateQueries({ queryKey: ['jobs', id] });
+      void qc.invalidateQueries({ queryKey: ['jobs'] });
+      if (res.status === 'BLOCKED') {
+        toast.info(
+          t('jobs.publishBlockedToast', {
+            defaultValue:
+              'Draft saved for publish — finish verification so Ops can review. Carriers will not see this job yet.',
+          }),
+        );
+        if (res.href) navigate(res.href);
+        return;
+      }
+      toast.success(
+        t('jobs.publishLiveToast', {
+          defaultValue: 'Job published — open for carrier bids.',
+        }),
+      );
+    },
+    onError: (err) => {
+      toast.error(getErrorDetail(err));
+      const code =
+        err && typeof err === 'object' && 'code' in err
+          ? String((err as { code?: string }).code ?? '')
+          : '';
+      const data =
+        err && typeof err === 'object' && 'data' in err
+          ? (err as { data?: { href?: string } }).data
+          : undefined;
+      if (code === 'SENDER_NOT_BOOKING_READY') {
+        navigate(
+          data?.href ??
+            `/sender/onboarding?returnTo=${encodeURIComponent(`/jobs/${id}`)}`,
+        );
+      }
+    },
   });
 
   const applyAcceptResult = async (res: AcceptProposalResult) => {
@@ -3616,9 +3678,16 @@ export function JobDetailPage() {
       setAcceptMsg(t('jobs.scaMissingPublishable'));
     } else {
       setScaChallenge(null);
-      setAcceptMsg(
-        `${res.message ?? res.paymentStatus}${res.stripeStatus ? ` · ${res.stripeStatus}` : ''}`,
-      );
+      const status = String(res.paymentStatus ?? res.stripeStatus ?? '').toUpperCase();
+      if (status.includes('FAIL') || status.includes('CANCEL')) {
+        setAcceptMsg(t('jobs.acceptPaymentFailed'));
+      } else if (status.includes('PEND') || status.includes('PROCESS') || status.includes('REQUIRES')) {
+        setAcceptMsg(t('jobs.acceptPaymentPending'));
+      } else if (res.message?.trim()) {
+        setAcceptMsg(res.message.trim());
+      } else {
+        setAcceptMsg(t('jobs.acceptPaymentPending'));
+      }
     }
     await Promise.all([
       qc.invalidateQueries({ queryKey: ['jobs', id] }),
@@ -3628,8 +3697,6 @@ export function JobDetailPage() {
       qc.invalidateQueries({ queryKey: ['matching', 'board'] }),
     ]);
   };
-
-  const toast = useToast();
 
   const approveReplacement = useMutation({
     mutationFn: (exceptionId: string) => approveTripExceptionReplacement(exceptionId),
@@ -3723,12 +3790,18 @@ export function JobDetailPage() {
     j.pricingModel === 'HOURLY' ? t('jobs.pricingHourly') : t('jobs.pricingPerKm');
   const canEdit = Boolean(j.editability?.mode && j.editability.mode !== 'NONE');
   const showPublish = j.status === 'DRAFT';
+  const waitingVerification = j.status === 'DRAFT' && Boolean(j.publishRequestedAt);
 
   const publishJobAction = () => {
     void (async () => {
       const ok = await confirm({
         title: t('confirm.publishJobTitle'),
-        description: t('confirm.publishJobBody'),
+        description: waitingVerification
+          ? t('confirm.publishJobBodyWaiting', {
+              defaultValue:
+                'If verification is still pending, we will keep this draft private and send you to onboarding. Carriers only see the job after Ops approves you and publish succeeds.',
+            })
+          : t('confirm.publishJobBody'),
         confirmLabel: t('jobs.publish'),
       });
       if (ok) publish.mutate();
@@ -4008,21 +4081,40 @@ export function JobDetailPage() {
                 {j.payment || j.assignment?.paidAndConfirmed
                   ? detailRow(
                       t('jobs.view.paymentStatus'),
-                      <span className="font-mono text-xs">
-                        {j.payment
-                          ? j.payment.stripePaymentIntentId
-                            ? t('jobs.paymentLine', {
-                                status: j.payment.status,
-                                pi: j.payment.stripePaymentIntentId,
-                                defaultValue: `Fare ${j.payment.status} · ${j.payment.stripePaymentIntentId}`,
-                              })
-                            : t('jobs.paymentLineNoPi', {
-                                status: j.payment.status,
-                                defaultValue: `Fare ${j.payment.status}`,
-                              })
-                          : t('jobs.paymentPaidNoEvent', {
+                      <span className="text-xs">
+                        {(() => {
+                          if (!j.payment) {
+                            return t('jobs.paymentPaidNoEvent', {
                               defaultValue: 'Fare paid',
-                            })}
+                            });
+                          }
+                          const status = String(j.payment.status ?? '').toUpperCase();
+                          const pi = j.payment.stripePaymentIntentId;
+                          if (status === 'SUCCEEDED' || status === 'PAID') {
+                            return pi
+                              ? t('jobs.paymentLine', {
+                                  pi,
+                                  defaultValue: `Payment successful · Ref ${pi}`,
+                                })
+                              : t('jobs.paymentLineNoPi', {
+                                  defaultValue: 'Payment successful',
+                                });
+                          }
+                          if (status.includes('FAIL') || status.includes('CANCEL')) {
+                            return t('jobs.paymentStatusFailed', {
+                              defaultValue: 'Payment failed',
+                            });
+                          }
+                          if (!status || status.includes('PEND') || status.includes('PROCESS')) {
+                            return t('jobs.paymentStatusPending', {
+                              defaultValue: 'Payment pending',
+                            });
+                          }
+                          return t('jobs.paymentStatusGeneric', {
+                            status: j.payment.status,
+                            defaultValue: `Payment ${j.payment.status}`,
+                          });
+                        })()}
                       </span>,
                     )
                   : null}
@@ -4074,6 +4166,20 @@ export function JobDetailPage() {
               ) : null}
             </div>
           )}
+          {waitingVerification ? (
+            <Notice tone="warn">
+              {t('jobs.waitingVerificationNotice', {
+                defaultValue:
+                  'Publish requested — this job is not live. Finish sender verification for Ops review, then publish again after approval.',
+              })}{' '}
+              <Link
+                to={`/sender/onboarding?returnTo=${encodeURIComponent(`/jobs/${j.id}`)}`}
+                className="font-semibold text-clox-orange hover:underline"
+              >
+                {t('jobs.openOnboarding', { defaultValue: 'Open verification' })}
+              </Link>
+            </Notice>
+          ) : null}
           {j.status === 'CANCELLED' ? (
             <Notice tone="warn">
               {t('jobs.jobCancelledNotice', {

@@ -41,6 +41,11 @@ export type SenderOnboarding = {
     invoiceComplete: boolean;
     paymentReady: boolean;
     accountActive: boolean;
+    /** Create/update DRAFT jobs (blocked only if rejected/suspended). */
+    canDraft: boolean;
+    /** Live marketplace publish after Ops + invoice. */
+    canPublishLive: boolean;
+    /** Alias of canPublishLive. */
     canBook: boolean;
   };
   stripeMock: boolean;
@@ -109,8 +114,11 @@ export function confirmSenderPayment(paymentMethodId?: string) {
 export function getBookingEligibility() {
   return http
     .get<{
+      canDraft: boolean;
+      canPublishLive: boolean;
       canBook: boolean;
       goNoGo: SenderOnboarding['goNoGo'];
+      blockers: string[];
       companyStatus: string;
     }>('/sender/booking-eligibility')
     .then((r) => r.data);

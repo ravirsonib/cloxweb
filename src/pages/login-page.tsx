@@ -264,7 +264,14 @@ export function LoginPage() {
 
         <p className="mt-6 text-center text-sm text-clox-mute">
           {t('login.newSender')}{' '}
-          <Link to="/register/sender" className="font-semibold text-clox-orange hover:underline">
+          <Link
+            to={
+              safeNext
+                ? `/register/sender?next=${encodeURIComponent(safeNext)}`
+                : '/register/sender'
+            }
+            className="font-semibold text-clox-orange hover:underline"
+          >
             {t('login.register')}
           </Link>
           {' · '}

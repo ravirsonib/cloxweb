@@ -970,6 +970,8 @@ export type PartnerPerformanceItem = {
   id: string;
   email: string;
   name: string | null;
+  /** Same label source as Admin partners (`company.legalName`). */
+  companyLegalName?: string | null;
   role: 'STATE_MASTER' | 'LOCAL_BDE';
   status: string;
   scopes: Array<{

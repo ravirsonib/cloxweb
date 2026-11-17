@@ -48,6 +48,7 @@ const SAFE_NEXT_PATHS = new Set([
   '/driver/schedule',
   '/market',
   '/jobs',
+  '/jobs/new',
   '/assignments',
   '/trips',
   '/account',
@@ -133,7 +134,8 @@ export function safePostLoginPath(raw: string | null | undefined): string | null
 }
 
 export function defaultHomeForRole(role: AppRole | null | undefined): string {
-  if (role === AppRole.SENDER) return '/sender/onboarding';
+  // Draft-first: senders land on jobs; verification remains under /sender/onboarding.
+  if (role === AppRole.SENDER) return '/jobs';
   if (role === AppRole.TRANSPORT_COMPANY) return '/carrier/onboarding';
   if (role === AppRole.DRIVER) return '/driver/onboarding';
   return '/';
@@ -164,6 +166,7 @@ export function roleCanAccessPath(role: AppRole | null | undefined, path: string
   }
   if (
     pathname === '/jobs' ||
+    pathname === '/jobs/new' ||
     /^\/jobs\/[0-9a-f-]{36}$/i.test(pathname) ||
     /^\/jobs\/[0-9a-f-]{36}\/(edit|track)$/i.test(pathname)
   ) {

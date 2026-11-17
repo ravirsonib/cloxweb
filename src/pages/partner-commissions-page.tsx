@@ -60,9 +60,10 @@ export function PartnerCommissionsPage() {
         { id: 'c3', label: 'Shipment 3', value: 160 },
       ];
     }
-    return data.recentSettlements.slice(0, 10).map((s, idx) => ({
+    return data.recentSettlements.slice(0, 8).map((s, idx) => ({
       id: s.id || `settlement-${idx}`,
-      label: s.jobTitle.length > 18 ? `${s.jobTitle.substring(0, 18)}…` : s.jobTitle,
+      // Keep axis labels short so bar chart stays inside the card on Local BDE.
+      label: s.jobTitle.length > 14 ? `${s.jobTitle.substring(0, 14)}…` : s.jobTitle,
       value: Math.round(s.amountCents / 100),
     }));
   }, [data?.recentSettlements]);
@@ -151,6 +152,18 @@ export function PartnerCommissionsPage() {
           </Button>
         </div>
       </div>
+
+      {!isState ? (
+        <Notice
+          tone="info"
+          title={t('finance.partner.howYouEarnTitle', { defaultValue: 'How you earn' })}
+        >
+          {t('finance.partner.howYouEarnBody', {
+            defaultValue:
+              'Commission is paid when a sender you invited books and pays for a job. Inviting carriers grows your Book of Business and local supply — it does not by itself create commission on their trips. If the sender registered directly with CLOX (no invite), the Local share goes to the origin-territory seat or HQ.',
+          })}
+        </Notice>
+      ) : null}
 
       {/* Error Notice */}
       {isError ? (
@@ -354,19 +367,18 @@ export function PartnerCommissionsPage() {
       </div>
 
       {/* ─── Interactive Chart: Commission Timeline ─── */}
-      <div className="rounded-clox-md border border-clox-border bg-clox-surface p-6 shadow-clox-1">
-        <InteractiveChart
-          title={t('finance.partner.chartTitle', { defaultValue: 'Commission Accruals by Shipment' })}
-          subtitle={t('finance.partner.chartSubtitle', {
-            defaultValue: 'Recent earnings credited from originating shipments',
-          })}
-          items={commissionChartItems}
-          defaultVisual="bar"
-          allowedVisuals={['bar', 'line']}
-          valuePrefix={CURRENCY_SYMBOL}
-          formatValue={(v: number) => `${CURRENCY_SYMBOL}${v.toLocaleString()}`}
-        />
-      </div>
+      <InteractiveChart
+        className="shadow-clox-1"
+        title={t('finance.partner.chartTitle', { defaultValue: 'Commission Accruals by Shipment' })}
+        subtitle={t('finance.partner.chartSubtitle', {
+          defaultValue: 'Recent earnings credited from originating shipments',
+        })}
+        items={commissionChartItems}
+        defaultVisual="bar"
+        allowedVisuals={['bar', 'line']}
+        valuePrefix={CURRENCY_SYMBOL}
+        formatValue={(v: number) => `${CURRENCY_SYMBOL}${v.toLocaleString()}`}
+      />
 
       {/* ─── Commission Settlements Ledger Table ─── */}
       <div className="rounded-clox-md border border-clox-border bg-clox-surface p-6 shadow-clox-1">

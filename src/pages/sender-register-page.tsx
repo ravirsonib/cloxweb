@@ -25,6 +25,7 @@ export function SenderRegisterPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const inviteToken = searchParams.get('invite')?.trim() || undefined;
+  const nextPath = searchParams.get('next')?.trim() || undefined;
 
   const invitePeek = useQuery({
     queryKey: ['public', 'company-invite', inviteToken],
@@ -92,7 +93,20 @@ export function SenderRegisterPage() {
     },
     onSuccess: (_data, values) => {
       const targetEmail = values.email.trim().toLowerCase();
-      navigate(`/login?switch=1&email=${encodeURIComponent(targetEmail)}`, {
+      const qs = new URLSearchParams({
+        switch: '1',
+        email: targetEmail,
+      });
+      if (nextPath?.startsWith('/')) {
+        qs.set('next', nextPath);
+      } else if (!inviteToken) {
+        // Organic draft-first: after OTP, open job compose.
+        qs.set('next', '/jobs/new');
+      } else {
+        // Invite register-first without next → verification wizard.
+        qs.set('next', '/sender/onboarding');
+      }
+      navigate(`/login?${qs.toString()}`, {
         replace: true,
         state: { email: targetEmail },
       });

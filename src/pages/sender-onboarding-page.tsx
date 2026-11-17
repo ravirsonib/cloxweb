@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import {
   getErrorDetail,
@@ -58,6 +58,15 @@ export function SenderOnboardingPage() {
   const role = useAuthStore((s) => s.role);
   const qc = useQueryClient();
   const toast = useToast();
+  const [searchParams] = useSearchParams();
+  const returnTo = searchParams.get('returnTo')?.trim() || null;
+  const resumeJobHref =
+    returnTo &&
+    (returnTo === '/jobs/new' ||
+      /^\/jobs\/[0-9a-f-]{36}$/i.test(returnTo) ||
+      returnTo === '/jobs')
+      ? returnTo
+      : null;
   const [viewStep, setViewStep] = useState<string | null>(null);
 
   const query = useQuery({
@@ -153,10 +162,26 @@ export function SenderOnboardingPage() {
       <div className="mt-4 rounded-xl border border-clox-border bg-clox-surface p-3 text-xs text-clox-mute">
         {t('senderOnboarding.statusStrip', {
           status: data.company.status,
-          canBook: String(data.goNoGo.canBook),
+          canBook: String(data.goNoGo.canPublishLive ?? data.goNoGo.canBook),
+          defaultValue: `Status ${data.company.status} · can draft ${String(data.goNoGo.canDraft ?? true)} · can publish live ${String(data.goNoGo.canPublishLive ?? data.goNoGo.canBook)}`,
         })}
         {data.stripeMock ? ' · ' + t('senderOnboarding.stripeMock') : ''}
       </div>
+
+      {resumeJobHref ? (
+        <Notice tone="info" className="mt-4">
+          {t('senderOnboarding.resumeJobHint', {
+            defaultValue:
+              'Finish verification so Ops can review you. Your draft job stays private until you publish after approval.',
+          })}
+          <Link
+            to={resumeJobHref}
+            className="mt-2 inline-flex font-semibold text-clox-orange hover:underline"
+          >
+            {t('senderOnboarding.backToJob', { defaultValue: 'Back to job draft' })}
+          </Link>
+        </Notice>
+      ) : null}
 
       {data.company.status === 'INFO_REQUESTED' ? (
         <Notice tone="warn" className="mt-4">
@@ -190,9 +215,20 @@ export function SenderOnboardingPage() {
               ? ' ' + t('senderOnboarding.notePrefix', { note: data.latestCase.decisionNote })
               : ''}
           </p>
-          <Button variant="secondary" className="mt-4" onClick={() => void query.refetch()}>
-            {t('refreshStatus')}
-          </Button>
+          <p className="mt-2">
+            {t('senderOnboarding.waitingOpsDraftNote', {
+              defaultValue:
+                'Any draft jobs stay hidden from carriers until Ops approves you and you publish.',
+            })}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => void query.refetch()}>
+              {t('refreshStatus')}
+            </Button>
+            <Link to={resumeJobHref ?? '/jobs'} className="clox-btn clox-btn-secondary inline-flex">
+              {t('senderOnboarding.viewDrafts', { defaultValue: 'View draft jobs' })}
+            </Link>
+          </div>
         </Notice>
       )}
 
@@ -204,12 +240,28 @@ export function SenderOnboardingPage() {
 
       {step === 'complete' && (
         <Notice tone="success" className="mt-8" title={t('senderOnboarding.activeTitle')}>
-          <p>{t('senderOnboarding.activeBody')}</p>
+          <p>
+            {t('senderOnboarding.activeBodyPublish', {
+              defaultValue:
+                'You are verified. Publish draft jobs to the marketplace. Add a payment card under Account before accepting a bid.',
+            })}
+          </p>
           <ul className="mt-3 space-y-1 text-xs">
             <li>{t('senderOnboarding.goNoGoOpsApproved', { value: String(data.goNoGo.opsApproved) })}</li>
             <li>{t('senderOnboarding.goNoGoInvoice', { value: String(data.goNoGo.invoiceComplete) })}</li>
-            <li>{t('senderOnboarding.goNoGoCanBook', { value: String(data.goNoGo.canBook) })}</li>
+            <li>
+              {t('senderOnboarding.goNoGoCanPublish', {
+                value: String(data.goNoGo.canPublishLive ?? data.goNoGo.canBook),
+                defaultValue: `Can publish live: ${String(data.goNoGo.canPublishLive ?? data.goNoGo.canBook)}`,
+              })}
+            </li>
           </ul>
+          <Link
+            to={resumeJobHref ?? '/jobs/new'}
+            className="clox-btn clox-btn-cta mt-4 inline-flex"
+          >
+            {t('senderOnboarding.goToJobs', { defaultValue: 'Go to jobs' })}
+          </Link>
         </Notice>
       )}
 

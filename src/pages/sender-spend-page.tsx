@@ -421,7 +421,9 @@ export function SenderSpendPage() {
                       {formatDollars(row.totalPaidCents)}
                     </td>
                     <td className="py-3.5 text-right">
-                      {row.paymentStatus === 'PAID' || row.paymentStatus === 'CONFIRMED' ? (
+                      {row.paymentStatus === 'SUCCEEDED' ||
+                      row.paymentStatus === 'PAID' ||
+                      row.paymentStatus === 'CONFIRMED' ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
                           <CheckCircle2 className="h-3 w-3" />
                           {t('finance.sender.paid', { defaultValue: 'Paid' })}

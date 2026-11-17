@@ -130,13 +130,22 @@ function RoleHomePage() {
         ) : null}
         {role === AppRole.SENDER ? (
           <HomeLink
-            to="/sender/onboarding"
-            title={t('home.senderOnboardingTitle')}
-            hint={t('home.senderOnboardingHint')}
+            to="/jobs/new"
+            title={t('home.postJobTitle', { defaultValue: 'Post a job' })}
+            hint={t('home.postJobHint', {
+              defaultValue: 'Draft a load now — verification is required before it goes live.',
+            })}
           />
         ) : null}
         {role === AppRole.SENDER ? (
           <HomeLink to="/jobs" title={t('home.jobsTitle')} hint={t('home.jobsHint')} />
+        ) : null}
+        {role === AppRole.SENDER ? (
+          <HomeLink
+            to="/sender/onboarding"
+            title={t('home.senderOnboardingTitle')}
+            hint={t('home.senderOnboardingHint')}
+          />
         ) : null}
         {role === AppRole.SENDER ? (
           <HomeLink

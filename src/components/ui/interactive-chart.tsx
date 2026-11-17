@@ -314,7 +314,7 @@ export function InteractiveChart({
       {/* Main Chart Canvas Area (re-animates on visual or length change) */}
       <div
         key={`${visual}-${items.length}`}
-        className="relative mt-4 flex min-h-[240px] flex-1 flex-col justify-center"
+        className="relative mt-4 flex min-h-[240px] flex-1 flex-col justify-center overflow-hidden"
       >
         {items.length === 0 || totalValue === 0 ? (
           <div className="flex h-48 flex-col items-center justify-center text-center text-clox-faint">
@@ -431,58 +431,74 @@ function BarView({
   onHover: (idx: number | null) => void;
   formatter: (n: number) => string;
 }) {
+  // Plot + label rows are budgeted separately so x-axis labels never spill
+  // into the footer/legend (common with long Local BDE shipment titles).
   return (
-    <div className="flex h-48 w-full items-end gap-2 pt-6">
-      {items.map((item, idx) => {
-        const heightPct = Math.max(6, Math.round((item.value / maxValue) * 100));
-        const color = item.color || CHART_PALETTE[idx % CHART_PALETTE.length];
-        const isHovered = hoveredIndex === idx;
+    <div className="flex h-56 w-full min-w-0 flex-col overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 items-end gap-1.5 overflow-hidden px-0.5 pt-7">
+        {items.map((item, idx) => {
+          const heightPct = Math.max(6, Math.round((item.value / maxValue) * 100));
+          const color = item.color || CHART_PALETTE[idx % CHART_PALETTE.length];
+          const isHovered = hoveredIndex === idx;
 
-        return (
-          <div
-            key={item.id}
-            onMouseEnter={() => onHover(idx)}
-            onMouseLeave={() => onHover(null)}
-            className="group relative flex flex-1 flex-col items-center justify-end h-full cursor-pointer transition-transform duration-200 hover:-translate-y-1"
-          >
-            {/* Tooltip on hover */}
+          return (
             <div
-              className={cn(
-                'pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-clox-navy-ink px-2 py-0.5 text-[11px] font-semibold text-white shadow-lg transition-all duration-200 z-10',
-                isHovered ? 'scale-100 opacity-100' : 'scale-75 opacity-0',
-              )}
+              key={item.id}
+              onMouseEnter={() => onHover(idx)}
+              onMouseLeave={() => onHover(null)}
+              className="group relative flex h-full min-w-0 flex-1 cursor-pointer flex-col items-center justify-end"
             >
-              {formatter(item.value)}
-            </div>
-
-            {/* Bar pillar with staggered growth animation */}
-            <div className="relative w-full max-w-[48px] rounded-t-md bg-clox-surface-alt/70 overflow-hidden flex items-end h-full">
               <div
-                className="w-full rounded-t-md transition-all duration-300"
-                style={{
-                  height: `${heightPct}%`,
-                  backgroundColor: color,
-                  transformOrigin: 'bottom',
-                  animation: 'cloxBarGrow 0.75s cubic-bezier(0.16, 1, 0.3, 1) both',
-                  animationDelay: `${idx * 0.06}s`,
-                  opacity: isHovered ? 1 : hoveredIndex !== null ? 0.45 : 0.92,
-                  boxShadow: isHovered ? `0 -4px 14px ${color}55` : 'none',
-                }}
-              />
-            </div>
+                className={cn(
+                  'pointer-events-none absolute left-1/2 top-0 z-10 -translate-x-1/2 whitespace-nowrap rounded bg-clox-navy-ink px-2 py-0.5 text-[11px] font-semibold text-white shadow-lg transition-all duration-200',
+                  isHovered ? 'scale-100 opacity-100' : 'scale-75 opacity-0',
+                )}
+              >
+                {formatter(item.value)}
+              </div>
 
-            {/* Label below bar */}
-            <span
+              <div className="flex h-full w-full max-w-[48px] items-end overflow-hidden rounded-t-md bg-clox-surface-alt/70">
+                <div
+                  className="w-full rounded-t-md transition-all duration-300"
+                  style={{
+                    height: `${heightPct}%`,
+                    backgroundColor: color,
+                    transformOrigin: 'bottom',
+                    animation: 'cloxBarGrow 0.75s cubic-bezier(0.16, 1, 0.3, 1) both',
+                    animationDelay: `${idx * 0.06}s`,
+                    opacity: isHovered ? 1 : hoveredIndex !== null ? 0.45 : 0.92,
+                    boxShadow: isHovered ? `0 -4px 14px ${color}55` : 'none',
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div
+        className="mt-2 grid w-full min-w-0 gap-1.5"
+        style={{ gridTemplateColumns: `repeat(${Math.max(1, items.length)}, minmax(0, 1fr))` }}
+      >
+        {items.map((item, idx) => {
+          const isHovered = hoveredIndex === idx;
+          return (
+            <button
+              type="button"
+              key={`label-${item.id}`}
+              title={item.label}
+              onMouseEnter={() => onHover(idx)}
+              onMouseLeave={() => onHover(null)}
               className={cn(
-                'mt-2 block w-full truncate text-center text-[11px] transition-colors duration-200',
-                isHovered ? 'font-bold text-clox-ink scale-105' : 'text-clox-mute',
+                'block w-full min-w-0 truncate text-center text-[10px] leading-tight transition-colors duration-200 sm:text-[11px]',
+                isHovered ? 'font-bold text-clox-ink' : 'font-medium text-clox-mute',
               )}
             >
               {item.label}
-            </span>
-          </div>
-        );
-      })}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

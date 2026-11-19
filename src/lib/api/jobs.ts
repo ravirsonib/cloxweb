@@ -392,8 +392,30 @@ export type JobRouteEstimate = {
     maxIncGstCents: number;
     maxClassCode: string | null;
   };
+  rateFloorExGstCents?: number | null;
+  rateFloorIncGstCents?: number | null;
+  rateFloorVersionId?: string | null;
   mock: boolean;
 };
+
+export type RateFloorPreview = {
+  floorExGstCents: number;
+  floorIncGstCents: number;
+  versionId: string;
+  versionLabel: string;
+  currency: string;
+  message: string;
+  breakdown: Record<string, unknown>;
+};
+
+export function previewRateFloor(payload: {
+  vehicleClassCode: string;
+  pricingModel: 'PER_KM' | 'HOURLY';
+  distanceKm?: number | null;
+  billableHours?: number | null;
+}) {
+  return http.post<RateFloorPreview>('/jobs/pricing/floor', payload).then((r) => r.data);
+}
 
 export function previewJobRoute(payload: {
   pricingModel: 'PER_KM' | 'HOURLY';

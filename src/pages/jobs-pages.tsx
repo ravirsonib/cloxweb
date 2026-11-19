@@ -2121,6 +2121,17 @@ function JobDraftForm({
                       })}
                     </span>
                   ) : null}
+                  {routeEstimate?.rateFloorIncGstCents != null &&
+                  routeEstimate.rateFloorIncGstCents > 0 ? (
+                    <span className="mt-1 block text-xs font-medium text-clox-ink">
+                      {t('jobs.hardFloorHint', {
+                        defaultValue:
+                          'Minimum price (hard floor): {{ex}} ex GST · {{inc}} inc GST — jobs and bids cannot go below this.',
+                        ex: formatDollars(routeEstimate.rateFloorExGstCents ?? 0),
+                        inc: formatDollars(routeEstimate.rateFloorIncGstCents),
+                      })}
+                    </span>
+                  ) : null}
                 </p>
               </Notice>
             ) : null}

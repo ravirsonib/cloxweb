@@ -318,6 +318,189 @@ export function deleteAdminVehicleClass(id: string) {
     .then((res) => res.data);
 }
 
+export type RateFloorLineDto = {
+  id: string;
+  vehicleClassCode: string;
+  hourlyFloorCents: number;
+  kmFloorCents: number;
+  variableKmCents: number;
+  litresPerKm: number;
+  basis: string;
+};
+
+export type RateFloorLabourMultiplierDto = {
+  id: string;
+  periodCode: string;
+  multiplier: number;
+};
+
+export type RateFloorVersionDto = {
+  id: string;
+  label: string;
+  status: 'DRAFT' | 'PUBLISHED' | 'RETIRED';
+  effectiveFrom: string | null;
+  referenceDieselCpl: number;
+  labourRateHrCents: number;
+  minHours: number;
+  minKmChargeKm: number;
+  backhaulFactor: number;
+  createdByAdminId?: string | null;
+  approvalSubmittedAt?: string | null;
+  approvedByAdminId?: string | null;
+  publishedByAdminId?: string | null;
+  lines?: RateFloorLineDto[];
+  labourMultipliers?: RateFloorLabourMultiplierDto[];
+  bodyLoadings?: Array<{
+    id: string;
+    bodyCode: string;
+    loadingPct: number;
+    minHours: number | null;
+  }>;
+  _count?: { lines: number };
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RateFloorOverrideDto = {
+  id: string;
+  jobId: string;
+  approvedByAdminId: string;
+  reason: string;
+  expiresAt: string;
+  floorExGstCentsOverride: number;
+  createdAt: string;
+};
+
+export function listAdminRateFloorVersions(options?: { signal?: AbortSignal }) {
+  return http
+    .get<RateFloorVersionDto[]>('/admin/rate-floor/versions', { signal: options?.signal })
+    .then((res) => res.data);
+}
+
+export function getAdminRateFloorVersion(id: string, options?: { signal?: AbortSignal }) {
+  return http
+    .get<RateFloorVersionDto>(`/admin/rate-floor/versions/${id}`, { signal: options?.signal })
+    .then((res) => res.data);
+}
+
+export function createAdminRateFloorDraft(input?: { label?: string }) {
+  return http
+    .post<RateFloorVersionDto>('/admin/rate-floor/versions', input ?? {})
+    .then((res) => res.data);
+}
+
+export function patchAdminRateFloorLine(
+  versionId: string,
+  code: string,
+  input: {
+    hourlyFloorCents?: number;
+    kmFloorCents?: number;
+    variableKmCents?: number;
+    litresPerKm?: number;
+    basis?: 'V' | 'W' | 'D';
+  },
+) {
+  return http
+    .patch<RateFloorLineDto>(
+      `/admin/rate-floor/versions/${versionId}/lines/${encodeURIComponent(code)}`,
+      input,
+    )
+    .then((res) => res.data);
+}
+
+export function submitAdminRateFloorApproval(id: string) {
+  return http
+    .post<RateFloorVersionDto>(`/admin/rate-floor/versions/${id}/submit-approval`)
+    .then((res) => res.data);
+}
+
+export function withdrawAdminRateFloorApproval(id: string) {
+  return http
+    .post<RateFloorVersionDto>(`/admin/rate-floor/versions/${id}/withdraw-approval`)
+    .then((res) => res.data);
+}
+
+export function publishAdminRateFloorVersion(id: string) {
+  return http
+    .post<RateFloorVersionDto>(`/admin/rate-floor/versions/${id}/publish`)
+    .then((res) => res.data);
+}
+
+export function listAdminRateFloorOverrides(options?: {
+  signal?: AbortSignal;
+  jobId?: string;
+  activeOnly?: boolean;
+}) {
+  const params = new URLSearchParams();
+  if (options?.jobId) params.set('jobId', options.jobId);
+  if (options?.activeOnly) params.set('activeOnly', 'true');
+  const qs = params.toString();
+  return http
+    .get<RateFloorOverrideDto[]>(`/admin/rate-floor/overrides${qs ? `?${qs}` : ''}`, {
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export function createAdminRateFloorOverride(input: {
+  jobId: string;
+  reason: string;
+  expiresAt: string;
+  floorExGstCentsOverride: number;
+}) {
+  return http
+    .post<RateFloorOverrideDto>('/admin/rate-floor/overrides', input)
+    .then((res) => res.data);
+}
+
+export type FuelIndexDto = {
+  id: string;
+  weekStart: string;
+  dieselCpl: number;
+  note: string | null;
+  enteredByAdminId?: string | null;
+  confirmedByAdminId?: string | null;
+  createdAt: string;
+  movePercent?: number;
+  confirmed?: boolean;
+};
+
+export type FuelIndexStatusDto = {
+  latest: {
+    id: string;
+    weekStart: string;
+    dieselCpl: number;
+    note: string | null;
+    createdAt: string;
+  } | null;
+  ageDays: number | null;
+  isStale: boolean;
+  fuelStaleDays: number;
+  fuelMoveConfirmPercent: number;
+  fuelWeeklyChangeCapPercent: number;
+};
+
+export function getAdminFuelIndexStatus(options?: { signal?: AbortSignal }) {
+  return http
+    .get<FuelIndexStatusDto>('/admin/fuel-index/status', { signal: options?.signal })
+    .then((res) => res.data);
+}
+
+export function listAdminFuelIndexes(options?: { signal?: AbortSignal }) {
+  return http
+    .get<FuelIndexDto[]>('/admin/fuel-index', { signal: options?.signal })
+    .then((res) => res.data);
+}
+
+export function createAdminFuelIndex(input: {
+  weekStart?: string;
+  dieselCpl: number;
+  note?: string;
+  confirm?: boolean;
+}) {
+  return http.post<FuelIndexDto>('/admin/fuel-index', input).then((res) => res.data);
+}
+
 export type DisableCompanyInput = {
   reason: string;
   note?: string;

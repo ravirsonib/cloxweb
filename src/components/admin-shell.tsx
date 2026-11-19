@@ -260,10 +260,13 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           <SidebarSubMenu
             label={t('nav.menuPlatform', { defaultValue: 'Platform & Fleet' })}
             icon={Settings2}
-            activePaths={['/vehicle-classes', '/platform-settings', '/audit']}
+            activePaths={['/vehicle-classes', '/rate-floor', '/platform-settings', '/audit']}
           >
             <SidebarSubLink to="/vehicle-classes" icon={navIconForPath('/vehicle-classes')} onNavigate={onNavigate}>
               {t('nav.vehicleClasses', { defaultValue: 'Vehicle Classes' })}
+            </SidebarSubLink>
+            <SidebarSubLink to="/rate-floor" icon={navIconForPath('/rate-floor')} onNavigate={onNavigate}>
+              {t('nav.rateFloor', { defaultValue: 'Rate Floor' })}
             </SidebarSubLink>
             <SidebarSubLink to="/platform-settings" icon={navIconForPath('/platform-settings')} onNavigate={onNavigate}>
               {t('nav.platformSettings')}

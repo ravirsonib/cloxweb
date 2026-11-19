@@ -54,6 +54,7 @@ import { CarrierEarningsPage } from '@/pages/carrier-earnings-page';
 import { SenderSpendPage } from '@/pages/sender-spend-page';
 import { PartnerCommissionsPage } from '@/pages/partner-commissions-page';
 import { AdminVehicleClassesPage } from '@/pages/admin-vehicle-classes-page';
+import { AdminRateFloorPage } from '@/pages/admin-rate-floor-page';
 import { RevenueSplitSettingsPage } from '@/pages/revenue-split-settings-page';
 import { PartnerPerformancePage } from '@/pages/partner-performance-page';
 
@@ -475,6 +476,18 @@ export function AppRouter() {
         <Route
           path="/admin/vehicle-classes"
           element={<Navigate to="/vehicle-classes" replace />}
+        />
+        <Route
+          path="/rate-floor"
+          element={
+            <SuperOnly>
+              <AdminRateFloorPage />
+            </SuperOnly>
+          }
+        />
+        <Route
+          path="/admin/rate-floor"
+          element={<Navigate to="/rate-floor" replace />}
         />
         <Route
           path="/platform-settings"

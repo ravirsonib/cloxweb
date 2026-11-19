@@ -41,6 +41,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   '/finance': CircleDollarSign,
   '/surcharges': CircleDollarSign,
   '/vehicle-classes': Truck,
+  '/rate-floor': CircleDollarSign,
   '/platform-settings': Settings,
   '/revenue-split': CircleDollarSign,
   '/partner-performance': Handshake,

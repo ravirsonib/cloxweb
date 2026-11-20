@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { BrandLogo } from '@/components/brand-logo';
 import { PageErrorBoundary } from '@/components/error-boundary';
+import { EwdStatusStrip } from '@/components/ewd-status-strip';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { NotificationBell } from '@/components/notification-bell';
 import { Button, RoleBadge, useConfirm } from '@/components/ui';
@@ -467,6 +468,9 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           <SidebarLink to="/driver/schedule" icon={navIconForPath('/driver/schedule')} onNavigate={onNavigate}>
             {t('nav.driverSchedule', { defaultValue: 'My Schedule' })}
           </SidebarLink>
+          <SidebarLink to="/driver/ewd" icon={navIconForPath('/driver/ewd')} onNavigate={onNavigate}>
+            {t('nav.driverEwd', { defaultValue: 'Work diary' })}
+          </SidebarLink>
           <SidebarSubMenu
             label={t('nav.menuCompliance', { defaultValue: 'Licence & Documents' })}
             icon={ShieldCheck}
@@ -575,7 +579,8 @@ function DriverCabShell({ children }: { children?: ReactNode }) {
         below main so it never covers CTAs and never blocks scroll.
       */}
       <main className="cab-main">
-        <div className="cab-main-inner">
+        <div className="cab-main-inner space-y-3">
+          <EwdStatusStrip />
           <PageErrorBoundary>{children ?? <Outlet />}</PageErrorBoundary>
         </div>
       </main>
@@ -584,14 +589,14 @@ function DriverCabShell({ children }: { children?: ReactNode }) {
         <CabTab to="/" end label={t('nav.cabHome')} icon={navIconForPath('/')} />
         <CabTab to="/trips" label={t('nav.cabTrips')} icon={navIconForPath('/trips')} />
         <CabTab
+          to="/driver/ewd"
+          label={t('nav.cabEwd', { defaultValue: 'Diary' })}
+          icon={navIconForPath('/driver/ewd')}
+        />
+        <CabTab
           to="/driver/schedule"
           label={t('nav.cabSchedule', { defaultValue: 'Schedule' })}
           icon={navIconForPath('/driver/schedule')}
-        />
-        <CabTab
-          to="/driver/onboarding"
-          label={t('nav.cabOnboarding')}
-          icon={navIconForPath('/driver/onboarding')}
         />
         <CabTab to="/account" label={t('nav.cabAccount')} icon={navIconForPath('/account')} />
       </nav>

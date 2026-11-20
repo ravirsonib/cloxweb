@@ -9,6 +9,8 @@ publicHttp.interceptors.response.use(
 
 export type CarrierOnboarding = {
   step: string;
+  /** Set by POST /carrier/vehicles — prefer over registration lookup. */
+  vehicleId?: string;
   /** BID_ELIGIBLE company sent back to Connect after mock→live clear. */
   payoutRepairRequired?: boolean;
   user: { id: string; email: string; name: string | null; phone: string | null };

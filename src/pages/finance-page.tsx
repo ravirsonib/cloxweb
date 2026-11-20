@@ -11,6 +11,7 @@ import {
   Clock,
   CreditCard,
   DollarSign,
+  Download,
   Eye,
   Play,
   RefreshCw,
@@ -32,6 +33,7 @@ import {
   type ChartDataItem,
 } from '@/components/ui';
 import {
+  exportSuperFinanceCsv,
   getActiveSettlementCycle,
   getErrorDetail,
   getReconciliationReport,
@@ -64,6 +66,7 @@ export function FinancePage() {
   const [customTo, setCustomTo] = useState('');
   const [appliedCustomDates, setAppliedCustomDates] = useState<{ from?: string; to?: string }>({});
   const [leaderboardTab, setLeaderboardTab] = useState<'senders' | 'carriers'>('senders');
+  const [exportingCsv, setExportingCsv] = useState(false);
 
   // Cycles state
   const [cyclesPage, setCyclesPage] = useState(1);
@@ -174,6 +177,21 @@ export function FinancePage() {
       toast.error(getErrorDetail(err), 'Disbursement Failed');
     },
   });
+
+  const canExportCsv =
+    period !== 'custom' || Boolean(appliedCustomDates.from || appliedCustomDates.to);
+
+  async function handleExportCsv() {
+    if (!canExportCsv || exportingCsv) return;
+    setExportingCsv(true);
+    try {
+      await exportSuperFinanceCsv(query);
+    } catch (err) {
+      toast.error(getErrorDetail(err), t('finance.exportFailed', { defaultValue: 'Export failed' }));
+    } finally {
+      setExportingCsv(false);
+    }
+  }
 
   if (role !== AdminRole.SUPER_ADMIN) return <Navigate to="/" replace />;
   if (financeQuery.isLoading && mainTab === 'overview') {
@@ -436,31 +454,53 @@ export function FinancePage() {
               ))}
             </div>
 
-            {period === 'custom' ? (
-              <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  value={customFrom}
-                  onChange={(e) => setCustomFrom(e.target.value)}
-                  className="clox-field-control py-1 text-xs"
-                />
-                <span className="text-xs text-clox-mute">{t('finance.to', { defaultValue: 'to' })}</span>
-                <input
-                  type="date"
-                  value={customTo}
-                  onChange={(e) => setCustomTo(e.target.value)}
-                  className="clox-field-control py-1 text-xs"
-                />
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  onClick={() => setAppliedCustomDates({ from: customFrom, to: customTo })}
-                >
-                  {t('finance.apply', { defaultValue: 'Apply' })}
-                </Button>
-              </div>
-            ) : null}
+            <div className="flex flex-wrap items-center gap-2">
+              {period === 'custom' ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={customFrom}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    className="clox-field-control py-1 text-xs"
+                  />
+                  <span className="text-xs text-clox-mute">{t('finance.to', { defaultValue: 'to' })}</span>
+                  <input
+                    type="date"
+                    value={customTo}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    className="clox-field-control py-1 text-xs"
+                  />
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    onClick={() => setAppliedCustomDates({ from: customFrom, to: customTo })}
+                  >
+                    {t('finance.apply', { defaultValue: 'Apply' })}
+                  </Button>
+                </div>
+              ) : null}
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="gap-1.5"
+                disabled={!canExportCsv || exportingCsv}
+                onClick={() => {
+                  void handleExportCsv();
+                }}
+                title={t('finance.exportCsvTitle', {
+                  defaultValue: 'Download ledger CSV for the selected period (AUD cents)',
+                })}
+              >
+                <Download className={cn('h-3.5 w-3.5', exportingCsv && 'animate-pulse')} />
+                <span>
+                  {exportingCsv
+                    ? t('finance.exporting', { defaultValue: 'Exporting…' })
+                    : t('finance.exportCsv', { defaultValue: 'Export CSV' })}
+                </span>
+              </Button>
+            </div>
           </div>
 
           {financeQuery.isError ? (

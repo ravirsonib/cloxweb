@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import {
@@ -25,6 +25,7 @@ import {
   type CompanyDetailDriver,
   type CompanyDetailVehicle,
 } from '@/lib/api';
+import { cn } from '@/lib/cn';
 import { formatDateTime } from '@/lib/leads';
 import { formatCalendarDate } from '@/lib/datetime';
 import { companyStatusTone, complianceCaseStatusTone } from '@/lib/status-tone';
@@ -56,19 +57,44 @@ function expiryTone(expiresAt: string | null) {
   return 'ok' as const;
 }
 
+const COMPANY_TABS = [
+  'overview',
+  'documents',
+  'vehicles',
+  'drivers',
+  'team',
+  'compliance',
+] as const satisfies readonly TabKey[];
+
+function isCompanyTab(value: string | null): value is TabKey {
+  return Boolean(value && (COMPANY_TABS as readonly string[]).includes(value));
+}
+
 export function CompanyDetailPage() {
   const { t } = useTranslation('common');
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const confirm = useConfirm();
   const toast = useToast();
   const queryClient = useQueryClient();
   const role = useAuthStore((s) => s.role);
   const isSuper = role === AdminRole.SUPER_ADMIN;
 
-  const [activeTab, setActiveTab] = useState<TabKey>('overview');
+  const tabFromUrl = searchParams.get('tab');
+  const highlightDriverId = searchParams.get('driverId');
+  const highlightVehicleId = searchParams.get('vehicleId');
+  const [activeTab, setActiveTab] = useState<TabKey>(
+    isCompanyTab(tabFromUrl) ? tabFromUrl : 'overview',
+  );
   const [openingDocId, setOpeningDocId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isCompanyTab(tabFromUrl)) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [tabFromUrl]);
 
   // Disable modal state
   const [showDisableModal, setShowDisableModal] = useState(false);
@@ -620,6 +646,7 @@ export function CompanyDetailPage() {
               <VehicleCard
                 key={v.id}
                 vehicle={v}
+                highlighted={highlightVehicleId === v.id}
                 openingDocId={openingDocId}
                 onViewDoc={handleViewDoc}
                 t={t}
@@ -650,6 +677,7 @@ export function CompanyDetailPage() {
               <DriverCard
                 key={d.id}
                 driver={d}
+                highlighted={highlightDriverId === d.id}
                 openingDocId={openingDocId}
                 onViewDoc={handleViewDoc}
                 t={t}
@@ -853,11 +881,13 @@ export function CompanyDetailPage() {
 /** Component for rendering a single Vehicle card with all its documents attached */
 function VehicleCard({
   vehicle,
+  highlighted = false,
   openingDocId,
   onViewDoc,
   t,
 }: {
   vehicle: CompanyDetailVehicle;
+  highlighted?: boolean;
   openingDocId: string | null;
   onViewDoc: (id: string) => void;
   t: (key: string, opts?: Record<string, unknown>) => string;
@@ -865,7 +895,13 @@ function VehicleCard({
   const isParked = vehicle.status === 'SUSPENDED' || vehicle.status === 'RETIRED';
 
   return (
-    <div className={`${dataCardClassName} p-5`}>
+    <div
+      id={`vehicle-${vehicle.id}`}
+      className={cn(
+        `${dataCardClassName} p-5`,
+        highlighted && 'ring-2 ring-clox-orange ring-offset-2',
+      )}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-clox-border-soft pb-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -966,11 +1002,13 @@ function VehicleCard({
 /** Component for rendering a single Driver card with all their documents attached */
 function DriverCard({
   driver,
+  highlighted = false,
   openingDocId,
   onViewDoc,
   t,
 }: {
   driver: CompanyDetailDriver;
+  highlighted?: boolean;
   openingDocId: string | null;
   onViewDoc: (id: string) => void;
   t: (key: string, opts?: Record<string, unknown>) => string;
@@ -978,7 +1016,13 @@ function DriverCard({
   const isSuspended = driver.status === 'SUSPENDED' || driver.status === 'DISABLED';
 
   return (
-    <div className={`${dataCardClassName} p-5`}>
+    <div
+      id={`driver-${driver.id}`}
+      className={cn(
+        `${dataCardClassName} p-5`,
+        highlighted && 'ring-2 ring-clox-orange ring-offset-2',
+      )}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-clox-border-soft pb-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">

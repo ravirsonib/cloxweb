@@ -21,6 +21,7 @@ import {
   FileInput,
   Notice,
   RadioCardGroup,
+  ReadyChecklist,
   Select,
   StepChips,
   useConfirm,
@@ -161,12 +162,21 @@ export function SenderOnboardingPage() {
 
       <div className="mt-4 rounded-xl border border-clox-border bg-clox-surface p-3 text-xs text-clox-mute">
         {t('senderOnboarding.statusStrip', {
-          status: data.company.status,
-          canBook: String(data.goNoGo.canPublishLive ?? data.goNoGo.canBook),
-          defaultValue: `Status ${data.company.status} · can draft ${String(data.goNoGo.canDraft ?? true)} · can publish live ${String(data.goNoGo.canPublishLive ?? data.goNoGo.canBook)}`,
+          statusLabel: t(`companyStatuses.${data.company.status}`, {
+            defaultValue: data.company.status,
+          }),
+          readyLabel: data.goNoGo.canPublishLive ?? data.goNoGo.canBook
+            ? t('senderOnboarding.statusReadyPublish')
+            : t('senderOnboarding.statusDraftsOnly'),
         })}
         {data.stripeMock ? ' · ' + t('senderOnboarding.stripeMock') : ''}
       </div>
+
+      {step === 'account_type' || step === 'invoice' || step === 'documents' ? (
+        <Notice tone="info" className="mt-4">
+          {t('senderOnboarding.storyDraftVsLive')}
+        </Notice>
+      ) : null}
 
       {resumeJobHref ? (
         <Notice tone="info" className="mt-4">
@@ -239,30 +249,51 @@ export function SenderOnboardingPage() {
       )}
 
       {step === 'complete' && (
-        <Notice tone="success" className="mt-8" title={t('senderOnboarding.activeTitle')}>
-          <p>
-            {t('senderOnboarding.activeBodyPublish', {
-              defaultValue:
-                'You are verified. Publish draft jobs to the marketplace. Add a payment card under Account before accepting a bid.',
-            })}
-          </p>
-          <ul className="mt-3 space-y-1 text-xs">
-            <li>{t('senderOnboarding.goNoGoOpsApproved', { value: String(data.goNoGo.opsApproved) })}</li>
-            <li>{t('senderOnboarding.goNoGoInvoice', { value: String(data.goNoGo.invoiceComplete) })}</li>
-            <li>
-              {t('senderOnboarding.goNoGoCanPublish', {
-                value: String(data.goNoGo.canPublishLive ?? data.goNoGo.canBook),
-                defaultValue: `Can publish live: ${String(data.goNoGo.canPublishLive ?? data.goNoGo.canBook)}`,
-              })}
-            </li>
-          </ul>
-          <Link
-            to={resumeJobHref ?? '/jobs/new'}
-            className="clox-btn clox-btn-cta mt-4 inline-flex"
-          >
-            {t('senderOnboarding.goToJobs', { defaultValue: 'Go to jobs' })}
-          </Link>
-        </Notice>
+        <div className="mt-8 space-y-4">
+          <Notice tone="success" title={t('senderOnboarding.activeTitle')}>
+            <p>{t('senderOnboarding.activeBodyPublish')}</p>
+            <p className="mt-2 text-sm text-clox-mute">{t('senderOnboarding.activeBody')}</p>
+          </Notice>
+
+          <ReadyChecklist
+            title={t('senderOnboarding.readyChecklistTitle')}
+            items={[
+              {
+                id: 'ops',
+                label: t('senderOnboarding.readyOps'),
+                done: data.goNoGo.opsApproved,
+              },
+              {
+                id: 'invoice',
+                label: t('senderOnboarding.readyInvoice'),
+                done: data.goNoGo.invoiceComplete,
+              },
+              {
+                id: 'publish',
+                label: t('senderOnboarding.readyPublish'),
+                done: Boolean(data.goNoGo.canPublishLive ?? data.goNoGo.canBook),
+                pendingHint: t('senderOnboarding.readyPublishPending'),
+              },
+            ]}
+          />
+
+          <div className="flex flex-wrap gap-2">
+            <Link
+              to={resumeJobHref ?? '/jobs/new'}
+              className="clox-btn clox-btn-cta inline-flex"
+            >
+              {resumeJobHref
+                ? t('senderOnboarding.publishDraftCta')
+                : t('senderOnboarding.createJobCta')}
+            </Link>
+            <Link to="/jobs" className="clox-btn clox-btn-secondary inline-flex">
+              {t('senderOnboarding.goToJobs')}
+            </Link>
+            <Link to="/account" className="clox-btn clox-btn-secondary inline-flex">
+              {t('nav.account', { defaultValue: 'Account' })}
+            </Link>
+          </div>
+        </div>
       )}
 
       <p className="mt-8 text-sm text-clox-faint">

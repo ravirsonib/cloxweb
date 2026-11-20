@@ -50,6 +50,7 @@ import {
 } from '@/components/ui';
 import { countByBucket, filterAndSortByBucket } from '@/lib/status-list';
 import {
+  ApiError,
   addCarrierVehicle,
   deleteCarrierVehicle,
   disableCarrierVehicle,
@@ -67,6 +68,7 @@ import {
   updateVehicleCostProfile,
   uploadAndConfirmDocument,
   getVehicleClassesMeta,
+  type CarrierOnboarding,
   type CarrierVehicleListItem,
   type VehicleCostProfileInput,
 } from '@/lib/api';
@@ -170,6 +172,42 @@ async function uploadVehicleDgDoc(companyId: string, vehicleId: string, file: Fi
     file,
     filenameFallback: 'dg-licence',
   });
+}
+
+function apiErrorCode(error: unknown): string | undefined {
+  if (!(error instanceof ApiError) || !error.data || typeof error.data !== 'object') {
+    return undefined;
+  }
+  const code = (error.data as { code?: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
+}
+
+function existingVehicleIdFromError(error: unknown): string | null {
+  if (!(error instanceof ApiError) || !error.data || typeof error.data !== 'object') {
+    return null;
+  }
+  const id = (error.data as { existingVehicleId?: unknown }).existingVehicleId;
+  return typeof id === 'string' && id.length > 0 ? id : null;
+}
+
+/** Resolve vehicle id from add response, conflict resume, or rego fallback. */
+function resolveCreatedVehicleId(
+  onboarding: CarrierOnboarding,
+  rego: string,
+  preferredId?: string | null,
+): string | null {
+  if (preferredId && onboarding.vehicles.some((v) => v.id === preferredId)) {
+    return preferredId;
+  }
+  if (onboarding.vehicleId && onboarding.vehicles.some((v) => v.id === onboarding.vehicleId)) {
+    return onboarding.vehicleId;
+  }
+  const match =
+    onboarding.vehicles.find(
+      (v) => (v.registration ?? '').toUpperCase() === rego && !v.hasRwc,
+    ) ??
+    onboarding.vehicles.find((v) => (v.registration ?? '').toUpperCase() === rego);
+  return match?.id ?? null;
 }
 
 // TODO(backend): carrier.service.ts listVehicles() doesn't return a per-vehicle
@@ -302,6 +340,8 @@ export function CarrierFleetPage() {
   const [showManageCaps, setShowManageCaps] = useState(false);
   const [editingCaps, setEditingCaps] = useState<string[]>([]);
   const [rwcFormError, setRwcFormError] = useState<string | null>(null);
+  /** Blocks double-submit before React Query flips isPending (orphan duplicate fleets). */
+  const addSubmitLockRef = useRef(false);
   const [uploadingVehicleId, setUploadingVehicleId] = useState<string | null>(null);
   const [openingDocId, setOpeningDocId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -487,10 +527,19 @@ export function CarrierFleetPage() {
 
   const addMutation = useMutation({
     mutationFn: async (values: VehicleForm) => {
-      if (!rwcFile) {
+      // Snapshot form files/flags — onSuccess of a racing submit must not clear mid-flight.
+      const rwcUpload = rwcFile;
+      const dgUpload = dgFile;
+      const wantsDg = hasDgForm;
+      const wantsReefer = hasReefer;
+      const wantsOversize = hasOversize;
+      const wantsTailLift = hasTailLift;
+      const wantsCurtainsider = hasCurtainsider;
+
+      if (!rwcUpload) {
         throw new Error(t('fleet.rwcRequiredError'));
       }
-      if (hasDgForm && !dgFile) {
+      if (wantsDg && !dgUpload) {
         throw new Error(
           t('fleet.dgDocRequiredError', {
             defaultValue: 'Please upload the Dangerous Goods (DG) document for this vehicle.',
@@ -500,27 +549,50 @@ export function CarrierFleetPage() {
       if (!companyId) {
         throw new Error(getErrorDetail(companyQuery.error) || t('loading'));
       }
-      const onboarding = await addCarrierVehicle(toVehiclePayload(values));
+
       const rego = values.registration.trim().toUpperCase();
-      const created =
-        onboarding.vehicles.find(
-          (v) => (v.registration ?? '').toUpperCase() === rego && !v.hasRwc,
-        ) ??
-        onboarding.vehicles.find((v) => (v.registration ?? '').toUpperCase() === rego);
-      if (!created) {
-        throw new Error(t('fleet.rwcRequiredError'));
+      let onboarding: CarrierOnboarding;
+      let preferredVehicleId: string | null = null;
+      try {
+        onboarding = await addCarrierVehicle(toVehiclePayload(values));
+        preferredVehicleId = onboarding.vehicleId ?? null;
+      } catch (err) {
+        // Retry after partial success: resume docs on the existing row instead of creating a twin.
+        if (apiErrorCode(err) !== 'VEHICLE_REGISTRATION_EXISTS') {
+          throw err;
+        }
+        preferredVehicleId = existingVehicleIdFromError(err);
+        if (!preferredVehicleId) {
+          throw err;
+        }
+        onboarding = await getCarrierOnboarding();
       }
-      await uploadVehicleRwc(companyId, created.id, rwcFile);
-      if (hasDgForm && dgFile) {
-        await uploadVehicleDgDoc(companyId, created.id, dgFile);
+
+      const vehicleId = resolveCreatedVehicleId(onboarding, rego, preferredVehicleId);
+      if (!vehicleId) {
+        throw new Error(
+          t('fleet.vehicleCreateLookupFailed', {
+            defaultValue:
+              'Vehicle was saved but could not be matched for document upload. Refresh the fleet list and upload RWC from the row actions.',
+          }),
+        );
       }
+
+      const existingRow = onboarding.vehicles.find((v) => v.id === vehicleId);
+      if (!existingRow?.hasRwc) {
+        await uploadVehicleRwc(companyId, vehicleId, rwcUpload);
+      }
+      if (wantsDg && dgUpload && !existingRow?.hasDg) {
+        await uploadVehicleDgDoc(companyId, vehicleId, dgUpload);
+      }
+
       // Merge checked flags into company capabilities (not stored per vehicle).
       const newCaps: string[] = [];
-      if (hasDgForm) newCaps.push('DG');
-      if (hasReefer) newCaps.push('REEFER');
-      if (hasOversize) newCaps.push('OVERSIZE');
-      if (hasTailLift) newCaps.push('TAIL_LIFT');
-      if (hasCurtainsider) newCaps.push('CURTAINSIDER');
+      if (wantsDg) newCaps.push('DG');
+      if (wantsReefer) newCaps.push('REEFER');
+      if (wantsOversize) newCaps.push('OVERSIZE');
+      if (wantsTailLift) newCaps.push('TAIL_LIFT');
+      if (wantsCurtainsider) newCaps.push('CURTAINSIDER');
       const existingCaps = companyQuery.data?.company.capabilities ?? [];
       const mergedCaps = Array.from(new Set([...existingCaps, ...newCaps]));
       if (mergedCaps.length > existingCaps.length) {
@@ -532,7 +604,7 @@ export function CarrierFleetPage() {
               : [companyQuery.data?.company.homeRegionCode || 'VIC'],
           });
         } catch {
-          // Non-blocking best-effort sync
+          // Non-blocking: vehicle + docs already saved; caps can be set from Manage capabilities.
         }
       }
       return onboarding;
@@ -1693,6 +1765,7 @@ export function CarrierFleetPage() {
                   updateMutation.mutate(values);
                   return;
                 }
+                if (addSubmitLockRef.current || addMutation.isPending) return;
                 if (!rwcFile) {
                   setRwcFormError(t('fleet.rwcRequiredError'));
                   return;
@@ -1702,7 +1775,10 @@ export function CarrierFleetPage() {
                   return;
                 }
                 setRwcFormError(null);
-                addMutation.mutate(values);
+                addSubmitLockRef.current = true;
+                void addMutation.mutateAsync(values).finally(() => {
+                  addSubmitLockRef.current = false;
+                });
               })}
               noValidate
             >

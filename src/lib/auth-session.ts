@@ -46,6 +46,7 @@ const SAFE_NEXT_PATHS = new Set([
   '/sender/onboarding',
   '/driver/onboarding',
   '/driver/schedule',
+  '/driver/ewd',
   '/market',
   '/jobs',
   '/jobs/new',
@@ -181,6 +182,7 @@ export function roleCanAccessPath(role: AppRole | null | undefined, path: string
   if (
     pathname === '/driver/onboarding' ||
     pathname === '/driver/schedule' ||
+    pathname === '/driver/ewd' ||
     pathname === '/trips'
   ) {
     return role === AppRole.DRIVER;

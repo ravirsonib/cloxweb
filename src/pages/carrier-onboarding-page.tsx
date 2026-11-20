@@ -28,6 +28,7 @@ import {
   Field,
   FileInput,
   Notice,
+  ReadyChecklist,
   Select,
   StepChips,
   useConfirm,
@@ -186,8 +187,12 @@ export function CarrierOnboardingPage() {
 
       <div className="mt-4 rounded-xl border border-clox-border bg-clox-surface p-3 text-xs text-clox-mute">
         {t('carrierOnboarding.statusStrip', {
-          status: data.company.status,
-          canBid: String(data.goNoGo.canBid),
+          statusLabel: t(`companyStatuses.${data.company.status}`, {
+            defaultValue: data.company.status,
+          }),
+          readyLabel: data.goNoGo.canBid
+            ? t('carrierOnboarding.statusReadyBid')
+            : t('carrierOnboarding.statusAlmostReady'),
         })}
         {data.stripeMock ? ' · ' + t('carrierOnboarding.stripeMock') : ''}
       </div>
@@ -267,35 +272,103 @@ export function CarrierOnboardingPage() {
         </Notice>
       )}
       {step === 'complete' && (
-        <Notice
-          tone={data.goNoGo.canBid ? 'success' : 'warn'}
-          className="mt-8"
-          title={
-            data.goNoGo.canBid
-              ? t('carrierOnboarding.bidEligibleTitle')
-              : t('carrierOnboarding.opsApprovedNotBiddingTitle')
-          }
-        >
+        <div className="mt-8 space-y-4">
+          <Notice
+            tone={data.goNoGo.canBid ? 'success' : 'warn'}
+            title={
+              data.goNoGo.canBid
+                ? t('carrierOnboarding.bidEligibleTitle')
+                : t('carrierOnboarding.opsApprovedNotBiddingTitle')
+            }
+          >
+            <p>
+              {data.goNoGo.canBid
+                ? t('carrierOnboarding.readyStory')
+                : t('carrierOnboarding.opsApprovedNotBiddingBody')}
+            </p>
+            {data.goNoGo.canBid && data.goNoGo.netPayoutHint ? (
+              <p className="mt-2 text-sm text-clox-mute">{data.goNoGo.netPayoutHint}</p>
+            ) : null}
+          </Notice>
+
+          <ReadyChecklist
+            title={t('carrierOnboarding.readyChecklistTitle')}
+            items={[
+              {
+                id: 'ops',
+                label: t('carrierOnboarding.readyOps'),
+                done: data.goNoGo.opsApproved,
+              },
+              {
+                id: 'connect',
+                label: t('carrierOnboarding.readyConnect'),
+                done: data.goNoGo.connectReady,
+                pendingHint: t('carrierOnboarding.readyConnectPending'),
+              },
+              {
+                id: 'fleet',
+                label: t('carrierOnboarding.readyFleet'),
+                done: data.goNoGo.fleetReady,
+                pendingHint: t('carrierOnboarding.readyFleetPending'),
+              },
+              {
+                id: 'drivers',
+                label: t('carrierOnboarding.readyDrivers'),
+                done: data.drivers.length >= 1,
+                pendingHint: t('carrierOnboarding.readyDriversPending'),
+              },
+              {
+                id: 'canBid',
+                label: t('carrierOnboarding.readyCanBid'),
+                done: data.goNoGo.canBid,
+              },
+            ]}
+          />
+
+          <p className="text-sm text-clox-mute">{t('carrierOnboarding.manageFleetHint')}</p>
           {data.goNoGo.canBid ? (
-            <p>{data.goNoGo.netPayoutHint}</p>
-          ) : (
-            <p>{t('carrierOnboarding.opsApprovedNotBiddingBody')}</p>
-          )}
-          <ul className="mt-3 space-y-1 text-xs">
-            <li>{t('carrierOnboarding.goNoGoOps', { value: String(data.goNoGo.opsApproved) })}</li>
-            <li>{t('carrierOnboarding.goNoGoConnect', { value: String(data.goNoGo.connectReady) })}</li>
-            <li>{t('carrierOnboarding.goNoGoFleet', { value: String(data.goNoGo.fleetReady) })}</li>
-            <li>{t('carrierOnboarding.goNoGoCanBid', { value: String(data.goNoGo.canBid) })}</li>
-          </ul>
-          <p className="mt-3 text-sm">{t('carrierOnboarding.manageFleetHint')}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
+            <p className="text-xs text-clox-faint">{t('carrierOnboarding.readyTip')}</p>
+          ) : null}
+
+          <div className="flex flex-wrap gap-2">
+            {data.goNoGo.canBid ? (
+              <Link to="/market" className="clox-btn clox-btn-cta inline-flex items-center text-sm">
+                {t('carrierOnboarding.browseJobsCta')}
+              </Link>
+            ) : !data.goNoGo.connectReady ? (
+              <Button
+                type="button"
+                variant="cta"
+                className="text-sm"
+                onClick={() => setViewStep('connect')}
+              >
+                {t('carrierOnboarding.setupPayoutsCta')}
+              </Button>
+            ) : !data.goNoGo.fleetReady ? (
+              <Link
+                to="/carrier/fleet"
+                className="clox-btn clox-btn-cta inline-flex items-center text-sm"
+              >
+                {t('carrierOnboarding.addTruckCta')}
+              </Link>
+            ) : data.drivers.length < 1 ? (
+              <Link
+                to="/carrier/drivers"
+                className="clox-btn clox-btn-cta inline-flex items-center text-sm"
+              >
+                {t('carrierOnboarding.addDriverCta')}
+              </Link>
+            ) : (
+              <Link
+                to="/carrier/fleet"
+                className="clox-btn clox-btn-cta inline-flex items-center text-sm"
+              >
+                {t('carrierOnboarding.manageFleetCta')}
+              </Link>
+            )}
             <Link
               to="/carrier/fleet"
-              className={
-                data.goNoGo.canBid
-                  ? 'clox-btn clox-btn-secondary inline-flex items-center text-sm'
-                  : 'clox-btn clox-btn-cta inline-flex items-center text-sm'
-              }
+              className="clox-btn clox-btn-secondary inline-flex items-center text-sm"
             >
               {t('carrierOnboarding.manageFleetCta')}
             </Link>
@@ -305,13 +378,8 @@ export function CarrierOnboardingPage() {
             >
               {t('carrierOnboarding.manageDriversCta')}
             </Link>
-            {data.goNoGo.canBid ? (
-              <Link to="/market" className="clox-btn clox-btn-cta inline-flex items-center text-sm">
-                {t('nav.jobBoard')}
-              </Link>
-            ) : null}
           </div>
-        </Notice>
+        </div>
       )}
 
       <p className="mt-8 text-sm text-clox-faint">
@@ -719,6 +787,9 @@ function ConnectStep({
         <h2 className="font-display text-lg font-semibold">
           {t('carrierOnboarding.connectTitle')}
         </h2>
+        <p className="mt-1 text-xs font-medium text-clox-ink">
+          {t('carrierOnboarding.connectUnlocksBidding')}
+        </p>
         {repairRequired ? (
           <Notice tone="warn" className="mt-3">
             {t('carrierOnboarding.connectRepairNotice')}
@@ -937,12 +1008,13 @@ function VehiclesStep({
 
   const mutation = useMutation({
     mutationFn: async (values: VehicleForm) => {
-      if (!rwcFile) {
+      const rwcUpload = rwcFile;
+      if (!rwcUpload) {
         throw new Error(t('fleet.rwcRequiredError'));
       }
       // Persist vehicle first so a later RWC/network failure does not look like
       // "add failed" after refresh (vehicle already exists).
-      const onboarding = await addCarrierVehicle({
+      const payload = {
         label: values.label,
         registration: values.registration,
         vehicleClass: values.vehicleClass,
@@ -951,18 +1023,43 @@ function VehiclesStep({
         ...(values.gcmKg != null && !Number.isNaN(values.gcmKg)
           ? { gcmKg: values.gcmKg }
           : {}),
-      });
+      };
+      let onboarding;
+      let preferredVehicleId: string | null = null;
+      try {
+        onboarding = await addCarrierVehicle(payload);
+        preferredVehicleId = onboarding.vehicleId ?? null;
+      } catch (err) {
+        const data =
+          err && typeof err === 'object' && 'data' in err
+            ? (err as { data?: { code?: string; existingVehicleId?: string } }).data
+            : undefined;
+        if (data?.code !== 'VEHICLE_REGISTRATION_EXISTS' || !data.existingVehicleId) {
+          throw err;
+        }
+        preferredVehicleId = data.existingVehicleId;
+        onboarding = await getCarrierOnboarding();
+      }
       const rego = values.registration.trim().toUpperCase();
-      const created =
+      const createdId =
+        (preferredVehicleId &&
+        onboarding.vehicles.some((v) => v.id === preferredVehicleId)
+          ? preferredVehicleId
+          : null) ??
+        onboarding.vehicleId ??
         onboarding.vehicles.find(
           (v) => (v.registration ?? '').toUpperCase() === rego && !v.hasRwc,
-        ) ??
-        onboarding.vehicles.find((v) => (v.registration ?? '').toUpperCase() === rego);
-      if (!created) {
+        )?.id ??
+        onboarding.vehicles.find((v) => (v.registration ?? '').toUpperCase() === rego)?.id;
+      if (!createdId) {
         throw new Error(t('fleet.rwcRequiredError'));
       }
+      const existing = onboarding.vehicles.find((v) => v.id === createdId);
+      if (existing?.hasRwc) {
+        return onboarding;
+      }
       try {
-        await uploadRwcForVehicle(created.id, rwcFile);
+        await uploadRwcForVehicle(createdId, rwcUpload);
       } catch (err) {
         const detail = getErrorDetail(err);
         throw new Error(t('carrierOnboarding.vehicleSavedRwcFailed', { detail }));
@@ -1001,6 +1098,9 @@ function VehiclesStep({
   return (
     <div className="mt-8 space-y-4">
       <h2 className="text-lg font-semibold">{t('carrierOnboarding.fleetTitle')}</h2>
+      <p className="mt-1 text-xs font-medium text-clox-ink">
+        {t('carrierOnboarding.fleetUnlocksBidding')}
+      </p>
       <p className="text-sm text-clox-mute">{t('carrierOnboarding.fleetRwcHint')}</p>
       {data.vehicles.length > 0 ? (
         <ul className="space-y-2 text-sm text-clox-mute">
@@ -1219,6 +1319,9 @@ function DriversStep({
         </div>
       ) : null}
       <h2 className="font-display text-lg font-semibold">{t('carrierOnboarding.driversTitle')}</h2>
+      <p className="mt-1 text-xs font-medium text-clox-ink">
+        {t('carrierOnboarding.driversUnlocksBidding')}
+      </p>
       <p className="text-sm text-clox-mute">{t('carrierOnboarding.driversHint')}</p>
       {data.drivers.length > 0 ? (
         <ul className="space-y-2 text-sm text-clox-mute">

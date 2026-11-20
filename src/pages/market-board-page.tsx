@@ -11,6 +11,7 @@ import {
   getErrorDetail,
   getMarketBoard,
   getVehicleClassesMeta,
+  isAxiosError,
   listCarrierDrivers,
   listCarrierVehicles,
   listTripExceptions,
@@ -20,6 +21,7 @@ import {
   withdrawProposalByJobId,
   type MarketBoardJob,
 } from '@/lib/api';
+import { JobRateFloorPanel } from '@/components/job-rate-floor-panel';
 import {
   formatManeuverabilityLabel,
   formatFacilityLabel,
@@ -211,12 +213,31 @@ export function MarketBoardPage() {
     [activeDrivers],
   );
 
-  const schema = z.object({
-    amountAud: z.number().positive(t('validation.bidAmountPositive')),
-    etaMinutes: z.number().int().min(1, t('validation.etaPositive')),
-    vehicleId: z.string().uuid(t('market.errorSelectVehicle')),
-    driverId: z.string().uuid(t('market.errorSelectDriver')),
-  });
+  const minBidIncGstCents = selectedJob?.minBidIncGstCents ?? null;
+  const minBidAud =
+    minBidIncGstCents != null && minBidIncGstCents > 0
+      ? Math.round(minBidIncGstCents) / 100
+      : null;
+
+  const schema = z
+    .object({
+      amountAud: z.number().positive(t('validation.bidAmountPositive')),
+      etaMinutes: z.number().int().min(1, t('validation.etaPositive')),
+      vehicleId: z.string().uuid(t('market.errorSelectVehicle')),
+      driverId: z.string().uuid(t('market.errorSelectDriver')),
+    })
+    .superRefine((values, ctx) => {
+      if (minBidAud != null && values.amountAud + 1e-9 < minBidAud) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['amountAud'],
+          message: t('market.bidBelowFloor', {
+            defaultValue: 'Bid cannot be below the minimum {{amount}} inc GST',
+            amount: formatDollars(minBidIncGstCents ?? 0),
+          }),
+        });
+      }
+    });
 
   const form = useForm<BidForm>({
     resolver: zodResolver(schema),
@@ -451,7 +472,32 @@ export function MarketBoardPage() {
       await qc.invalidateQueries({ queryKey: ['carrier', 'vehicles'] });
       await qc.invalidateQueries({ queryKey: ['carrier', 'drivers'] });
     },
-    onError: (err) => toast.error(getErrorDetail(err)),
+    onError: (err) => {
+      const body = isAxiosError(err)
+        ? (err.response?.data as {
+            code?: string;
+            message?: string | { code?: string; floorIncGstCents?: number };
+            floorIncGstCents?: number;
+          })
+        : null;
+      const nested =
+        body?.message && typeof body.message === 'object' ? body.message : null;
+      const code = body?.code || nested?.code;
+      if (code === 'PRICE_BELOW_FLOOR') {
+        const floorInc = body?.floorIncGstCents ?? nested?.floorIncGstCents;
+        toast.error(
+          floorInc != null
+            ? t('market.bidBelowFloorServer', {
+                defaultValue:
+                  'Server rejected this bid — minimum is {{amount}} inc GST. Adjust and resubmit.',
+                amount: formatDollars(floorInc),
+              })
+            : getErrorDetail(err),
+        );
+        return;
+      }
+      toast.error(getErrorDetail(err));
+    },
   });
 
   const withdraw = useMutation({
@@ -650,13 +696,30 @@ export function MarketBoardPage() {
                         {j.chargeableWeightKg != null
                           ? ` · ${t('market.weightKg', { kg: j.chargeableWeightKg })}`
                           : ''}
+                        {j.loadProfile?.peakOnboardKg != null
+                          ? ` · ${t('market.peakOnboardKg', {
+                              defaultValue: 'peak {{kg}} kg onboard',
+                              kg: j.loadProfile.peakOnboardKg,
+                            })}`
+                          : ''}
                         {j.requiresDg ? ` ${t('market.dgSuffix')}` : ''}
                         {j.routeFatigueBreakMinutes > 0
                           ? ` ${t('market.fatigueSuffix', { minutes: j.routeFatigueBreakMinutes })}`
                           : ''}
-                        {j.estimateNetToCarrierCents != null
-                          ? ` ${t('market.netApprox', { amount: formatDollars(j.estimateNetToCarrierCents) })}`
-                          : ''}
+                        {j.alreadyBid && j.myNetToCarrierCents != null
+                          ? ` ${t('market.yourBidNetApprox', {
+                              amount: formatDollars(j.myNetToCarrierCents),
+                              defaultValue: '· your bid net ~{{amount}}',
+                            })}`
+                          : j.displayNetToCarrierCents != null
+                            ? ` ${t('market.netApprox', {
+                                amount: formatDollars(j.displayNetToCarrierCents),
+                              })}`
+                            : j.estimateNetToCarrierCents != null
+                              ? ` ${t('market.netApprox', {
+                                  amount: formatDollars(j.estimateNetToCarrierCents),
+                                })}`
+                              : ''}
                         {j.rescueDiscountPercent != null && j.rescueDiscountPercent > 0
                           ? ` · ${t('market.rescueDiscount', { percent: j.rescueDiscountPercent })}`
                           : ''}
@@ -755,6 +818,24 @@ export function MarketBoardPage() {
                   'You have an active bid on this job. Your assigned vehicle and driver are reserved pending sender award.',
               })}
             </Notice>
+            {selectedJob.myBidIncGstCents != null ? (
+              <div className="rounded-clox-sm border border-clox-border bg-clox-surface-alt/40 p-3 text-sm">
+                <p className="font-medium text-clox-ink">
+                  {t('market.yourBidGross', {
+                    amount: formatDollars(selectedJob.myBidIncGstCents),
+                    defaultValue: 'Your bid {{amount}} inc GST',
+                  })}
+                </p>
+                {selectedJob.myNetToCarrierCents != null ? (
+                  <p className="mt-1 text-xs text-clox-mute">
+                    {t('market.yourNetApprox', {
+                      amount: formatDollars(selectedJob.myNetToCarrierCents),
+                      percent: board.data?.carrierPercent ?? 70,
+                    })}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <div className="border-t border-clox-border pt-3">
               <p className="mb-2 text-xs text-clox-mute">
                 {t('market.withdrawExplanation', {
@@ -1040,10 +1121,31 @@ export function MarketBoardPage() {
             </Notice>
           ) : null}
 
+          {minBidIncGstCents != null && minBidIncGstCents > 0 ? (
+            <JobRateFloorPanel
+              className="mb-3"
+              fallback={{
+                exGstCents: null,
+                incGstCents: minBidIncGstCents,
+              }}
+              estimateIncGstCents={
+                Number.isFinite(amountWatch) ? Math.round(Number(amountWatch) * 100) : null
+              }
+            />
+          ) : null}
           <Field
             type="number"
             step="0.01"
+            min={minBidAud ?? undefined}
             label={t('validation.grossAudLabel')}
+            hint={
+              minBidAud != null
+                ? t('market.minBidFieldHint', {
+                    defaultValue: 'Minimum bid {{amount}} inc GST (hard floor)',
+                    amount: formatDollars(minBidIncGstCents ?? 0),
+                  })
+                : undefined
+            }
             required
             error={form.formState.errors.amountAud?.message}
             {...form.register('amountAud', { valueAsNumber: true })}
@@ -1073,7 +1175,10 @@ export function MarketBoardPage() {
               !vehicleEligible ||
               !driverEligible ||
               selectableVehicles.length === 0 ||
-              selectableDrivers.length === 0
+              selectableDrivers.length === 0 ||
+              (minBidAud != null &&
+                Number.isFinite(amountWatch) &&
+                Number(amountWatch) + 1e-9 < minBidAud)
             }
           >
             {bid.isPending ? t('submitting') : t('market.submitProposal')}

@@ -27,6 +27,7 @@ import {
   getRegionsMeta,
   getVehicleClassesMeta,
   listSenderJobs,
+  isAxiosError,
   openDocumentContent,
   previewJobRoute,
   previewProposalCharge,
@@ -41,7 +42,9 @@ import {
   type JobRouteEstimate,
   type JobSummary,
 } from '@/lib/api';
+import { JobRateFloorPanel } from '@/components/job-rate-floor-panel';
 import { ScaPaymentConfirm } from '@/components/stripe/ScaPaymentConfirm';
+import { useRateFloorPreview } from '@/lib/use-rate-floor-preview';
 import {
   Button,
   ChoiceCheck,
@@ -112,6 +115,7 @@ import {
   requiredPhoneSchema,
   subtypeParentCode,
 } from '@/lib/validation';
+import { buildStopLoadProfile } from '@/lib/job-stop-load';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -520,6 +524,7 @@ type ExtraPickupStopForm = {
   suburb: string;
   state: string;
   postcode: string;
+  weightKg: number;
 };
 
 type ExtraDropoffStopForm = {
@@ -527,6 +532,7 @@ type ExtraDropoffStopForm = {
   suburb: string;
   state: string;
   postcode: string;
+  weightKg: number;
   receiverName?: string;
   receiverEmail?: string;
 };
@@ -540,11 +546,13 @@ type JobCreateForm = {
   pickupSuburb: string;
   pickupState: string;
   pickupPostcode: string;
+  pickupWeightKg: number;
   extraPickups: ExtraPickupStopForm[];
   dropoffAddressLine: string;
   dropoffSuburb: string;
   dropoffState: string;
   dropoffPostcode: string;
+  dropoffWeightKg: number;
   extraDropoffs: ExtraDropoffStopForm[];
   deadWeightKg: number;
   lengthCm: number;
@@ -607,11 +615,13 @@ function buildStopsFromForm(
     | 'pickupSuburb'
     | 'pickupState'
     | 'pickupPostcode'
+    | 'pickupWeightKg'
     | 'extraPickups'
     | 'dropoffAddressLine'
     | 'dropoffSuburb'
     | 'dropoffState'
     | 'dropoffPostcode'
+    | 'dropoffWeightKg'
     | 'extraDropoffs'
     | 'receiverName'
     | 'receiverEmail'
@@ -637,6 +647,7 @@ function buildStopsFromForm(
     postcode: string;
     lat: number;
     lng: number;
+    weightKg: number;
     receiverName?: string;
     receiverEmail?: string;
   }> = [
@@ -648,6 +659,7 @@ function buildStopsFromForm(
       postcode: pickupPostcode,
       lat: pickupCoords.lat,
       lng: pickupCoords.lng,
+      weightKg: Number(values.pickupWeightKg) || 0,
     },
   ];
 
@@ -668,6 +680,7 @@ function buildStopsFromForm(
         postcode: pPostcode,
         lat: Number((pCoords.lat - jitter).toFixed(5)),
         lng: Number((pCoords.lng - jitter).toFixed(5)),
+        weightKg: Number(p.weightKg) || 0,
       });
     });
   }
@@ -680,6 +693,7 @@ function buildStopsFromForm(
     postcode: dropoffPostcode,
     lat: dropoffCoords.lat,
     lng: dropoffCoords.lng,
+    weightKg: Number(values.dropoffWeightKg) || 0,
     receiverName: values.receiverName?.trim() || undefined,
     receiverEmail: values.receiverEmail?.trim() || undefined,
   });
@@ -701,6 +715,7 @@ function buildStopsFromForm(
         postcode: dPostcode,
         lat: Number((dCoords.lat + jitter).toFixed(5)),
         lng: Number((dCoords.lng + jitter).toFixed(5)),
+        weightKg: Number(d.weightKg) || 0,
         receiverName:
           d.receiverName?.trim() || values.receiverName?.trim() || undefined,
         receiverEmail:
@@ -755,9 +770,13 @@ function buildJobPayload(values: JobCreateForm) {
   );
   const requiresDg = loadTypes.includes('DG');
   const stops = buildStopsFromForm(values);
+  const loadProfile = buildStopLoadProfile(stops);
+  const deadWeightKg = loadProfile.hasStopWeights
+    ? loadProfile.totalPickupKg
+    : values.deadWeightKg;
   const pickupCount = stops.filter((s) => s.stopType === 'PICKUP').length;
   return {
-    title: buildJobTitle(values, stops),
+    title: buildJobTitle({ ...values, deadWeightKg }, stops),
     pricingModel: values.pricingModel,
     hourlyPattern:
       values.pricingModel === 'HOURLY'
@@ -773,7 +792,7 @@ function buildJobPayload(values: JobCreateForm) {
     receiverAltPhone: values.receiverAltPhone?.trim() || null,
     dgDocumentId: requiresDg ? (values.dgDocumentId ?? null) : null,
     minVehicleClass: values.minVehicleClass || undefined,
-    deadWeightKg: values.deadWeightKg,
+    deadWeightKg,
     lengthCm: values.lengthCm,
     widthCm: values.widthCm,
     heightCm: values.heightCm,
@@ -1108,11 +1127,11 @@ function JobReceiverForm({ jobId, job }: { jobId: string; job: JobSummary }) {
   );
 }
 
-const DRAFT_WIZARD_STEPS = ['pricing', 'cargo', 'receiver', 'confirm'] as const;
+const DRAFT_WIZARD_STEPS = ['route', 'load', 'truck', 'confirm'] as const;
 type DraftWizardStep = (typeof DRAFT_WIZARD_STEPS)[number];
 
 const DRAFT_STEP_FIELDS: Record<DraftWizardStep, (keyof JobCreateForm)[]> = {
-  pricing: [
+  route: [
     'pricingModel',
     'pickupAt',
     'pickupAddressLine',
@@ -1127,7 +1146,9 @@ const DRAFT_STEP_FIELDS: Record<DraftWizardStep, (keyof JobCreateForm)[]> = {
     'extraDropoffs',
     'distanceKm',
   ],
-  cargo: [
+  load: [
+    'pickupWeightKg',
+    'dropoffWeightKg',
     'deadWeightKg',
     'lengthCm',
     'widthCm',
@@ -1135,17 +1156,19 @@ const DRAFT_STEP_FIELDS: Record<DraftWizardStep, (keyof JobCreateForm)[]> = {
     'loadDg',
     'loadTypes',
     'loadTypeSubtypes',
-    'minVehicleClass',
     'dgDocumentId',
   ],
-  receiver: [
+  truck: ['minVehicleClass'],
+  confirm: [
     'receiverName',
     'receiverEmail',
     'receiverPhone',
     'receiverAltEmail',
     'receiverAltPhone',
+    'siteManeuverability',
+    'siteFacility',
+    'siteDisclaimerAccepted',
   ],
-  confirm: ['siteManeuverability', 'siteFacility', 'siteDisclaimerAccepted'],
 };
 
 function JobDraftForm({
@@ -1160,7 +1183,7 @@ function JobDraftForm({
   const navigate = useNavigate();
   const toast = useToast();
   const isEdit = mode === 'edit';
-  const [step, setStep] = useState<DraftWizardStep>('pricing');
+  const [step, setStep] = useState<DraftWizardStep>('route');
   const cancelTo = isEdit && jobId ? `/jobs/${jobId}` : '/jobs';
 
   const [showAddressDetails, setShowAddressDetails] = useState(false);
@@ -1224,12 +1247,20 @@ function JobDraftForm({
         .string()
         .trim()
         .regex(/^\d{4}$/, t('validation.postcodeInvalid', { defaultValue: 'Enter a 4-digit postcode' })),
+      pickupWeightKg: z
+        .number({ message: t('validation.weightPositive') })
+        .positive(t('validation.weightPositive'))
+        .max(MAX_JOB_DEAD_WEIGHT_KG, t('validation.weightMax', { max: MAX_JOB_DEAD_WEIGHT_KG })),
       extraPickups: z.array(
         z.object({
           addressLine: z.string().trim(),
           suburb: z.string().trim(),
           state: z.string().trim(),
           postcode: z.string().trim(),
+          weightKg: z
+            .number({ message: t('validation.weightPositive') })
+            .positive(t('validation.weightPositive'))
+            .max(MAX_JOB_DEAD_WEIGHT_KG, t('validation.weightMax', { max: MAX_JOB_DEAD_WEIGHT_KG })),
         }),
       ),
       dropoffAddressLine: z
@@ -1245,12 +1276,20 @@ function JobDraftForm({
         .string()
         .trim()
         .regex(/^\d{4}$/, t('validation.postcodeInvalid', { defaultValue: 'Enter a 4-digit postcode' })),
+      dropoffWeightKg: z
+        .number({ message: t('validation.weightPositive') })
+        .positive(t('validation.weightPositive'))
+        .max(MAX_JOB_DEAD_WEIGHT_KG, t('validation.weightMax', { max: MAX_JOB_DEAD_WEIGHT_KG })),
       extraDropoffs: z.array(
         z.object({
           addressLine: z.string().trim(),
           suburb: z.string().trim(),
           state: z.string().trim(),
           postcode: z.string().trim(),
+          weightKg: z
+            .number({ message: t('validation.weightPositive') })
+            .positive(t('validation.weightPositive'))
+            .max(MAX_JOB_DEAD_WEIGHT_KG, t('validation.weightMax', { max: MAX_JOB_DEAD_WEIGHT_KG })),
           receiverName: z.string().trim().optional(),
           receiverEmail: z.string().trim().optional(),
         }),
@@ -1346,8 +1385,22 @@ function JobDraftForm({
           }),
         });
       }
+      const stopsPreview = buildStopsFromForm(values);
+      const loadProfile = buildStopLoadProfile(stopsPreview);
+      if (loadProfile.hasStopWeights && !loadProfile.ok) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['pickupWeightKg'],
+          message: loadProfile.errors[0] ?? t('jobs.stopLoadInvalid', {
+            defaultValue: 'Pickup and dropoff weights must balance and stay non-negative onboard.',
+          }),
+        });
+      }
+      const deadForChargeable = loadProfile.hasStopWeights
+        ? loadProfile.totalPickupKg
+        : values.deadWeightKg;
       const chargeable = chargeableWeightKg({
-        deadWeightKg: values.deadWeightKg,
+        deadWeightKg: deadForChargeable,
         lengthCm: values.lengthCm,
         widthCm: values.widthCm,
         heightCm: values.heightCm,
@@ -1476,11 +1529,13 @@ function JobDraftForm({
       pickupSuburb: initialStopDefaults.pickupSuburb,
       pickupState: senderDefaultState,
       pickupPostcode: initialStopDefaults.pickupPostcode,
+      pickupWeightKg: 800,
       extraPickups: [],
       dropoffAddressLine: initialStopDefaults.dropoffAddressLine,
       dropoffSuburb: initialStopDefaults.dropoffSuburb,
       dropoffState: senderDefaultState,
       dropoffPostcode: initialStopDefaults.dropoffPostcode,
+      dropoffWeightKg: 800,
       extraDropoffs: [],
       deadWeightKg: 800,
       lengthCm: 120,
@@ -1539,11 +1594,13 @@ function JobDraftForm({
     const pickupStop = pickupStops[0];
     const resolvedPickupState = pickupStop?.state || senderDefaultState;
     const pickupDefaults = getStateStopDefaults(resolvedPickupState);
+    const jobDead = Number(existing.data.deadWeightKg) || 800;
     const remainingPickups = pickupStops.slice(1).map((s) => ({
       addressLine: s.addressLine || '',
       suburb: s.suburb || '',
       state: s.state || resolvedPickupState,
       postcode: s.postcode || '',
+      weightKg: Number(s.weightKg) > 0 ? Number(s.weightKg) : jobDead,
     }));
     const dropoffStops = (existing.data.stops ?? []).filter((s) => s.stopType === 'DROPOFF');
     const drop1 = dropoffStops[0];
@@ -1554,6 +1611,7 @@ function JobDraftForm({
       suburb: s.suburb || '',
       state: s.state || resolvedDropoffState,
       postcode: s.postcode || '',
+      weightKg: Number(s.weightKg) > 0 ? Number(s.weightKg) : jobDead,
       receiverName: s.receiverName || '',
       receiverEmail: s.receiverEmail || '',
     }));
@@ -1572,13 +1630,17 @@ function JobDraftForm({
       pickupSuburb: pickupStop?.suburb || pickupDefaults.pickupSuburb,
       pickupState: resolvedPickupState,
       pickupPostcode: pickupStop?.postcode || pickupDefaults.pickupPostcode,
+      pickupWeightKg:
+        Number(pickupStop?.weightKg) > 0 ? Number(pickupStop?.weightKg) : jobDead,
       extraPickups: remainingPickups,
       dropoffAddressLine: drop1?.addressLine || dropoffDefaults.dropoffAddressLine,
       dropoffSuburb: drop1?.suburb || dropoffDefaults.dropoffSuburb,
       dropoffState: resolvedDropoffState,
       dropoffPostcode: drop1?.postcode || dropoffDefaults.dropoffPostcode,
+      dropoffWeightKg:
+        Number(drop1?.weightKg) > 0 ? Number(drop1?.weightKg) : jobDead,
       extraDropoffs: remainingDropoffs,
-      deadWeightKg: Number(existing.data.deadWeightKg) || 800,
+      deadWeightKg: jobDead,
       lengthCm: Number(existing.data.lengthCm) || 120,
       widthCm: Number(existing.data.widthCm) || 80,
       heightCm: Number(existing.data.heightCm) || 80,
@@ -1622,11 +1684,13 @@ function JobDraftForm({
   const pickupSuburb = form.watch('pickupSuburb');
   const pickupState = form.watch('pickupState');
   const pickupPostcode = form.watch('pickupPostcode');
+  const pickupWeightKg = form.watch('pickupWeightKg');
   const extraPickups = form.watch('extraPickups');
   const dropoffAddressLine = form.watch('dropoffAddressLine');
   const dropoffSuburb = form.watch('dropoffSuburb');
   const dropoffState = form.watch('dropoffState');
   const dropoffPostcode = form.watch('dropoffPostcode');
+  const dropoffWeightKg = form.watch('dropoffWeightKg');
   const extraDropoffs = form.watch('extraDropoffs');
   const receiverName = form.watch('receiverName');
   const receiverEmail = form.watch('receiverEmail');
@@ -1642,6 +1706,55 @@ function JobDraftForm({
   const loadTypeSubtypes = form.watch('loadTypeSubtypes') ?? [];
   const minVehicleClass = form.watch('minVehicleClass');
   const dgDocumentId = form.watch('dgDocumentId');
+
+  const floorPreviewInput = useMemo(() => {
+    const vehicleClassCode =
+      (routeEstimate?.pricingVehicleClass || minVehicleClass || '').trim() || null;
+    if (!vehicleClassCode) return null;
+    const requiresDg = loadTypes.includes('DG');
+    const requiresReefer = loadTypes.includes('REEFER');
+    const atIso = (() => {
+      try {
+        if (!pickupAt || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(pickupAt)) return null;
+        return fromDatetimeLocalValue(pickupAt, pickupState || undefined);
+      } catch {
+        return null;
+      }
+    })();
+    return {
+      vehicleClassCode,
+      pricingModel: pricingModel as 'PER_KM' | 'HOURLY',
+      distanceKm:
+        pricingModel === 'PER_KM' && Number.isFinite(distanceKm) && (distanceKm as number) > 0
+          ? Number(distanceKm)
+          : routeEstimate?.distanceKm ?? null,
+      billableHours:
+        pricingModel === 'HOURLY'
+          ? routeEstimate?.billableHours ?? routeEstimate?.minBillableHours ?? 4
+          : null,
+      at: atIso,
+      pickupState: pickupState?.trim() ? pickupState.trim().toUpperCase() : null,
+      requiresDg,
+      requiresReefer,
+      bodyCode: requiresReefer ? ('REEFER' as const) : requiresDg ? ('DG' as const) : ('DRY' as const),
+      backhaul: false,
+    };
+  }, [
+    routeEstimate?.pricingVehicleClass,
+    routeEstimate?.distanceKm,
+    routeEstimate?.billableHours,
+    routeEstimate?.minBillableHours,
+    minVehicleClass,
+    pricingModel,
+    distanceKm,
+    pickupAt,
+    pickupState,
+    loadTypes,
+  ]);
+
+  const floorPreviewQuery = useRateFloorPreview(floorPreviewInput, {
+    enabled: role === AppRole.SENDER && Boolean(floorPreviewInput),
+  });
 
   const extraStopsSignature = JSON.stringify({
     extraPickups: (extraPickups ?? []).map((p) => [p.state, p.postcode, p.suburb, p.addressLine]),
@@ -1723,11 +1836,13 @@ function JobDraftForm({
       pickupSuburb,
       pickupState,
       pickupPostcode,
+      pickupWeightKg,
       extraPickups: extraPickups ?? [],
       dropoffAddressLine,
       dropoffSuburb,
       dropoffState,
       dropoffPostcode,
+      dropoffWeightKg,
       extraDropoffs: extraDropoffs ?? [],
       receiverName: receiverName.trim() || 'Receiver',
       receiverEmail: receiverEmail.trim() || 'receiver@example.com',
@@ -1801,11 +1916,62 @@ function JobDraftForm({
     }
   };
 
+  const liveStops = useMemo(
+    () =>
+      buildStopsFromForm({
+        pricingModel,
+        pickupAddressLine,
+        pickupSuburb,
+        pickupState,
+        pickupPostcode,
+        pickupWeightKg,
+        extraPickups: extraPickups ?? [],
+        dropoffAddressLine,
+        dropoffSuburb,
+        dropoffState,
+        dropoffPostcode,
+        dropoffWeightKg,
+        extraDropoffs: extraDropoffs ?? [],
+        receiverName,
+        receiverEmail,
+      }),
+    [
+      pricingModel,
+      pickupAddressLine,
+      pickupSuburb,
+      pickupState,
+      pickupPostcode,
+      pickupWeightKg,
+      extraPickups,
+      dropoffAddressLine,
+      dropoffSuburb,
+      dropoffState,
+      dropoffPostcode,
+      dropoffWeightKg,
+      extraDropoffs,
+      receiverName,
+      receiverEmail,
+    ],
+  );
+  const liveLoadProfile = useMemo(() => buildStopLoadProfile(liveStops), [liveStops]);
+
+  useEffect(() => {
+    if (!liveLoadProfile.hasStopWeights || !liveLoadProfile.ok) return;
+    if (Number(deadWeightKg) === liveLoadProfile.totalPickupKg) return;
+    form.setValue('deadWeightKg', liveLoadProfile.totalPickupKg, { shouldValidate: true });
+  }, [liveLoadProfile, deadWeightKg, form]);
+
   const cargoForRecommend = {
-    deadWeightKg: Number(deadWeightKg) || 0,
+    deadWeightKg: liveLoadProfile.hasStopWeights
+      ? liveLoadProfile.totalPickupKg
+      : Number(deadWeightKg) || 0,
     lengthCm: Number(lengthCm) || 0,
     widthCm: Number(widthCm) || 0,
     heightCm: Number(heightCm) || 0,
+    peakOnboardKg:
+      liveLoadProfile.hasStopWeights && liveLoadProfile.ok
+        ? liveLoadProfile.peakOnboardKg
+        : undefined,
   };
   const localChargeable =
     cargoForRecommend.deadWeightKg > 0 &&
@@ -1818,7 +1984,15 @@ function JobDraftForm({
     localChargeable != null && isChargeableOverLimit(localChargeable);
 
   const recommend = useQuery({
-    queryKey: ['jobs', 'recommend', deadWeightKg, lengthCm, widthCm, heightCm],
+    queryKey: [
+      'jobs',
+      'recommend',
+      cargoForRecommend.deadWeightKg,
+      cargoForRecommend.peakOnboardKg,
+      lengthCm,
+      widthCm,
+      heightCm,
+    ],
     queryFn: () => recommendVehicle(cargoForRecommend),
     enabled:
       cargoForRecommend.deadWeightKg > 0 &&
@@ -1962,12 +2136,18 @@ function JobDraftForm({
   };
 
   const stepHint =
-    step === 'pricing'
-      ? t('jobs.wizard.pricingHint')
-      : step === 'cargo'
-        ? t('jobs.wizard.cargoHint')
-        : step === 'receiver'
-          ? t('jobs.wizard.receiverHint')
+    step === 'route'
+      ? t('jobs.wizard.routeHint', {
+          defaultValue: 'Set how this job is priced and confirm route stops.',
+        })
+      : step === 'load'
+        ? t('jobs.wizard.loadHint', {
+            defaultValue: "Enter what you're shipping — weight, dimensions, and load type.",
+          })
+        : step === 'truck'
+          ? t('jobs.wizard.truckHint', {
+              defaultValue: 'Select the minimum vehicle class and review price guidance.',
+            })
           : t('jobs.wizard.confirmHint');
 
   if (role !== AppRole.SENDER) return <Navigate to="/" replace />;
@@ -1977,7 +2157,7 @@ function JobDraftForm({
   }
 
   return (
-    <div className={step === 'cargo' ? 'max-w-5xl' : 'max-w-2xl'}>
+    <div className={step === 'truck' || step === 'load' ? 'max-w-5xl' : 'max-w-2xl'}>
       <Link to={cancelTo} className="text-sm text-clox-orange hover:underline">
         ← {isEdit ? t('jobs.backToJob') : t('jobs.backToJobs')}
       </Link>
@@ -1987,7 +2167,11 @@ function JobDraftForm({
             {isEdit ? t('jobs.editTitle') : t('jobs.createTitle')}
           </h1>
           <p className="mt-1 text-sm text-clox-mute">
-            {isEdit ? t('jobs.editHint') : t('jobs.createHint')}
+            {isEdit
+              ? t('jobs.editHint')
+              : t('jobs.createHint', {
+                  defaultValue: "Start with where the load goes, then what you're shipping.",
+                })}
           </p>
         </div>
         {isEdit && existing.data ? (
@@ -2003,10 +2187,10 @@ function JobDraftForm({
         className="mt-4"
         current={step}
         steps={[
-          { id: 'pricing', label: t('jobs.wizard.stepPricing') },
-          { id: 'cargo', label: t('jobs.wizard.stepCargo') },
-          { id: 'receiver', label: t('jobs.wizard.stepReceiver') },
-          { id: 'confirm', label: t('jobs.wizard.stepConfirm') },
+          { id: 'route', label: t('jobs.wizard.stepRoute', { defaultValue: 'Route' }) },
+          { id: 'load', label: t('jobs.wizard.stepLoad', { defaultValue: 'Load' }) },
+          { id: 'truck', label: t('jobs.wizard.stepTruck', { defaultValue: 'Truck & price' }) },
+          { id: 'confirm', label: t('jobs.wizard.stepDelivery', { defaultValue: 'Delivery & review' }) },
         ]}
         onStepSelect={(id) => void goToStep(id as DraftWizardStep)}
         canSelectStep={() => true}
@@ -2025,7 +2209,7 @@ function JobDraftForm({
         }}
         noValidate
       >
-        {step === 'pricing' ? (
+        {step === 'route' ? (
           <>
             <RadioCardGroup
               name="pricingModel"
@@ -2064,74 +2248,12 @@ function JobDraftForm({
             />
 
             {pricingModel === 'HOURLY' ? (
-              <Notice
-                tone="info"
-                className="mb-4"
-                title={t('jobs.hourlyMinimumTitle', {
-                  defaultValue: 'Hourly Basis Pricing & Minimum Charge',
-                })}
-              >
-                <p>
-                  {t('jobs.hourlyMinimumBody', {
-                    defaultValue: `Minimum hourly base charge: $${(
-                      (routeEstimate?.minChargeIncGstCents ??
-                        Math.max(
-                          routeEstimate?.minBaseCents ?? 20_000,
-                          (routeEstimate?.minBillableHours ?? 4) *
-                            (routeEstimate?.hourlyRateCents ?? 8_000),
-                        )) / 100
-                    ).toFixed(2)} inc GST (${routeEstimate?.minBillableHours ?? 4}-hour minimum @ $${(
-                      (routeEstimate?.hourlyRateCents ?? 8_000) / 100
-                    ).toFixed(2)}/hr inc GST; platform base floor $${(
-                      (routeEstimate?.minBaseCents ?? 20_000) / 100
-                    ).toFixed(2)} inc GST). After ${routeEstimate?.minBillableHours ?? 4} hours, time is billed in 15-minute increments.`,
-                  })}
-                </p>
-                <p className="mt-1.5 text-xs">
+              <Notice tone="info" className="mb-4">
+                <p className="text-xs">
                   {t('jobs.hourlyNoManualDistanceNote', {
                     defaultValue:
                       'No manual distance entry is required for hourly jobs — route distance, duration, and billable hours are automatically calculated from your pickup and dropoff stops.',
                   })}
-                  {routeEstimate?.billableHours != null ? (
-                    <span className="mt-1 block font-semibold">
-                      {t('jobs.hourlyLiveEstimate', {
-                        defaultValue: `Estimated from stops: ${routeEstimate.billableHours} billable hrs (~${routeEstimate.distanceKm} km, ${routeEstimate.durationMinutes} min) · Est. ${formatDollars(routeEstimate.estimateIncGstCents ?? Math.max(routeEstimate.minBaseCents ?? 20_000, routeEstimate.billableHours * (routeEstimate.hourlyRateCents ?? 8_000)))} inc GST`,
-                        hours: routeEstimate.billableHours,
-                        km: routeEstimate.distanceKm,
-                        mins: routeEstimate.durationMinutes,
-                        amount: (
-                          (routeEstimate.estimateIncGstCents ??
-                            Math.max(
-                              routeEstimate.minBaseCents ?? 20_000,
-                              routeEstimate.billableHours * (routeEstimate.hourlyRateCents ?? 8_000),
-                            )) / 100
-                        ).toFixed(2),
-                      })}
-                    </span>
-                  ) : null}
-                  {routeEstimate?.estimateRange &&
-                  routeEstimate.estimateRange.maxIncGstCents >
-                    routeEstimate.estimateRange.minIncGstCents ? (
-                    <span className="mt-1 block text-xs">
-                      {t('jobs.estimateRangeHint', {
-                        defaultValue:
-                          'Typical range for this load class vs next larger vehicle: {{min}} – {{max}} inc GST (guidance; final price is the accepted bid).',
-                        min: formatDollars(routeEstimate.estimateRange.minIncGstCents),
-                        max: formatDollars(routeEstimate.estimateRange.maxIncGstCents),
-                      })}
-                    </span>
-                  ) : null}
-                  {routeEstimate?.rateFloorIncGstCents != null &&
-                  routeEstimate.rateFloorIncGstCents > 0 ? (
-                    <span className="mt-1 block text-xs font-medium text-clox-ink">
-                      {t('jobs.hardFloorHint', {
-                        defaultValue:
-                          'Minimum price (hard floor): {{ex}} ex GST · {{inc}} inc GST — jobs and bids cannot go below this.',
-                        ex: formatDollars(routeEstimate.rateFloorExGstCents ?? 0),
-                        inc: formatDollars(routeEstimate.rateFloorIncGstCents),
-                      })}
-                    </span>
-                  ) : null}
                 </p>
               </Notice>
             ) : null}
@@ -2270,6 +2392,7 @@ function JobDraftForm({
                         suburb: '',
                         state: pickupState || senderDefaultState,
                         postcode: '',
+                        weightKg: Number(pickupWeightKg) || 800,
                       })
                     }
                   >
@@ -2403,25 +2526,6 @@ function JobDraftForm({
                           {...form.register(`extraDropoffs.${index}.postcode` as const)}
                         />
                       </div>
-                      <div className="grid grid-cols-1 gap-0 sm:grid-cols-2 sm:gap-2">
-                        <Field
-                          label={t('jobs.dropoff2ReceiverNameLabel', {
-                            defaultValue: 'Stop Receiver Name (optional — defaults to primary)',
-                          })}
-                          placeholder={t('jobs.placeholderReceiverName')}
-                          error={form.formState.errors.extraDropoffs?.[index]?.receiverName?.message}
-                          {...form.register(`extraDropoffs.${index}.receiverName` as const)}
-                        />
-                        <Field
-                          type="email"
-                          label={t('jobs.dropoff2ReceiverEmailLabel', {
-                            defaultValue: 'Stop Receiver Email (optional — defaults to primary)',
-                          })}
-                          placeholder={t('jobs.placeholderReceiverEmail')}
-                          error={form.formState.errors.extraDropoffs?.[index]?.receiverEmail?.message}
-                          {...form.register(`extraDropoffs.${index}.receiverEmail` as const)}
-                        />
-                      </div>
                     </div>
                   );
                 })}
@@ -2435,6 +2539,7 @@ function JobDraftForm({
                         suburb: '',
                         state: dropoffState || senderDefaultState,
                         postcode: '',
+                        weightKg: Number(dropoffWeightKg) || 800,
                         receiverName: '',
                         receiverEmail: '',
                       })
@@ -2450,47 +2555,25 @@ function JobDraftForm({
             ) : null}
 
             {pricingModel === 'PER_KM' ? (
-              <>
-                <Field
-                  type="number"
-                  step="0.1"
-                  min={0.1}
-                  label={t('jobs.distanceKmLabel')}
-                  required
-                  hint={
-                    suggestedKm != null
-                      ? t('jobs.distanceKmSuggested', { km: suggestedKm })
-                      : t('jobs.distanceKmHint')
-                  }
-                  error={form.formState.errors.distanceKm?.message}
-                  {...form.register('distanceKm', { valueAsNumber: true })}
-                />
-                {routeEstimate?.estimateRange &&
-                routeEstimate.estimateRange.maxIncGstCents >
-                  routeEstimate.estimateRange.minIncGstCents ? (
-                  <p className="mb-3 text-xs text-clox-mute">
-                    {t('jobs.estimateRangeHint', {
-                      defaultValue:
-                        'Typical range for this load class vs next larger vehicle: {{min}} – {{max}} inc GST (guidance; final price is the accepted bid).',
-                      min: formatDollars(routeEstimate.estimateRange.minIncGstCents),
-                      max: formatDollars(routeEstimate.estimateRange.maxIncGstCents),
-                    })}
-                  </p>
-                ) : routeEstimate?.estimateIncGstCents != null ? (
-                  <p className="mb-3 text-xs text-clox-mute">
-                    {t('jobs.estimateForClassHint', {
-                      defaultValue: 'Estimated {{amount}} inc GST for class {{class}} (final price is the accepted bid).',
-                      amount: formatDollars(routeEstimate.estimateIncGstCents),
-                      class: routeEstimate.pricingVehicleClass ?? minVehicleClass ?? '—',
-                    })}
-                  </p>
-                ) : null}
-              </>
+              <Field
+                type="number"
+                step="0.1"
+                min={0.1}
+                label={t('jobs.distanceKmLabel')}
+                required
+                hint={
+                  suggestedKm != null
+                    ? t('jobs.distanceKmSuggested', { km: suggestedKm })
+                    : t('jobs.distanceKmHint')
+                }
+                error={form.formState.errors.distanceKm?.message}
+                {...form.register('distanceKm', { valueAsNumber: true })}
+              />
             ) : null}
           </>
         ) : null}
 
-        {step === 'cargo' ? (
+        {step === 'load' ? (
           <>
             <div className="mb-4">
               <h3 className="text-sm font-semibold text-clox-ink">
@@ -2499,19 +2582,129 @@ function JobDraftForm({
               <p className="mt-0.5 text-xs text-clox-mute">
                 {t('jobs.cargoDimensionsSubtitle', {
                   defaultValue:
-                    'Enter dead weight and bounding dimensions to compute chargeable weight and suitable vehicles.',
+                    'Enter cargo weight and bounding dimensions to compute chargeable weight and suitable vehicles.',
                 })}
               </p>
             </div>
+
+            {/* Primary pickup weight */}
+            <Field
+              type="number"
+              step="0.1"
+              min={0.1}
+              label={t('jobs.stopWeightKgLabel', {
+                defaultValue: 'Weight loaded here (kg)',
+              })}
+              required
+              hint={t('jobs.stopWeightPickupHint', {
+                defaultValue: 'Cargo mass added to the vehicle at this pickup.',
+              })}
+              error={form.formState.errors.pickupWeightKg?.message}
+              {...form.register('pickupWeightKg', { valueAsNumber: true })}
+            />
+
+            {/* Extra pickup weights (HOURLY only) */}
+            {pricingModel === 'HOURLY'
+              ? extraPickupsArray.fields.map((field, index) => (
+                  <Field
+                    key={field.id}
+                    type="number"
+                    step="0.1"
+                    min={0.1}
+                    label={t('jobs.additionalPickupWeightLabel', {
+                      defaultValue: `Pickup #${index + 2} — Weight loaded (kg)`,
+                      num: index + 2,
+                    })}
+                    required
+                    error={form.formState.errors.extraPickups?.[index]?.weightKg?.message}
+                    {...form.register(`extraPickups.${index}.weightKg` as const, {
+                      valueAsNumber: true,
+                    })}
+                  />
+                ))
+              : null}
+
+            {/* Primary dropoff weight */}
+            <Field
+              type="number"
+              step="0.1"
+              min={0.1}
+              label={t('jobs.stopWeightDropKgLabel', {
+                defaultValue: 'Weight unloaded here (kg)',
+              })}
+              required
+              hint={t('jobs.stopWeightDropoffHint', {
+                defaultValue: 'Cargo mass removed from the vehicle at this dropoff.',
+              })}
+              error={form.formState.errors.dropoffWeightKg?.message}
+              {...form.register('dropoffWeightKg', { valueAsNumber: true })}
+            />
+
+            {/* Extra dropoff weights (HOURLY only) */}
+            {pricingModel === 'HOURLY'
+              ? extraDropoffsArray.fields.map((field, index) => (
+                  <Field
+                    key={field.id}
+                    type="number"
+                    step="0.1"
+                    min={0.1}
+                    label={t('jobs.additionalDropoffWeightLabel', {
+                      defaultValue: `Drop-off #${index + 2} — Weight unloaded (kg)`,
+                      num: index + 2,
+                    })}
+                    required
+                    error={form.formState.errors.extraDropoffs?.[index]?.weightKg?.message}
+                    {...form.register(`extraDropoffs.${index}.weightKg` as const, {
+                      valueAsNumber: true,
+                    })}
+                  />
+                ))
+              : null}
 
             <Field
               type="number"
               label={t('validation.deadWeightLabel')}
               required
-              hint={t('jobs.deadWeightMaxHint', { max: MAX_JOB_DEAD_WEIGHT_KG })}
+              readOnly
+              hint={t('jobs.deadWeightFromStopsHint', {
+                defaultValue:
+                  'Synced from sum of pickup stop weights. Peak onboard drives vehicle class.',
+              })}
               error={form.formState.errors.deadWeightKg?.message}
               {...form.register('deadWeightKg', { valueAsNumber: true })}
             />
+            {liveLoadProfile.hasStopWeights ? (
+              <Notice
+                tone={liveLoadProfile.ok ? 'info' : 'warn'}
+                className="mb-4"
+              >
+                <p className="text-sm font-medium text-clox-ink">
+                  {t('jobs.loadProfileSummary', {
+                    defaultValue:
+                      'Peak onboard {{peak}} kg · Total freight {{total}} kg',
+                    peak: liveLoadProfile.peakOnboardKg,
+                    total: liveLoadProfile.totalPickupKg,
+                  })}
+                </p>
+                <ul className="mt-2 space-y-0.5 text-xs text-clox-mute">
+                  {liveLoadProfile.segments.map((seg) => (
+                    <li key={`${seg.sequence}-${seg.stopType}`}>
+                      #{seg.sequence + 1}{' '}
+                      {seg.stopType === 'PICKUP'
+                        ? t('jobs.stopTypePickup', { defaultValue: 'Pickup' })
+                        : t('jobs.stopTypeDropoff', { defaultValue: 'Drop-off' })}
+                      {seg.weightKg != null ? ` ${seg.weightKg} kg` : ''} → onboard{' '}
+                      {seg.onboardKgAfter} kg
+                    </li>
+                  ))}
+                </ul>
+                {!liveLoadProfile.ok ? (
+                  <p className="mt-2 text-xs">
+                    {liveLoadProfile.errors[0]}
+                  </p>
+                ) : null}
+              </Notice>
+            ) : null}
             <div className="grid grid-cols-3 gap-2">
               <Field
                 type="number"
@@ -2789,6 +2982,114 @@ function JobDraftForm({
                   </div>
                 ) : null}
               </div>
+            ) : null}
+
+          </>
+        ) : null}
+
+        {step === 'truck' ? (
+          <>
+            <JobRateFloorPanel
+              className="mb-4"
+              preview={floorPreviewQuery.data}
+              loading={floorPreviewQuery.isFetching && !floorPreviewQuery.data}
+              errorText={
+                floorPreviewQuery.isError ? getErrorDetail(floorPreviewQuery.error) : null
+              }
+              fallback={
+                routeEstimate?.rateFloorIncGstCents != null
+                  ? {
+                      exGstCents: routeEstimate.rateFloorExGstCents,
+                      incGstCents: routeEstimate.rateFloorIncGstCents,
+                      versionId: routeEstimate.rateFloorVersionId,
+                    }
+                  : null
+              }
+              estimateIncGstCents={routeEstimate?.estimateIncGstCents ?? null}
+            />
+
+            {pricingModel === 'HOURLY' ? (
+              <Notice
+                tone="info"
+                className="mb-4"
+                title={t('jobs.hourlyMinimumTitle', {
+                  defaultValue: 'Hourly Basis Pricing & Minimum Charge',
+                })}
+              >
+                <p>
+                  {t('jobs.hourlyMinimumBody', {
+                    defaultValue: `Minimum hourly base charge: $${(
+                      (routeEstimate?.minChargeIncGstCents ??
+                        Math.max(
+                          routeEstimate?.minBaseCents ?? 20_000,
+                          (routeEstimate?.minBillableHours ?? 4) *
+                            (routeEstimate?.hourlyRateCents ?? 8_000),
+                        )) / 100
+                    ).toFixed(2)} inc GST (${routeEstimate?.minBillableHours ?? 4}-hour minimum @ $${(
+                      (routeEstimate?.hourlyRateCents ?? 8_000) / 100
+                    ).toFixed(2)}/hr inc GST; platform base floor $${(
+                      (routeEstimate?.minBaseCents ?? 20_000) / 100
+                    ).toFixed(2)} inc GST). After ${routeEstimate?.minBillableHours ?? 4} hours, time is billed in 15-minute increments.`,
+                  })}
+                </p>
+                <p className="mt-1.5 text-xs">
+                  {routeEstimate?.billableHours != null ? (
+                    <span className="mt-1 block font-semibold">
+                      {t('jobs.hourlyLiveEstimate', {
+                        defaultValue: `Estimated from stops: ${routeEstimate.billableHours} billable hrs (~${routeEstimate.distanceKm} km, ${routeEstimate.durationMinutes} min) · Est. ${formatDollars(routeEstimate.estimateIncGstCents ?? Math.max(routeEstimate.minBaseCents ?? 20_000, routeEstimate.billableHours * (routeEstimate.hourlyRateCents ?? 8_000)))} inc GST`,
+                        hours: routeEstimate.billableHours,
+                        km: routeEstimate.distanceKm,
+                        mins: routeEstimate.durationMinutes,
+                        amount: (
+                          (routeEstimate.estimateIncGstCents ??
+                            Math.max(
+                              routeEstimate.minBaseCents ?? 20_000,
+                              routeEstimate.billableHours * (routeEstimate.hourlyRateCents ?? 8_000),
+                            )) / 100
+                        ).toFixed(2),
+                      })}
+                    </span>
+                  ) : null}
+                  {routeEstimate?.estimateRange &&
+                  routeEstimate.estimateRange.maxIncGstCents >
+                    routeEstimate.estimateRange.minIncGstCents ? (
+                    <span className="mt-1 block text-xs">
+                      {t('jobs.estimateRangeHint', {
+                        defaultValue:
+                          'Typical range for this load class vs next larger vehicle: {{min}} – {{max}} inc GST (guidance; final price is the accepted bid).',
+                        min: formatDollars(routeEstimate.estimateRange.minIncGstCents),
+                        max: formatDollars(routeEstimate.estimateRange.maxIncGstCents),
+                      })}
+                    </span>
+                  ) : null}
+                </p>
+              </Notice>
+            ) : null}
+
+            {pricingModel === 'PER_KM' ? (
+              <>
+                {routeEstimate?.estimateRange &&
+                routeEstimate.estimateRange.maxIncGstCents >
+                  routeEstimate.estimateRange.minIncGstCents ? (
+                  <p className="mb-3 text-xs text-clox-mute">
+                    {t('jobs.estimateRangeHint', {
+                      defaultValue:
+                        'Typical range for this load class vs next larger vehicle: {{min}} – {{max}} inc GST (guidance; final price is the accepted bid).',
+                      min: formatDollars(routeEstimate.estimateRange.minIncGstCents),
+                      max: formatDollars(routeEstimate.estimateRange.maxIncGstCents),
+                    })}
+                  </p>
+                ) : routeEstimate?.estimateIncGstCents != null ? (
+                  <p className="mb-3 text-xs text-clox-mute">
+                    {t('jobs.estimateForClassHint', {
+                      defaultValue:
+                        'Estimated {{amount}} inc GST for class {{class}} (final price is the accepted bid).',
+                      amount: formatDollars(routeEstimate.estimateIncGstCents),
+                      class: routeEstimate.pricingVehicleClass ?? minVehicleClass ?? '—',
+                    })}
+                  </p>
+                ) : null}
+              </>
             ) : null}
 
             {/* Vehicle Recommendation & Selection Grid */}
@@ -3093,63 +3394,115 @@ function JobDraftForm({
           </>
         ) : null}
 
-        {step === 'receiver' ? (
+        {step === 'confirm' ? (
           <>
-            <Field
-              label={t('jobs.receiverNameLabel')}
-              placeholder={t('jobs.placeholderReceiverName')}
-              required
-              autoComplete="name"
-              error={form.formState.errors.receiverName?.message}
-              {...form.register('receiverName')}
-            />
-            <Field
-              type="email"
-              label={t('jobs.receiverEmailLabel')}
-              placeholder={t('jobs.placeholderReceiverEmail')}
-              required
-              autoComplete="email"
-              error={form.formState.errors.receiverEmail?.message}
-              {...form.register('receiverEmail')}
-            />
-            <Field
-              type="tel"
-              label={t('jobs.receiverPhone', { defaultValue: 'Receiver Phone' })}
-              placeholder={t('jobs.placeholderReceiverPhone', { defaultValue: '+61 400 000 000' })}
-              required
-              autoComplete="tel"
-              error={form.formState.errors.receiverPhone?.message}
-              {...form.register('receiverPhone')}
-            />
-            <div className="grid grid-cols-1 gap-0 sm:grid-cols-2 sm:gap-2">
+            {/* Receiver details */}
+            <div className="mb-6">
+              <h3 className="mb-3 font-display text-sm font-semibold text-clox-ink">
+                {t('jobs.receiverSectionTitle', { defaultValue: 'Receiver Details' })}
+              </h3>
+              <Field
+                label={t('jobs.receiverNameLabel')}
+                placeholder={t('jobs.placeholderReceiverName')}
+                required
+                autoComplete="name"
+                error={form.formState.errors.receiverName?.message}
+                {...form.register('receiverName')}
+              />
               <Field
                 type="email"
-                label={t('jobs.receiverAltEmail', {
-                  defaultValue: 'Alternate Email (optional)',
-                })}
-                placeholder={t('jobs.placeholderReceiverAltEmail', {
-                  defaultValue: 'secondary@example.com',
-                })}
-                error={form.formState.errors.receiverAltEmail?.message}
-                {...form.register('receiverAltEmail')}
+                label={t('jobs.receiverEmailLabel')}
+                placeholder={t('jobs.placeholderReceiverEmail')}
+                required
+                autoComplete="email"
+                error={form.formState.errors.receiverEmail?.message}
+                {...form.register('receiverEmail')}
               />
               <Field
                 type="tel"
-                label={t('jobs.receiverAltPhone', {
-                  defaultValue: 'Alternate Phone (optional)',
-                })}
-                placeholder={t('jobs.placeholderReceiverAltPhone', {
-                  defaultValue: '+61 3 9000 0000',
-                })}
-                error={form.formState.errors.receiverAltPhone?.message}
-                {...form.register('receiverAltPhone')}
+                label={t('jobs.receiverPhone', { defaultValue: 'Receiver Phone' })}
+                placeholder={t('jobs.placeholderReceiverPhone', { defaultValue: '+61 400 000 000' })}
+                required
+                autoComplete="tel"
+                error={form.formState.errors.receiverPhone?.message}
+                {...form.register('receiverPhone')}
               />
-            </div>
-          </>
-        ) : null}
+              <div className="grid grid-cols-1 gap-0 sm:grid-cols-2 sm:gap-2">
+                <Field
+                  type="email"
+                  label={t('jobs.receiverAltEmail', {
+                    defaultValue: 'Alternate Email (optional)',
+                  })}
+                  placeholder={t('jobs.placeholderReceiverAltEmail', {
+                    defaultValue: 'secondary@example.com',
+                  })}
+                  error={form.formState.errors.receiverAltEmail?.message}
+                  {...form.register('receiverAltEmail')}
+                />
+                <Field
+                  type="tel"
+                  label={t('jobs.receiverAltPhone', {
+                    defaultValue: 'Alternate Phone (optional)',
+                  })}
+                  placeholder={t('jobs.placeholderReceiverAltPhone', {
+                    defaultValue: '+61 3 9000 0000',
+                  })}
+                  error={form.formState.errors.receiverAltPhone?.message}
+                  {...form.register('receiverAltPhone')}
+                />
+              </div>
 
-        {step === 'confirm' ? (
-          <>
+              {pricingModel === 'HOURLY' && extraDropoffsArray.fields.length > 0 ? (
+                <div className="mt-4 space-y-3">
+                  <p className="text-xs text-clox-mute">
+                    {t('jobs.extraDropReceiversHint', {
+                      defaultValue:
+                        'Optional contacts for extra drop-offs (defaults to the primary receiver above).',
+                    })}
+                  </p>
+                  {extraDropoffsArray.fields.map((field, index) => {
+                    const stopLabel =
+                      extraDropoffs?.[index]?.suburb?.trim() ||
+                      t('jobs.additionalDropoffTitle', {
+                        defaultValue: `Dropoff Location #${index + 2}`,
+                        num: index + 2,
+                      });
+                    return (
+                      <div
+                        key={field.id}
+                        className="rounded-clox-md border border-clox-border bg-clox-surface-alt p-3"
+                      >
+                        <p className="mb-2 text-xs font-semibold text-clox-ink">{stopLabel}</p>
+                        <div className="grid grid-cols-1 gap-0 sm:grid-cols-2 sm:gap-2">
+                          <Field
+                            label={t('jobs.dropoff2ReceiverNameLabel', {
+                              defaultValue: 'Stop receiver name (optional)',
+                            })}
+                            placeholder={t('jobs.placeholderReceiverName')}
+                            error={
+                              form.formState.errors.extraDropoffs?.[index]?.receiverName?.message
+                            }
+                            {...form.register(`extraDropoffs.${index}.receiverName` as const)}
+                          />
+                          <Field
+                            type="email"
+                            label={t('jobs.dropoff2ReceiverEmailLabel', {
+                              defaultValue: 'Stop receiver email (optional)',
+                            })}
+                            placeholder={t('jobs.placeholderReceiverEmail')}
+                            error={
+                              form.formState.errors.extraDropoffs?.[index]?.receiverEmail?.message
+                            }
+                            {...form.register(`extraDropoffs.${index}.receiverEmail` as const)}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+
             {/* Top Card: Vehicle Class + Transit Time + Free Loading Time Included */}
             <div className="clox-card mb-4 overflow-hidden">
               <div className="flex items-center justify-between p-4 sm:p-5">
@@ -3560,6 +3913,20 @@ function JobDraftForm({
                 </div>
               </div>
             </div>
+
+            {/* What happens next */}
+            <Notice
+              tone="info"
+              className="mb-4"
+              title={t('jobs.journeyAfterDraftTitle', { defaultValue: 'What happens next?' })}
+            >
+              <p className="text-xs">
+                {t('jobs.journeyAfterDraft', {
+                  defaultValue:
+                    'Save draft → Publish → Carriers bid → You accept & pay → Track delivery.',
+                })}
+              </p>
+            </Notice>
           </>
         ) : null}
 
@@ -3612,6 +3979,36 @@ export function JobDetailPage() {
     refetchOnWindowFocus: true,
     refetchInterval: 10_000,
   });
+  const detailFloorInput = useMemo(() => {
+    const j = job.data;
+    if (!j) return null;
+    const pricingModel =
+      j.pricingModel === 'HOURLY' || j.pricingModel === 'PER_KM' ? j.pricingModel : null;
+    const vehicleClassCode =
+      (j.pricingVehicleClass || j.minVehicleClass || '').trim() || null;
+    if (!pricingModel || !vehicleClassCode) return null;
+    const pickupState =
+      j.stops.find((s) => s.stopType === 'PICKUP')?.state ?? j.stops[0]?.state ?? null;
+    return {
+      vehicleClassCode,
+      pricingModel: pricingModel as 'PER_KM' | 'HOURLY',
+      distanceKm: j.route.distanceKm,
+      billableHours: j.route.billableHours,
+      at: j.pickupAt ?? null,
+      pickupState: pickupState?.trim() ? pickupState.trim().toUpperCase() : null,
+      requiresDg: j.requiresDg,
+      requiresReefer: Boolean(j.requiresReefer),
+      bodyCode: j.requiresReefer
+        ? ('REEFER' as const)
+        : j.requiresDg
+          ? ('DG' as const)
+          : ('DRY' as const),
+      backhaul: Boolean(j.isBackhaul),
+    };
+  }, [job.data]);
+  const detailFloorPreview = useRateFloorPreview(detailFloorInput, {
+    enabled: role === AppRole.SENDER && Boolean(detailFloorInput) && job.data?.status === 'DRAFT',
+  });
   const [acceptMsg, setAcceptMsg] = useState<string | null>(null);
   const [scaChallenge, setScaChallenge] = useState<{
     clientSecret: string;
@@ -3645,18 +4042,46 @@ export function JobDetailPage() {
       );
     },
     onError: (err) => {
-      toast.error(getErrorDetail(err));
+      const body = isAxiosError(err)
+        ? (err.response?.data as {
+            code?: string;
+            href?: string;
+            message?: string | { code?: string; floorIncGstCents?: number };
+            floorIncGstCents?: number;
+            floorExGstCents?: number;
+          })
+        : null;
+      const nested =
+        body?.message && typeof body.message === 'object' ? body.message : null;
       const code =
-        err && typeof err === 'object' && 'code' in err
+        body?.code ||
+        nested?.code ||
+        (err && typeof err === 'object' && 'code' in err
           ? String((err as { code?: string }).code ?? '')
-          : '';
+          : '');
+      if (code === 'PRICE_BELOW_FLOOR') {
+        const floorInc = body?.floorIncGstCents ?? nested?.floorIncGstCents;
+        toast.error(
+          floorInc != null
+            ? t('jobs.floorPublishRejected', {
+                defaultValue:
+                  'Cannot publish below the minimum price. Current floor is {{inc}} inc GST — edit the job or try again after rates update.',
+                inc: formatDollars(floorInc),
+              })
+            : getErrorDetail(err),
+        );
+        void qc.invalidateQueries({ queryKey: ['jobs', id] });
+        return;
+      }
+      toast.error(getErrorDetail(err));
       const data =
         err && typeof err === 'object' && 'data' in err
           ? (err as { data?: { href?: string } }).data
           : undefined;
       if (code === 'SENDER_NOT_BOOKING_READY') {
         navigate(
-          data?.href ??
+          body?.href ??
+            data?.href ??
             `/sender/onboarding?returnTo=${encodeURIComponent(`/jobs/${id}`)}`,
         );
       }
@@ -3802,8 +4227,26 @@ export function JobDetailPage() {
   const canEdit = Boolean(j.editability?.mode && j.editability.mode !== 'NONE');
   const showPublish = j.status === 'DRAFT';
   const waitingVerification = j.status === 'DRAFT' && Boolean(j.publishRequestedAt);
+  const liveFloorInc =
+    detailFloorPreview.data?.floorIncGstCents ?? j.rateFloor?.incGstCents ?? null;
+  const publishBlockedByFloor =
+    showPublish &&
+    liveFloorInc != null &&
+    liveFloorInc > 0 &&
+    j.estimate.incGstCents != null &&
+    j.estimate.incGstCents < liveFloorInc;
 
   const publishJobAction = () => {
+    if (publishBlockedByFloor) {
+      toast.error(
+        t('jobs.floorPublishRejected', {
+          defaultValue:
+            'Cannot publish below the minimum price. Current floor is {{inc}} inc GST — edit the job or try again after rates update.',
+          inc: formatDollars(liveFloorInc ?? 0),
+        }),
+      );
+      return;
+    }
     void (async () => {
       const ok = await confirm({
         title: t('confirm.publishJobTitle'),
@@ -4019,6 +4462,28 @@ export function JobDetailPage() {
                   : t('dash'),
               )}
             </dl>
+            <JobRateFloorPanel
+              className="mt-3"
+              preview={detailFloorPreview.data}
+              loading={detailFloorPreview.isFetching && !detailFloorPreview.data}
+              errorText={
+                detailFloorPreview.isError ? getErrorDetail(detailFloorPreview.error) : null
+              }
+              fallback={
+                j.rateFloor?.incGstCents != null
+                  ? {
+                      exGstCents: j.rateFloor.exGstCents,
+                      incGstCents: j.rateFloor.incGstCents,
+                      versionId: j.rateFloor.versionId,
+                      breakdown:
+                        j.rateFloor.breakdown && typeof j.rateFloor.breakdown === 'object'
+                          ? (j.rateFloor.breakdown as Record<string, unknown>)
+                          : null,
+                    }
+                  : null
+              }
+              estimateIncGstCents={j.estimate.incGstCents}
+            />
           </section>
 
           {(j.stops?.length ?? 0) > 0 ? (
@@ -4027,29 +4492,46 @@ export function JobDetailPage() {
                 {t('jobs.view.sectionStops')}
               </h2>
               <ol className="mt-3 space-y-2">
-                {j.stops.map((s) => (
-                  <li
-                    key={s.id ?? `${s.sequence}-${s.stopType}`}
-                    className="flex flex-wrap items-baseline justify-between gap-2 text-sm"
-                  >
-                    <span className="font-medium text-clox-ink">
-                      {s.stopType} ·{' '}
-                      {[
-                        s.addressLine,
-                        s.suburb ?? t('dash'),
-                        [s.state, s.postcode].filter(Boolean).join(' '),
-                      ]
-                        .filter(Boolean)
-                        .join(', ')}
-                    </span>
-                    {s.receiverName || s.receiverEmail ? (
-                      <span className="text-xs text-clox-faint">
-                        {[s.receiverName, s.receiverEmail].filter(Boolean).join(' · ')}
+                {j.stops.map((s) => {
+                  const seg = j.loadProfile?.segments?.find(
+                    (x) => x.sequence === s.sequence,
+                  );
+                  return (
+                    <li
+                      key={s.id ?? `${s.sequence}-${s.stopType}`}
+                      className="flex flex-wrap items-baseline justify-between gap-2 text-sm"
+                    >
+                      <span className="font-medium text-clox-ink">
+                        {s.stopType} ·{' '}
+                        {[
+                          s.addressLine,
+                          s.suburb ?? t('dash'),
+                          [s.state, s.postcode].filter(Boolean).join(' '),
+                        ]
+                          .filter(Boolean)
+                          .join(', ')}
+                        {s.weightKg != null
+                          ? ` · ${s.weightKg} kg ${s.stopType === 'PICKUP' ? 'on' : 'off'}`
+                          : ''}
+                        {seg != null ? ` · onboard ${seg.onboardKgAfter} kg` : ''}
                       </span>
-                    ) : null}
-                  </li>
-                ))}
+                      {s.receiverName || s.receiverEmail ? (
+                        <span className="text-xs text-clox-faint">
+                          {[s.receiverName, s.receiverEmail].filter(Boolean).join(' · ')}
+                        </span>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ol>
+              {j.loadProfile ? (
+                <p className="mt-3 text-xs text-clox-mute">
+                  {t('jobs.loadProfilePeakHint', {
+                    defaultValue: 'Peak onboard {{peak}} kg (vehicle class uses peak, not total freight).',
+                    peak: j.loadProfile.peakOnboardKg,
+                  })}
+                </p>
+              ) : null}
             </section>
           ) : null}
 
@@ -4158,7 +4640,7 @@ export function JobDetailPage() {
               {showPublish ? (
                 <Button
                   variant="cta"
-                  disabled={publish.isPending}
+                  disabled={publish.isPending || publishBlockedByFloor}
                   onClick={publishJobAction}
                 >
                   {publish.isPending ? t('loading') : t('jobs.publish')}

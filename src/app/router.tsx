@@ -44,6 +44,7 @@ import { OpsDisputeDetailPage, OpsDisputesPage } from '@/pages/ops-disputes-page
 import { OpsTeamDetailPage, OpsTeamPage } from '@/pages/ops-team-page';
 import { DriverTripsPage, DriverTripDetailPage } from '@/pages/driver-trips-page';
 import { DriverSchedulePage } from '@/pages/driver-schedule-page';
+import { DriverEwdPage } from '@/pages/driver-ewd-page';
 import { SenderTrackPage } from '@/pages/sender-track-page';
 import { SenderRegisterPage } from '@/pages/sender-register-page';
 import { SenderOnboardingPage } from '@/pages/sender-onboarding-page';
@@ -460,6 +461,14 @@ export function AppRouter() {
           element={
             <RequireRoles roles={[AppRole.DRIVER]}>
               <DriverSchedulePage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/driver/ewd"
+          element={
+            <RequireRoles roles={[AppRole.DRIVER]}>
+              <DriverEwdPage />
             </RequireRoles>
           }
         />

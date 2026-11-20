@@ -486,6 +486,7 @@ export function DriverTripDetailPage() {
     mutationFn: (onBreak: boolean) => tripBreak(tripId, onBreak),
     onSuccess: async () => {
       await refresh();
+      await qc.invalidateQueries({ queryKey: ['driver', 'ewd'] });
     },
     onError: (e) => setMsg(getErrorDetail(e)),
   });
@@ -1290,7 +1291,11 @@ export function DriverTripDetailPage() {
               void (async () => {
                 const ok = await confirm({
                   title: t('confirm.breakTitle'),
-                  description: t('confirm.breakBody'),
+                  description: t('confirm.breakBodyEwd', {
+                    defaultValue: tripData.onBreak
+                      ? 'End break resumes tracking and logs WORK in your work diary.'
+                      : 'Taking a break pauses tracking and logs REST in your work diary.',
+                  }),
                   confirmLabel: tripData.onBreak ? t('trips.endBreak') : t('trips.takingBreak'),
                 });
                 if (ok) brk.mutate(!tripData.onBreak);

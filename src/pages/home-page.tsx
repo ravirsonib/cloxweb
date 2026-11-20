@@ -185,6 +185,15 @@ function RoleHomePage() {
         {role === AppRole.DRIVER ? (
           <HomeLink to="/trips" title={t('home.tripsTitle')} hint={t('home.tripsHint')} />
         ) : null}
+        {role === AppRole.DRIVER ? (
+          <HomeLink
+            to="/driver/ewd"
+            title={t('home.driverEwdTitle', { defaultValue: 'Work diary' })}
+            hint={t('home.driverEwdHint', {
+              defaultValue: 'WORK/REST log · fatigue countdown · roadside PIN (pilot)',
+            })}
+          />
+        ) : null}
         <HomeLink to="/account" title={t('home.accountTitle')} hint={t('home.accountHint')} />
       </div>
     </div>

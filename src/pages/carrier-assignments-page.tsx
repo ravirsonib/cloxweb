@@ -456,7 +456,18 @@ export function CarrierAssignmentsPage() {
                           {a.paidAndConfirmed
                             ? ` · ${t('assignments.paidAndConfirmed')}`
                             : ` · ${t('assignments.awaitingPayment')}`}
-                          {' · '}{formatDollars(a.amountIncGstCents)}
+                          {' · '}
+                          {t('assignments.fareGross', {
+                            amount: formatDollars(a.amountIncGstCents),
+                            defaultValue: '{{amount}} gross',
+                          })}
+                          {a.netToCarrierCents != null
+                            ? ` · ${t('assignments.fareNet', {
+                                amount: formatDollars(a.netToCarrierCents),
+                                percent: a.carrierPercent ?? 70,
+                                defaultValue: 'net ~{{amount}} ({{percent}}%)',
+                              })}`
+                            : null}
                           {a.tripBlockedUntilPaid
                             ? ` · ${t('assignments.tripBlocked')}`
                             : ` · ${t('assignments.tripGateOpen')}`}

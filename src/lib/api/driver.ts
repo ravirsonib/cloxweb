@@ -39,6 +39,7 @@ export type DriverOnboarding = {
     suburb: string | null;
     state: string | null;
     postcode: string | null;
+    facePhotoDocumentId?: string | null;
   };
   company: { id: string; legalName: string; status: string } | null;
   goNoGo: {
@@ -81,6 +82,8 @@ export function submitDriverProfile(payload: {
   licenceExpiry: string;
   nhvrAcknowledged: true;
   licenceDocumentId: string;
+  /** Optional face / profile photo (SELFIE) — not the licence scan */
+  facePhotoDocumentId?: string | null;
 }) {
   return http.put<DriverOnboarding>('/driver/profile', payload).then((r) => r.data);
 }

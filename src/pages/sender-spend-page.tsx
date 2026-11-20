@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Clock,
   DollarSign,
+  Download,
   FileText,
   Package,
   Receipt,
@@ -21,9 +22,10 @@ import {
   Button,
   InteractiveChart,
   Notice,
+  useToast,
   type ChartDataItem,
 } from '@/components/ui';
-import { getErrorDetail, getSenderFinance } from '@/lib/api';
+import { exportSenderFinanceCsv, getErrorDetail, getSenderFinance } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { CURRENCY_SYMBOL, formatDollars } from '@/lib/currency';
 import { formatDate } from '@/lib/datetime';
@@ -34,9 +36,11 @@ type PeriodOption = 'today' | 'week' | 'month' | '30d' | 'quarter' | 'year' | 'a
 
 export function SenderSpendPage() {
   const { t } = useTranslation();
+  const toast = useToast();
   const displayName = useAuthStore((s) => s.displayName);
 
   const [period, setPeriod] = useState<PeriodOption>('month');
+  const [exportingCsv, setExportingCsv] = useState(false);
 
   const queryParams: FinanceQuery = useMemo(() => {
     return { period };
@@ -46,6 +50,18 @@ export function SenderSpendPage() {
     queryKey: ['sender-finance', queryParams],
     queryFn: ({ signal }) => getSenderFinance(queryParams, { signal }),
   });
+
+  async function handleExportCsv() {
+    if (exportingCsv) return;
+    setExportingCsv(true);
+    try {
+      await exportSenderFinanceCsv(queryParams);
+    } catch (err) {
+      toast.error(getErrorDetail(err), t('finance.exportFailed', { defaultValue: 'Export failed' }));
+    } finally {
+      setExportingCsv(false);
+    }
+  }
 
   // Chart data: Spend breakdown by shipment
   const spendChartItems: ChartDataItem[] = useMemo(() => {
@@ -118,6 +134,27 @@ export function SenderSpendPage() {
               </button>
             ))}
           </div>
+
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="gap-1.5"
+            disabled={exportingCsv}
+            onClick={() => {
+              void handleExportCsv();
+            }}
+            title={t('finance.exportCsvTitle', {
+              defaultValue: 'Download ledger CSV for the selected period (AUD cents)',
+            })}
+          >
+            <Download className={cn('h-3.5 w-3.5', exportingCsv && 'animate-pulse')} />
+            <span className="hidden sm:inline">
+              {exportingCsv
+                ? t('finance.exporting', { defaultValue: 'Exporting…' })
+                : t('finance.exportCsv', { defaultValue: 'Export CSV' })}
+            </span>
+          </Button>
 
           <Button
             type="button"

@@ -19,6 +19,7 @@ import {
   Field,
   FileInput,
   Notice,
+  ReadyChecklist,
   Select,
   StepChips,
   useToast,
@@ -96,7 +97,9 @@ export function DriverOnboardingPage() {
         {data.company ? (
           t('driverOnboarding.companyLine', {
             legalName: data.company.legalName,
-            status: data.driver.status,
+            statusLabel: t(`drivers.statuses.${data.driver.status}`, {
+              defaultValue: data.driver.status,
+            }),
           })
         ) : (
           <span className="text-[var(--status-warn)]">{t('driverOnboarding.noCompanyLinked')}</span>
@@ -123,9 +126,51 @@ export function DriverOnboardingPage() {
 
       {step === 'complete' ? (
         <div className="mt-8 space-y-4">
-          <Notice tone="success" title={t('driverOnboarding.activeTitle')}>
+          <Notice
+            tone={data.goNoGo.canBeAssigned ? 'success' : 'warn'}
+            title={t('driverOnboarding.activeTitle')}
+          >
             {t('driverOnboarding.activeBody')}
           </Notice>
+
+          <ReadyChecklist
+            title={t('driverOnboarding.readyChecklistTitle')}
+            items={[
+              {
+                id: 'licence',
+                label: t('driverOnboarding.licenceLine', {
+                  licenceClass: data.driver.licenceClass
+                    ? t(`driverOnboarding.licenceClasses.${data.driver.licenceClass}`, {
+                        defaultValue: data.driver.licenceClass,
+                      })
+                    : t('dash'),
+                  licenceNo: data.driver.licenceNo,
+                  expiry: formatCalendarDate(data.driver.licenceExpiry),
+                }),
+                done: Boolean(data.driver.licenceNo && data.driver.licenceExpiry),
+              },
+              {
+                id: 'nhvr',
+                label: data.driver.nhvrAcknowledgedAt
+                  ? t('driverOnboarding.nhvrDone')
+                  : t('driverOnboarding.nhvrPending'),
+                done: Boolean(data.driver.nhvrAcknowledgedAt),
+              },
+              {
+                id: 'assignable',
+                label: data.goNoGo.canBeAssigned
+                  ? t('driverOnboarding.readyForTrips')
+                  : t('driverOnboarding.notReadyForTrips'),
+                done: data.goNoGo.canBeAssigned,
+                pendingHint: assignability.data?.reason
+                  ? t('driverOnboarding.assignabilityReason', {
+                      reason: assignability.data.reason,
+                    })
+                  : undefined,
+              },
+            ]}
+          />
+
           <div className="rounded-xl border border-clox-border bg-clox-surface p-4">
             <h2 className="font-display text-base font-semibold text-clox-ink">
               {t('driverOnboarding.profileSummaryTitle')}
@@ -145,36 +190,6 @@ export function DriverOnboardingPage() {
                   postcode: data.driver.postcode ?? t('dash'),
                 })}
               </li>
-              <li>
-                {t('driverOnboarding.licenceLine', {
-                  licenceClass: data.driver.licenceClass
-                    ? t(`driverOnboarding.licenceClasses.${data.driver.licenceClass}`, {
-                        defaultValue: data.driver.licenceClass,
-                      })
-                    : t('dash'),
-                  licenceNo: data.driver.licenceNo,
-                  expiry: formatCalendarDate(data.driver.licenceExpiry),
-                })}
-              </li>
-              <li>
-                {t('driverOnboarding.nhvrAcknowledged', {
-                  value: data.driver.nhvrAcknowledgedAt ? t('yes') : t('no'),
-                })}
-              </li>
-              <li>
-                {t('driverOnboarding.canBeAssigned', {
-                  value: data.goNoGo.canBeAssigned
-                    ? t('driverOnboarding.assignabilityYes')
-                    : t('driverOnboarding.assignabilityNo'),
-                })}
-              </li>
-              {assignability.data?.reason ? (
-                <li>
-                  {t('driverOnboarding.assignabilityReason', {
-                    reason: assignability.data.reason,
-                  })}
-                </li>
-              ) : null}
             </ul>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -299,6 +314,7 @@ function LicenceStep({
   const [chip, setChip] = useState<ProfileChipId>(isRenewal ? 'licence' : 'details');
   const [farthestChipIdx, setFarthestChipIdx] = useState(isRenewal ? 2 : 0);
   const [licenceFile, setLicenceFile] = useState<File | null>(null);
+  const [facePhotoFile, setFacePhotoFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const chipIdx = PROFILE_CHIPS.indexOf(chip);
 
@@ -446,6 +462,17 @@ function LicenceStep({
       if (!uploaded?.id) {
         throw new Error(t('driverOnboarding.errorLicenceFileRequired'));
       }
+      let facePhotoDocumentId: string | null = null;
+      if (facePhotoFile) {
+        const face = await uploadAndConfirmDocument({
+          companyId,
+          driverId,
+          docType: 'SELFIE',
+          file: facePhotoFile,
+          filenameFallback: 'face-photo',
+        });
+        facePhotoDocumentId = face?.id ?? null;
+      }
       return submitDriverProfile({
         name: values.name.trim(),
         phone: values.phone.trim(),
@@ -460,6 +487,7 @@ function LicenceStep({
         licenceExpiry: values.licenceExpiry,
         nhvrAcknowledged: true,
         licenceDocumentId: uploaded.id,
+        facePhotoDocumentId,
       });
     },
     onSuccess: async () => {
@@ -678,6 +706,22 @@ function LicenceStep({
                 setFileError(null);
               }}
             />
+            <FileInput
+              label={t('driverOnboarding.facePhotoUploadLabel', {
+                defaultValue: 'Profile photo (optional)',
+              })}
+              hint={t('driverOnboarding.facePhotoUploadHint', {
+                defaultValue:
+                  'Clear face photo so receivers can recognise you on delivery. Separate from your licence scan.',
+              })}
+              accept="image/jpeg,image/png,image/webp"
+              capture="user"
+              fileName={facePhotoFile?.name ?? null}
+              onChange={(e) => {
+                const next = e.target.files?.[0] ?? null;
+                setFacePhotoFile(next);
+              }}
+            />
           </div>
         ) : null}
 
@@ -704,6 +748,14 @@ function LicenceStep({
                     defaultValue: form.watch('licenceClass'),
                   }),
                   expiry: formatCalendarDate(form.watch('licenceExpiry')),
+                })}
+              </p>
+              <p className="mt-2">
+                {t('driverOnboarding.confirmFacePhoto', {
+                  defaultValue: 'Profile photo: {{file}}',
+                  file: facePhotoFile?.name ?? t('driverOnboarding.facePhotoSkipped', {
+                    defaultValue: 'Not uploaded (optional)',
+                  }),
                 })}
               </p>
             </div>

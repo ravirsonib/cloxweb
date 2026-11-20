@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { Navigate } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { z } from 'zod';
 import {
   getErrorDetail,
@@ -203,7 +203,41 @@ export function PartnerOnboardingPage() {
   }
 
   if (data.status === 'ACTIVE') {
-    return <Navigate to="/" replace />;
+    const scopeParts = [
+      data.scopes[0]?.regionCode,
+      data.scopes[0]?.territoryCode,
+    ].filter(Boolean);
+    return (
+      <div className="max-w-2xl space-y-4">
+        <h1 className="font-display text-2xl font-bold text-clox-ink">
+          {t('partnerOnboarding.readyTitle')}
+        </h1>
+        <p className="text-sm text-clox-mute">{t('partnerOnboarding.readyBody')}</p>
+        <p className="text-xs text-clox-faint">
+          {t('partnerOnboarding.statusLine', {
+            roleLabel:
+              data.role === 'LOCAL_BDE'
+                ? t('partnerPerformance.roleLocal', { defaultValue: 'Local BDE' })
+                : data.role === 'STATE_MASTER'
+                  ? t('partnerPerformance.roleState', { defaultValue: 'State Master' })
+                  : data.role,
+            statusLabel: t(`adminUserStatuses.${data.status}`, { defaultValue: data.status }),
+            scope: scopeParts.length ? ` · ${scopeParts.join(' / ')}` : '',
+          })}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Link to="/ops/growth/invite" className="clox-btn clox-btn-cta inline-flex">
+            {t('partnerOnboarding.inviteCta')}
+          </Link>
+          <Link to="/ops/growth" className="clox-btn clox-btn-secondary inline-flex">
+            {t('partnerOnboarding.growthCta')}
+          </Link>
+          <Link to="/" className="clox-btn clox-btn-secondary inline-flex">
+            {t('partnerOnboarding.homeCta')}
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -212,10 +246,20 @@ export function PartnerOnboardingPage() {
         {t('partnerOnboarding.title')}
       </h1>
       <p className="mt-2 text-sm text-clox-mute">{t('partnerOnboarding.subtitle')}</p>
-      <p className="mt-1 font-mono text-xs text-clox-faint">
-        {data.role} · {data.status}
-        {data.scopes[0]?.regionCode ? ` · ${data.scopes[0].regionCode}` : ''}
-        {data.scopes[0]?.territoryCode ? ` / ${data.scopes[0].territoryCode}` : ''}
+      <p className="mt-1 text-xs text-clox-faint">
+        {t('partnerOnboarding.statusLine', {
+          roleLabel:
+            data.role === 'LOCAL_BDE'
+              ? t('partnerPerformance.roleLocal', { defaultValue: 'Local BDE' })
+              : data.role === 'STATE_MASTER'
+                ? t('partnerPerformance.roleState', { defaultValue: 'State Master' })
+                : data.role,
+          statusLabel: t(`adminUserStatuses.${data.status}`, { defaultValue: data.status }),
+          scope: [
+            data.scopes[0]?.regionCode ? ` · ${data.scopes[0].regionCode}` : '',
+            data.scopes[0]?.territoryCode ? ` / ${data.scopes[0].territoryCode}` : '',
+          ].join(''),
+        })}
       </p>
 
       <StepChips
@@ -264,10 +308,14 @@ export function PartnerOnboardingPage() {
             const existing = docStatusByType.get(docType);
             return (
               <div key={docType} className="rounded-clox-md border border-clox-border p-4">
-                <p className="font-mono text-xs text-clox-orange">{docType}</p>
+                <p className="text-sm font-semibold text-clox-ink">
+                  {t(`partnerOnboarding.docLabels.${docType}`, { defaultValue: docType })}
+                </p>
                 <p className="mt-1 text-sm text-clox-mute">
                   {existing
-                    ? `${existing.status} · ${existing.originalFilename ?? t('dash')}`
+                    ? `${t(`partnerOnboarding.docStatuses.${existing.status}`, {
+                        defaultValue: existing.status,
+                      })} · ${existing.originalFilename ?? t('dash')}`
                     : t('partnerOnboarding.docMissing')}
                 </p>
                 {editable ? (

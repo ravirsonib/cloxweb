@@ -27,6 +27,8 @@ export type JobSummary = {
   siteFacility?: string | null;
   siteDisclaimerAcceptedAt?: string | null;
   requiresDg: boolean;
+  requiresReefer?: boolean;
+  isBackhaul?: boolean;
   dgDocumentId?: string | null;
   dgDocumentFilename?: string | null;
   createdAt?: string;
@@ -48,6 +50,13 @@ export type JobSummary = {
     gstCents: number | null;
     incGstCents: number | null;
   };
+  /** Sender-facing hard floor snapshot (Wave 1+). */
+  rateFloor?: {
+    versionId: string | null;
+    exGstCents: number | null;
+    incGstCents: number | null;
+    breakdown?: Record<string, unknown> | null;
+  } | null;
   openProposalCount?: number;
   editability?: { mode: JobEditMode; reason: string };
   /** Present on sender list + detail — used for Pending payment vs Paid & locked chips. */
@@ -115,6 +124,16 @@ export type JobSummary = {
     } | null;
     proposedDriver?: { id: string; email: string | null; name: string | null } | null;
   } | null;
+  loadProfile?: {
+    peakOnboardKg: number;
+    totalPickupKg: number;
+    segments: Array<{
+      sequence: number;
+      stopType: string;
+      weightKg: number | null;
+      onboardKgAfter: number;
+    }>;
+  } | null;
   stops: Array<{
     id?: string;
     sequence: number;
@@ -128,6 +147,7 @@ export type JobSummary = {
     lng?: number | null;
     receiverName?: string | null;
     receiverEmail?: string | null;
+    weightKg?: number | null;
   }>;
 };
 
@@ -181,6 +201,9 @@ export type CarrierAssignment = {
   openTripExceptionStatus?: string | null;
   openTripExceptionKind?: string | null;
   amountIncGstCents: number;
+  /** Expected carrier net from accepted bid. */
+  netToCarrierCents?: number;
+  carrierPercent?: number;
   etaMinutes: number | null;
   job: {
     id: string;
@@ -221,7 +244,14 @@ export type MarketBoardJob = {
   heightCm?: number | null;
   chargeableWeightKg?: number | null;
   estimateIncGstCents: number | null;
+  /** Guide net from sender estimate (pre-bid). */
   estimateNetToCarrierCents: number | null;
+  /** Submitted bid gross when alreadyBid. */
+  myBidIncGstCents?: number | null;
+  /** Net from submitted bid when alreadyBid. */
+  myNetToCarrierCents?: number | null;
+  /** Prefer bid net when present; else estimate net. */
+  displayNetToCarrierCents?: number | null;
   routeDistanceKm: number | null;
   routeDurationMinutes?: number | null;
   routeFatigueBreakMinutes: number;
@@ -234,6 +264,16 @@ export type MarketBoardJob = {
   pickupAt: string | null;
   publishedAt: string | null;
   alreadyBid: boolean;
+  loadProfile?: {
+    peakOnboardKg: number;
+    totalPickupKg: number;
+    segments: Array<{
+      sequence: number;
+      stopType: string;
+      weightKg: number | null;
+      onboardKgAfter: number;
+    }>;
+  } | null;
   stops?: Array<{
     sequence: number;
     stopType: string;
@@ -241,6 +281,7 @@ export type MarketBoardJob = {
     suburb?: string | null;
     state?: string | null;
     postcode?: string | null;
+    weightKg?: number | null;
   }>;
   stopsSummary: string;
 };
@@ -365,12 +406,15 @@ export function recommendVehicle(payload: {
   lengthCm: number;
   widthCm: number;
   heightCm: number;
+  peakOnboardKg?: number;
 }) {
   return http
-    .post<{ chargeableWeightKg: number; recommendedVehicleClass: string }>(
-      '/jobs/meta/recommend',
-      payload,
-    )
+    .post<{
+      chargeableWeightKg: number;
+      peakOnboardKg?: number | null;
+      classWeightKg?: number;
+      recommendedVehicleClass: string;
+    }>('/jobs/meta/recommend', payload)
     .then((r) => r.data);
 }
 
@@ -408,12 +452,20 @@ export type RateFloorPreview = {
   breakdown: Record<string, unknown>;
 };
 
-export function previewRateFloor(payload: {
+export type RateFloorPreviewInput = {
   vehicleClassCode: string;
   pricingModel: 'PER_KM' | 'HOURLY';
   distanceKm?: number | null;
   billableHours?: number | null;
-}) {
+  at?: string | null;
+  pickupState?: string | null;
+  bodyCode?: 'DRY' | 'TAILLIFT' | 'REEFER' | 'TIPPER' | 'CRANE' | 'TANKER' | 'DG' | 'LIVESTOCK' | null;
+  requiresReefer?: boolean | null;
+  requiresDg?: boolean | null;
+  backhaul?: boolean | null;
+};
+
+export function previewRateFloor(payload: RateFloorPreviewInput) {
   return http.post<RateFloorPreview>('/jobs/pricing/floor', payload).then((r) => r.data);
 }
 

@@ -361,13 +361,42 @@ export type RateFloorVersionDto = {
   updatedAt: string;
 };
 
+export type RateFloorBodyLoadingDto = {
+  id: string;
+  bodyCode: string;
+  loadingPct: number;
+  minHours: number | null;
+};
+
 export type RateFloorOverrideDto = {
   id: string;
   jobId: string;
   approvedByAdminId: string;
+  approvedByAdmin?: { id: string; email: string; name: string | null } | null;
   reason: string;
   expiresAt: string;
   floorExGstCentsOverride: number;
+  createdAt: string;
+};
+
+export type RateFloorCheckDto = {
+  id: string;
+  jobId: string | null;
+  actorUserId: string | null;
+  actorAdminId: string | null;
+  versionId: string;
+  floorExGstCents: number;
+  floorIncGstCents: number;
+  offeredIncGstCents: number | null;
+  result: 'PASS' | 'REJECT' | 'OVERRIDE';
+  createdAt: string;
+};
+
+export type PublicHolidayDto = {
+  id: string;
+  state: string;
+  holidayDate: string;
+  name: string;
   createdAt: string;
 };
 
@@ -405,6 +434,103 @@ export function patchAdminRateFloorLine(
       `/admin/rate-floor/versions/${versionId}/lines/${encodeURIComponent(code)}`,
       input,
     )
+    .then((res) => res.data);
+}
+
+export function patchAdminRateFloorBody(
+  versionId: string,
+  code: string,
+  input: { loadingPct?: number; minHours?: number | null },
+) {
+  return http
+    .patch<RateFloorBodyLoadingDto>(
+      `/admin/rate-floor/versions/${versionId}/body/${encodeURIComponent(code)}`,
+      input,
+    )
+    .then((res) => res.data);
+}
+
+export function listAdminRateFloorChecks(options?: {
+  signal?: AbortSignal;
+  jobId?: string;
+  result?: 'PASS' | 'REJECT' | 'OVERRIDE';
+  from?: string;
+  to?: string;
+  limit?: number;
+}) {
+  const params = new URLSearchParams();
+  if (options?.jobId) params.set('jobId', options.jobId);
+  if (options?.result) params.set('result', options.result);
+  if (options?.from) params.set('from', options.from);
+  if (options?.to) params.set('to', options.to);
+  if (options?.limit != null) params.set('limit', String(options.limit));
+  const qs = params.toString();
+  return http
+    .get<RateFloorCheckDto[]>(`/admin/rate-floor/checks${qs ? `?${qs}` : ''}`, {
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export async function exportAdminRateFloorChecksCsv(
+  query: {
+    jobId?: string;
+    result?: 'PASS' | 'REJECT' | 'OVERRIDE';
+    from?: string;
+    to?: string;
+  } = {},
+  options?: { signal?: AbortSignal },
+) {
+  const response = await http.get<Blob>('/admin/rate-floor/checks/export', {
+    params: query,
+    signal: options?.signal,
+    responseType: 'blob',
+  });
+  const blob = response.data;
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  const disposition = response.headers['content-disposition'] as string | undefined;
+  const match = disposition?.match(/filename="?([^"]+)"?/i);
+  anchor.href = url;
+  anchor.download = match?.[1] ?? 'clox-rate-floor-checks.csv';
+  anchor.click();
+  URL.revokeObjectURL(url);
+  return blob;
+}
+
+export function expireAdminRateFloorOverride(id: string) {
+  return http
+    .post<RateFloorOverrideDto>(`/admin/rate-floor/overrides/${id}/expire`)
+    .then((res) => res.data);
+}
+
+export function listAdminPublicHolidays(options?: {
+  signal?: AbortSignal;
+  state?: string;
+}) {
+  const params = new URLSearchParams();
+  if (options?.state) params.set('state', options.state);
+  const qs = params.toString();
+  return http
+    .get<PublicHolidayDto[]>(`/admin/public-holidays${qs ? `?${qs}` : ''}`, {
+      signal: options?.signal,
+    })
+    .then((res) => res.data);
+}
+
+export function upsertAdminPublicHoliday(input: {
+  state: string;
+  holidayDate: string;
+  name: string;
+}) {
+  return http
+    .post<PublicHolidayDto>('/admin/public-holidays', input)
+    .then((res) => res.data);
+}
+
+export function deleteAdminPublicHoliday(id: string) {
+  return http
+    .delete<{ success: boolean }>(`/admin/public-holidays/${id}`)
     .then((res) => res.data);
 }
 
@@ -785,9 +911,84 @@ export type AdminJobListItem = {
   canSoftDelete: boolean;
 };
 
+export type AdminJobDocMeta = {
+  id: string;
+  docType: string;
+  status: string;
+  originalFilename: string | null;
+};
+
 export type AdminJobDetail = AdminJobListItem & {
   minVehicleClass?: string | null;
   receiverPhone?: string | null;
+  requiresDg?: boolean;
+  requiresReefer?: boolean;
+  requiresOversize?: boolean;
+  deadWeightKg?: number | null;
+  lengthCm?: number | null;
+  widthCm?: number | null;
+  heightCm?: number | null;
+  chargeableWeightKg?: number | null;
+  routeDistanceKm?: number | null;
+  billableHours?: number | null;
+  dgDocument?: AdminJobDocMeta | null;
+  senderCompany: AdminJobListItem['senderCompany'] & {
+    tradingName?: string | null;
+    phone?: string | null;
+    status?: string;
+  };
+  assignment: (NonNullable<AdminJobListItem['assignment']> & {
+    carrierCompany: {
+      id: string;
+      legalName: string;
+      tradingName?: string | null;
+      email?: string | null;
+      phone?: string | null;
+      status?: string;
+    } | null;
+    vehicle?: {
+      id: string;
+      registration: string | null;
+      label?: string | null;
+      vehicleClass: string | null;
+      status?: string;
+    } | null;
+    driver?: {
+      id: string;
+      status?: string;
+      licenceClass?: string | null;
+      user?: {
+        email?: string | null;
+        name?: string | null;
+        phone?: string | null;
+      } | null;
+    } | null;
+    proposal?: {
+      id: string;
+      amountIncGstCents: number;
+      etaMinutes: number | null;
+      dgDocument?: AdminJobDocMeta | null;
+    } | null;
+  }) | null;
+  trip: (NonNullable<AdminJobListItem['trip']> & {
+    safetyPassedAt?: string | null;
+    massCheckOk?: boolean | null;
+    podStorageKey?: string | null;
+    taxInvoiceStorageKey?: string | null;
+    runSheetStorageKey?: string | null;
+    dropoffs?: Array<{
+      jobStopId: string;
+      sequence: number;
+      suburb: string | null;
+      podStatus: string;
+      signedAt: string | null;
+      signerName: string | null;
+      podFinalizedAt: string | null;
+      goodsPhotoCount: number;
+      hasPodPackage: boolean;
+      hasSignaturePdf: boolean;
+    }>;
+  }) | null;
   stops: Array<{
     id: string;
     sequence: number;
@@ -809,10 +1010,31 @@ export type AdminJobDetail = AdminJobListItem & {
     amountIncGstCents: number;
     etaMinutes: number | null;
     createdAt: string;
-    carrierCompany: { id: string; legalName: string };
+    carrierCompany: {
+      id: string;
+      legalName: string;
+      tradingName?: string | null;
+      email?: string | null;
+    };
+    vehicle?: {
+      id: string;
+      registration: string | null;
+      label?: string | null;
+      vehicleClass: string | null;
+    } | null;
+    driver?: {
+      id: string;
+      user?: {
+        email?: string | null;
+        name?: string | null;
+        phone?: string | null;
+      } | null;
+    } | null;
+    dgDocument?: AdminJobDocMeta | null;
   }>;
   paymentEvents: Array<{
     id: string;
+    type?: string;
     status: string;
     amountIncGstCents: number;
     stripePaymentIntentId: string | null;
@@ -1437,6 +1659,81 @@ export function getPartnerFinance(
       signal: options?.signal,
     })
     .then((res) => res.data);
+}
+
+async function downloadFinanceCsvBlob(
+  path: string,
+  query: FinanceQuery | undefined,
+  fallbackFilename: string,
+  options?: { signal?: AbortSignal },
+) {
+  const response = await http.get<Blob>(path, {
+    params: query,
+    signal: options?.signal,
+    responseType: 'blob',
+  });
+  const blob = response.data;
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  const disposition = response.headers['content-disposition'] as string | undefined;
+  const match = disposition?.match(/filename="?([^"]+)"?/i);
+  anchor.href = url;
+  anchor.download = match?.[1] ?? fallbackFilename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+  return blob;
+}
+
+/** Period-filtered Super finance ledger CSV (AUD cents). */
+export function exportSuperFinanceCsv(
+  query?: FinanceQuery,
+  options?: { signal?: AbortSignal },
+) {
+  return downloadFinanceCsvBlob(
+    '/settlements/finance/super/export',
+    query,
+    'clox-finance-super.csv',
+    options,
+  );
+}
+
+/** Period-filtered partner commission ledger CSV. */
+export function exportPartnerFinanceCsv(
+  query?: FinanceQuery,
+  options?: { signal?: AbortSignal },
+) {
+  return downloadFinanceCsvBlob(
+    '/settlements/finance/partner/export',
+    query,
+    'clox-finance-partner.csv',
+    options,
+  );
+}
+
+/** Period-filtered carrier earnings ledger CSV. */
+export function exportCarrierFinanceCsv(
+  query?: FinanceQuery,
+  options?: { signal?: AbortSignal },
+) {
+  return downloadFinanceCsvBlob(
+    '/settlements/finance/carrier/export',
+    query,
+    'clox-finance-carrier.csv',
+    options,
+  );
+}
+
+/** Period-filtered sender spend ledger CSV. */
+export function exportSenderFinanceCsv(
+  query?: FinanceQuery,
+  options?: { signal?: AbortSignal },
+) {
+  return downloadFinanceCsvBlob(
+    '/settlements/finance/sender/export',
+    query,
+    'clox-finance-sender.csv',
+    options,
+  );
 }
 
 // ─── M12: Fortnightly Settlement Cycles & Reconciliation ────────────────────

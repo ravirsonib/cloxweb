@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -8,6 +8,8 @@ import {
   Building2,
   Calendar,
   DollarSign,
+  ExternalLink,
+  FileText,
   ShieldCheck,
   Truck,
   User,
@@ -29,13 +31,19 @@ import {
   useToast,
 } from '@/components/ui';
 import {
+  downloadBlob,
+  fetchTripDocumentBlob,
+  fetchTripStopDocumentBlob,
   getAdminJob,
   getErrorDetail,
   hardDeleteAdminJob,
   listAdminJobs,
+  openDocumentContent,
   softDeleteAdminJob,
+  type AdminJobDocMeta,
   type AdminJobListItem,
 } from '@/lib/api';
+import type { TripDocumentKind, TripStopDocumentKind } from '@/lib/api/trips';
 import { cn } from '@/lib/cn';
 import { formatDollars } from '@/lib/currency';
 import { formatDateTime } from '@/lib/leads';
@@ -46,6 +54,73 @@ import {
 } from '@/lib/status-tone';
 import { AdminRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
+
+function customerHref(
+  companyId: string,
+  opts?: { tab?: 'drivers' | 'vehicles' | 'documents'; driverId?: string; vehicleId?: string },
+) {
+  const params = new URLSearchParams();
+  if (opts?.tab) params.set('tab', opts.tab);
+  if (opts?.driverId) params.set('driverId', opts.driverId);
+  if (opts?.vehicleId) params.set('vehicleId', opts.vehicleId);
+  const qs = params.toString();
+  return qs ? `/customers/${companyId}?${qs}` : `/customers/${companyId}`;
+}
+
+function PartyLink({
+  to,
+  children,
+  className,
+}: {
+  to: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <Link
+      to={to}
+      className={cn(
+        'inline-flex items-center gap-1 font-semibold text-clox-orange underline-offset-2 hover:underline',
+        className,
+      )}
+    >
+      <span className="min-w-0 truncate">{children}</span>
+      <ExternalLink className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
+    </Link>
+  );
+}
+
+function DocRow({
+  label,
+  doc,
+  onView,
+  viewing,
+}: {
+  label: string;
+  doc: AdminJobDocMeta;
+  onView: (id: string) => void;
+  viewing: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-clox-sm border border-clox-border-soft bg-clox-surface-alt/40 px-3 py-2">
+      <div className="min-w-0">
+        <p className="text-xs font-semibold text-clox-ink">{label}</p>
+        <p className="truncate font-mono text-[11px] text-clox-mute">
+          {doc.originalFilename || doc.docType} · {doc.status}
+        </p>
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        disabled={viewing}
+        onClick={() => onView(doc.id)}
+      >
+        {viewing ? '…' : 'View'}
+      </Button>
+    </div>
+  );
+}
 
 const JOB_STATUSES = [
   'DRAFT',
@@ -624,6 +699,50 @@ export function AdminJobDetailPage() {
     onError: (err) => toast.error(getErrorDetail(err)),
   });
 
+  const [openingDocId, setOpeningDocId] = useState<string | null>(null);
+  const [downloadingDoc, setDownloadingDoc] = useState<string | null>(null);
+
+  async function viewComplianceDoc(docId: string) {
+    setOpeningDocId(docId);
+    try {
+      await openDocumentContent(docId);
+    } catch (err) {
+      toast.error(getErrorDetail(err));
+    } finally {
+      setOpeningDocId(null);
+    }
+  }
+
+  async function downloadTripDoc(tripId: string, kind: TripDocumentKind) {
+    const key = `${tripId}:${kind}`;
+    setDownloadingDoc(key);
+    try {
+      const blob = await fetchTripDocumentBlob(tripId, kind);
+      downloadBlob(blob, `CLOX-${kind}-${tripId.slice(0, 8)}.pdf`);
+    } catch (err) {
+      toast.error(getErrorDetail(err));
+    } finally {
+      setDownloadingDoc(null);
+    }
+  }
+
+  async function downloadStopDoc(
+    tripId: string,
+    jobStopId: string,
+    kind: TripStopDocumentKind,
+  ) {
+    const key = `${tripId}:${jobStopId}:${kind}`;
+    setDownloadingDoc(key);
+    try {
+      const blob = await fetchTripStopDocumentBlob(tripId, jobStopId, kind);
+      downloadBlob(blob, `CLOX-${kind}-${jobStopId.slice(0, 8)}.pdf`);
+    } catch (err) {
+      toast.error(getErrorDetail(err));
+    } finally {
+      setDownloadingDoc(null);
+    }
+  }
+
   if (role !== AdminRole.SUPER_ADMIN) return <Navigate to="/" replace />;
   if (detail.isLoading) return <LoadingBlock label={t('adminJobs.loadingDetail')} />;
   if (detail.isError || !detail.data) {
@@ -632,6 +751,17 @@ export function AdminJobDetailPage() {
 
   const job = detail.data;
   const jobTitle = job.title || t('adminJobs.untitledJob', { defaultValue: 'Shipment' });
+  const senderLabel =
+    job.senderCompany.tradingName || job.senderCompany.legalName;
+  const carrier = job.assignment?.carrierCompany ?? null;
+  const carrierLabel = carrier
+    ? carrier.tradingName || carrier.legalName
+    : null;
+  const acceptedGross = job.assignment?.proposal?.amountIncGstCents ?? null;
+  const carrierDg =
+    job.assignment?.proposal?.dgDocument ??
+    job.proposals.find((p) => p.status === 'ACCEPTED')?.dgDocument ??
+    null;
 
   return (
     <div className="space-y-6">
@@ -744,10 +874,17 @@ export function AdminJobDetailPage() {
           </div>
           <div className="mt-3">
             <div className="font-display text-2xl font-bold text-clox-ink">
-              {estimateLabel(job.estimateIncGstCents, t('dash'))}
+              {acceptedGross != null
+                ? estimateLabel(acceptedGross, t('dash'))
+                : estimateLabel(job.estimateIncGstCents, t('dash'))}
             </div>
             <p className="mt-1 text-xs text-clox-mute">
-              {job.pricingModel} · {job.proposals?.length ?? 0} {t('adminJobs.proposals').toLowerCase()}
+              {acceptedGross != null
+                ? t('adminJobs.acceptedFare', { defaultValue: 'Accepted fare (inc GST)' })
+                : t('adminJobs.senderEstimate', { defaultValue: 'Sender estimate (inc GST)' })}
+              {' · '}
+              {job.pricingModel} · {job.proposals?.length ?? 0}{' '}
+              {t('adminJobs.proposals').toLowerCase()}
             </p>
           </div>
         </div>
@@ -759,15 +896,23 @@ export function AdminJobDetailPage() {
             {t('adminJobs.senderDetails')}
           </div>
           <div className="mt-3 space-y-1">
-            <div className="truncate font-semibold text-clox-ink">
-              {job.senderCompany.legalName}
-            </div>
-            <p className="truncate text-xs text-clox-mute">
-              {job.senderCompany.email || t('dash')}
-            </p>
+            <PartyLink to={customerHref(job.senderCompany.id)} className="max-w-full">
+              {senderLabel}
+            </PartyLink>
+            {job.senderCompany.email ? (
+              <PartyLink
+                to={customerHref(job.senderCompany.id)}
+                className="text-xs font-medium text-clox-mute"
+              >
+                {job.senderCompany.email}
+              </PartyLink>
+            ) : (
+              <p className="truncate text-xs text-clox-mute">{t('dash')}</p>
+            )}
             <div className="pt-1">
               <span className="rounded bg-clox-surface-alt px-2 py-0.5 text-[11px] font-medium text-clox-mute">
                 {job.senderCompany.type}
+                {job.senderCompany.status ? ` · ${job.senderCompany.status}` : ''}
               </span>
             </div>
           </div>
@@ -780,24 +925,61 @@ export function AdminJobDetailPage() {
             {t('adminJobs.carrierAssignment')}
           </div>
           <div className="mt-3 space-y-1">
-            {job.assignment ? (
+            {job.assignment && carrier ? (
               <>
                 <div className="flex items-center justify-between gap-1">
-                  <span className="truncate font-semibold text-clox-ink">
-                    {job.assignment.carrierCompany?.legalName || t('adminJobs.colAssignment')}
-                  </span>
+                  <PartyLink to={customerHref(carrier.id)} className="min-w-0 max-w-[70%]">
+                    {carrierLabel || t('adminJobs.colAssignment')}
+                  </PartyLink>
                   <StatusPill tone={assignmentStatusTone(job.assignment.status)}>
                     {job.assignment.status}
                   </StatusPill>
                 </div>
+                {carrier.email ? (
+                  <PartyLink
+                    to={customerHref(carrier.id)}
+                    className="text-xs font-medium text-clox-mute"
+                  >
+                    {carrier.email}
+                  </PartyLink>
+                ) : null}
                 {job.assignment.vehicle ? (
                   <p className="text-xs text-clox-mute">
-                    {t('adminJobs.vehicle')}: {job.assignment.vehicle.registration} ({job.assignment.vehicle.vehicleClass})
+                    {t('adminJobs.vehicle')}:{' '}
+                    <PartyLink
+                      to={customerHref(carrier.id, {
+                        tab: 'vehicles',
+                        vehicleId: job.assignment.vehicle.id,
+                      })}
+                      className="text-xs font-medium"
+                    >
+                      {job.assignment.vehicle.registration ||
+                        job.assignment.vehicle.label ||
+                        job.assignment.vehicle.id.slice(0, 8)}
+                    </PartyLink>
+                    {job.assignment.vehicle.vehicleClass
+                      ? ` (${job.assignment.vehicle.vehicleClass})`
+                      : ''}
                   </p>
                 ) : null}
-                {job.assignment.driver?.user?.name ? (
+                {job.assignment.driver ? (
                   <p className="text-xs text-clox-mute">
-                    {t('adminJobs.driver')}: {job.assignment.driver.user.name}
+                    {t('adminJobs.driver')}:{' '}
+                    <PartyLink
+                      to={customerHref(carrier.id, {
+                        tab: 'drivers',
+                        driverId: job.assignment.driver.id,
+                      })}
+                      className="text-xs font-medium"
+                    >
+                      {job.assignment.driver.user?.name ||
+                        job.assignment.driver.user?.email ||
+                        job.assignment.driver.id.slice(0, 8)}
+                    </PartyLink>
+                    {job.assignment.driver.user?.email &&
+                    job.assignment.driver.user?.name
+                      ? ` · ${job.assignment.driver.user.email}`
+                      : ''}
                   </p>
                 ) : null}
               </>
@@ -910,6 +1092,203 @@ export function AdminJobDetailPage() {
         </div>
       </div>
 
+      {/* Job requirements + completion / POD documents */}
+      <div className="rounded-clox-md border border-clox-border bg-clox-surface p-6 shadow-clox-1">
+        <div className="flex items-center gap-2">
+          <FileText className="h-5 w-5 text-clox-orange" />
+          <h2 className="font-display text-lg font-bold text-clox-ink">
+            {t('adminJobs.documentsTitle', { defaultValue: 'Documents & POD' })}
+          </h2>
+        </div>
+        <p className="mt-1 text-xs text-clox-mute">
+          {t('adminJobs.documentsHint', {
+            defaultValue:
+              'Job requirements, DG packs, and trip completion PDFs (POD / tax invoice / run sheet).',
+          })}
+        </p>
+
+        <div className="mt-4 flex flex-wrap gap-2 text-xs">
+          {job.requiresDg ? (
+            <StatusPill tone="warn">DG</StatusPill>
+          ) : null}
+          {job.requiresReefer ? (
+            <StatusPill tone="info">Reefer</StatusPill>
+          ) : null}
+          {job.requiresOversize ? (
+            <StatusPill tone="info">Oversize</StatusPill>
+          ) : null}
+          {job.deadWeightKg != null ? (
+            <span className="rounded bg-clox-surface-alt px-2 py-1 text-clox-mute">
+              {job.deadWeightKg} kg
+            </span>
+          ) : null}
+          {job.chargeableWeightKg != null ? (
+            <span className="rounded bg-clox-surface-alt px-2 py-1 text-clox-mute">
+              Chargeable {job.chargeableWeightKg} kg
+            </span>
+          ) : null}
+          {job.lengthCm != null && job.widthCm != null && job.heightCm != null ? (
+            <span className="rounded bg-clox-surface-alt px-2 py-1 text-clox-mute">
+              {job.lengthCm}×{job.widthCm}×{job.heightCm} cm
+            </span>
+          ) : null}
+        </div>
+
+        <div className="mt-4 space-y-2">
+          {job.dgDocument ? (
+            <DocRow
+              label={t('adminJobs.senderDgDoc', {
+                defaultValue: 'Sender DG declaration / SDS',
+              })}
+              doc={job.dgDocument}
+              onView={(docId) => void viewComplianceDoc(docId)}
+              viewing={openingDocId === job.dgDocument.id}
+            />
+          ) : job.requiresDg ? (
+            <p className="text-xs text-clox-faint italic">
+              {t('adminJobs.senderDgMissing', {
+                defaultValue: 'DG required — no sender DG document on file.',
+              })}
+            </p>
+          ) : null}
+          {carrierDg ? (
+            <DocRow
+              label={t('adminJobs.carrierDgDoc', {
+                defaultValue: 'Carrier DG licence (accepted bid)',
+              })}
+              doc={carrierDg}
+              onView={(docId) => void viewComplianceDoc(docId)}
+              viewing={openingDocId === carrierDg.id}
+            />
+          ) : null}
+        </div>
+
+        {job.trip ? (
+          <div className="mt-5 space-y-3 border-t border-clox-border-soft pt-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-clox-mute">
+              {t('adminJobs.completionDocs', { defaultValue: 'Trip completion documents' })}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  {
+                    kind: 'pod' as const,
+                    ready: Boolean(job.trip.podStorageKey),
+                    label: t('trips.downloadPod', { defaultValue: 'POD PDF' }),
+                  },
+                  {
+                    kind: 'tax-invoice' as const,
+                    ready: Boolean(job.trip.taxInvoiceStorageKey),
+                    label: t('trips.downloadTaxInvoice', { defaultValue: 'Tax invoice' }),
+                  },
+                  {
+                    kind: 'run-sheet' as const,
+                    ready: Boolean(job.trip.runSheetStorageKey),
+                    label: t('trips.downloadRunSheet', { defaultValue: 'Run sheet' }),
+                  },
+                ] as const
+              ).map((doc) => (
+                <Button
+                  key={doc.kind}
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={!doc.ready || downloadingDoc === `${job.trip!.id}:${doc.kind}`}
+                  onClick={() => void downloadTripDoc(job.trip!.id, doc.kind)}
+                >
+                  {doc.label}
+                  {!doc.ready ? ' —' : ''}
+                </Button>
+              ))}
+            </div>
+
+            {(job.trip.dropoffs ?? []).length > 0 ? (
+              <div className="space-y-2">
+                {job.trip.dropoffs!.map((drop) => (
+                  <div
+                    key={drop.jobStopId}
+                    className="rounded-clox-sm border border-clox-border-soft bg-clox-surface-alt/30 px-3 py-2"
+                  >
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="font-semibold text-clox-ink">
+                        Drop #{drop.sequence}
+                        {drop.suburb ? ` · ${drop.suburb}` : ''}
+                      </span>
+                      <StatusPill tone={drop.podStatus === 'FINALIZED' ? 'ok' : 'warn'}>
+                        {drop.podStatus}
+                      </StatusPill>
+                      {drop.signerName ? (
+                        <span className="text-clox-mute">Signer: {drop.signerName}</span>
+                      ) : null}
+                      {drop.podFinalizedAt ? (
+                        <span className="text-clox-mute">
+                          {formatDateTime(drop.podFinalizedAt)}
+                        </span>
+                      ) : null}
+                      <span className="text-clox-mute">
+                        Photos: {drop.goodsPhotoCount}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={
+                          !drop.hasPodPackage ||
+                          downloadingDoc ===
+                            `${job.trip!.id}:${drop.jobStopId}:pod-package`
+                        }
+                        onClick={() =>
+                          void downloadStopDoc(job.trip!.id, drop.jobStopId, 'pod-package')
+                        }
+                      >
+                        {t('adminJobs.downloadPodPackage', {
+                          defaultValue: 'POD package',
+                        })}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={
+                          !drop.hasSignaturePdf ||
+                          downloadingDoc ===
+                            `${job.trip!.id}:${drop.jobStopId}:signature-pdf`
+                        }
+                        onClick={() =>
+                          void downloadStopDoc(
+                            job.trip!.id,
+                            drop.jobStopId,
+                            'signature-pdf',
+                          )
+                        }
+                      >
+                        {t('adminJobs.downloadSignaturePdf', {
+                          defaultValue: 'Signature PDF',
+                        })}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-clox-faint italic">
+                {t('adminJobs.noPodYet', {
+                  defaultValue: 'No drop-off POD progress yet.',
+                })}
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="mt-4 text-xs text-clox-faint italic">
+            {t('adminJobs.noTripYet', {
+              defaultValue: 'Trip not started — completion documents unavailable.',
+            })}
+          </p>
+        )}
+      </div>
+
       {/* Carrier Proposals Table */}
       <div className="rounded-clox-md border border-clox-border bg-clox-surface p-6 shadow-clox-1">
         <div className="flex items-center justify-between">
@@ -931,6 +1310,7 @@ export function AdminJobDetailPage() {
               <thead>
                 <tr className="border-b border-clox-border-soft text-xs text-clox-mute">
                   <th className="pb-2 font-medium">Carrier</th>
+                  <th className="pb-2 font-medium">{t('adminJobs.driver')}</th>
                   <th className="pb-2 font-medium">{t('adminJobs.colStatus')}</th>
                   <th className="pb-2 font-medium">{t('adminJobs.amount')}</th>
                   <th className="pb-2 font-medium">{t('adminJobs.eta')}</th>
@@ -941,7 +1321,57 @@ export function AdminJobDetailPage() {
                 {job.proposals.map((proposal) => (
                   <tr key={proposal.id} className="hover:bg-clox-surface-alt/50">
                     <td className="py-2.5 font-medium text-clox-ink">
-                      {proposal.carrierCompany.legalName}
+                      <PartyLink to={customerHref(proposal.carrierCompany.id)}>
+                        {proposal.carrierCompany.tradingName ||
+                          proposal.carrierCompany.legalName}
+                      </PartyLink>
+                      {proposal.carrierCompany.email ? (
+                        <div className="mt-0.5 text-[11px] font-normal text-clox-mute">
+                          {proposal.carrierCompany.email}
+                        </div>
+                      ) : null}
+                      {proposal.dgDocument ? (
+                        <button
+                          type="button"
+                          className="mt-1 text-[11px] font-semibold text-clox-orange underline-offset-2 hover:underline"
+                          onClick={() => void viewComplianceDoc(proposal.dgDocument!.id)}
+                        >
+                          DG doc
+                        </button>
+                      ) : null}
+                    </td>
+                    <td className="py-2.5 text-xs text-clox-mute">
+                      {proposal.driver ? (
+                        <PartyLink
+                          to={customerHref(proposal.carrierCompany.id, {
+                            tab: 'drivers',
+                            driverId: proposal.driver.id,
+                          })}
+                          className="text-xs font-medium"
+                        >
+                          {proposal.driver.user?.name ||
+                            proposal.driver.user?.email ||
+                            proposal.driver.id.slice(0, 8)}
+                        </PartyLink>
+                      ) : (
+                        t('dash')
+                      )}
+                      {proposal.vehicle ? (
+                        <div className="mt-0.5">
+                          <PartyLink
+                            to={customerHref(proposal.carrierCompany.id, {
+                              tab: 'vehicles',
+                              vehicleId: proposal.vehicle.id,
+                            })}
+                            className="text-[11px] font-medium text-clox-mute"
+                          >
+                            {proposal.vehicle.registration ||
+                              proposal.vehicle.label ||
+                              proposal.vehicle.vehicleClass ||
+                              'Vehicle'}
+                          </PartyLink>
+                        </div>
+                      ) : null}
                     </td>
                     <td className="py-2.5">
                       <span className="rounded bg-clox-surface-alt px-2 py-0.5 text-xs font-semibold">

@@ -25,7 +25,7 @@
   "fileInput": {
     "choose": "Choose file",
     "replace": "Tap to replace",
-    "hint": "Document or image"
+    "hint": "PDF or image · max 10 MB"
   },
   "toast": {
     "dismiss": "Dismiss notification"

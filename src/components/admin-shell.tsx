@@ -282,11 +282,11 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
       {/* ─── Carrier Sub-Modules ─── */}
       {role === AppRole.TRANSPORT_COMPANY ? (
         <>
-          {/* Fleet & Jobs Sub-Menu */}
+          {/* Work — marketplace / dispatch */}
           <SidebarSubMenu
-            label={t('nav.menuFleet', { defaultValue: 'Fleet & Jobs' })}
-            icon={Truck}
-            activePaths={['/market', '/assignments', '/carrier/fleet', '/carrier/fleet/analytics', '/carrier/drivers', '/carrier/exceptions']}
+            label={t('nav.menuWork', { defaultValue: 'Work' })}
+            icon={Briefcase}
+            activePaths={['/market', '/assignments', '/carrier/exceptions']}
           >
             <SidebarSubLink to="/market" icon={navIconForPath('/market')} onNavigate={onNavigate}>
               {t('nav.jobBoard')}
@@ -294,6 +294,17 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
             <SidebarSubLink to="/assignments" icon={navIconForPath('/assignments')} onNavigate={onNavigate}>
               {t('nav.assignments')}
             </SidebarSubLink>
+            <SidebarSubLink to="/carrier/exceptions" icon={navIconForPath('/carrier/exceptions')} onNavigate={onNavigate}>
+              {t('nav.exceptions')}
+            </SidebarSubLink>
+          </SidebarSubMenu>
+
+          {/* Fleet — vehicles, drivers, Fleet+ */}
+          <SidebarSubMenu
+            label={t('nav.menuFleet', { defaultValue: 'Fleet' })}
+            icon={Truck}
+            activePaths={['/carrier/fleet', '/carrier/fleet/analytics', '/carrier/drivers']}
+          >
             <SidebarSubLink
               to="/carrier/fleet"
               end
@@ -302,18 +313,15 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
             >
               {t('nav.fleet')}
             </SidebarSubLink>
+            <SidebarSubLink to="/carrier/drivers" icon={navIconForPath('/carrier/drivers')} onNavigate={onNavigate}>
+              {t('nav.drivers')}
+            </SidebarSubLink>
             <SidebarSubLink
               to="/carrier/fleet/analytics"
               icon={navIconForPath('/carrier/fleet/analytics')}
               onNavigate={onNavigate}
             >
               {t('nav.fleetAnalytics', { defaultValue: 'Fleet+ Analytics' })}
-            </SidebarSubLink>
-            <SidebarSubLink to="/carrier/drivers" icon={navIconForPath('/carrier/drivers')} onNavigate={onNavigate}>
-              {t('nav.drivers')}
-            </SidebarSubLink>
-            <SidebarSubLink to="/carrier/exceptions" icon={navIconForPath('/carrier/exceptions')} onNavigate={onNavigate}>
-              {t('nav.exceptions')}
             </SidebarSubLink>
           </SidebarSubMenu>
 

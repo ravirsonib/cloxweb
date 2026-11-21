@@ -301,7 +301,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
 
           {/* Fleet — vehicles, drivers, Fleet+ */}
           <SidebarSubMenu
-            label={t('nav.menuFleet', { defaultValue: 'Fleet' })}
+            label={t('nav.menuFleet', { defaultValue: 'Fleet Management' })}
             icon={Truck}
             activePaths={['/carrier/fleet', '/carrier/fleet/analytics', '/carrier/drivers']}
           >

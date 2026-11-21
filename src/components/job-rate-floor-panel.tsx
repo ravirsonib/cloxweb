@@ -114,12 +114,14 @@ export function JobRateFloorPanel({
         </button>
         {openHow ? (
           <ul className="mt-2 space-y-0.5 text-xs text-clox-mute">
-            <li>
-              {t('jobs.floorVersion', {
-                defaultValue: 'Floor version: {{label}}',
-                label: floor?.versionLabel || floor?.versionId || '—',
-              })}
-            </li>
+            {floor?.versionLabel || floor?.versionId ? (
+              <li>
+                {t('jobs.floorVersion', {
+                  defaultValue: 'Floor version: {{label}}',
+                  label: floor.versionLabel || floor.versionId,
+                })}
+              </li>
+            ) : null}
             {diesel != null ? (
               <li>
                 {t('jobs.floorDiesel', {

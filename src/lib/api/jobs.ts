@@ -266,6 +266,8 @@ export type MarketBoardJob = {
   minBidIncGstCents?: number | null;
   /** Carrier-facing minimum payout (net inc GST). */
   minBidNetToCarrierCents?: number | null;
+  rateFloorVersionId?: string | null;
+  rateFloorVersionLabel?: string | null;
   siteManeuverability?: string | null;
   siteFacility?: string | null;
   pickupAt: string | null;

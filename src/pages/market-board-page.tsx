@@ -1118,10 +1118,21 @@ export function MarketBoardPage() {
           selectedVehicle?.bidAvailable !== false &&
           !selectedVehicleDgOk ? (
             <Notice tone="warn" className="mb-3">
-              {t('market.errorVehicleNotDg', {
-                defaultValue:
-                  'This job requires a Dangerous Goods (DG) licensed vehicle with a DG document uploaded.',
-              })}
+              <p>
+                {t('market.errorVehicleNotDg', {
+                  defaultValue:
+                    'This job requires a Dangerous Goods (DG) licensed vehicle with a DG document uploaded.',
+                })}
+              </p>
+              <p className="mt-1 text-xs">
+                {t('market.errorVehicleNotDgHint', {
+                  defaultValue:
+                    'Choose a DG-licensed truck from the list, or open Fleet Management → upload a vehicle DG licence, then retry.',
+                })}{' '}
+                <Link to="/carrier/fleet" className="font-semibold text-clox-orange underline">
+                  {t('nav.menuFleet', { defaultValue: 'Fleet Management' })}
+                </Link>
+              </p>
             </Notice>
           ) : null}
           {vehicleIdWatch &&
@@ -1155,6 +1166,8 @@ export function MarketBoardPage() {
               fallback={{
                 exGstCents: null,
                 incGstCents: minBidNetCents,
+                versionId: selectedJob?.rateFloorVersionId ?? null,
+                versionLabel: selectedJob?.rateFloorVersionLabel ?? null,
               }}
               estimateIncGstCents={
                 Number.isFinite(amountWatch) ? Math.round(Number(amountWatch) * 100) : null

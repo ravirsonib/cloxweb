@@ -1051,12 +1051,31 @@ export function CarrierFleetPage() {
     const tripLabel =
       row.currentTrip?.jobTitle?.trim() ||
       (row.currentTrip?.jobId ? row.currentTrip.jobId.slice(0, 8) : null);
+    const rwcState = row.compliance?.aggregate?.state ?? row.compliance?.rwc?.state;
+    const docsBlockAssign =
+      row.status === 'ACTIVE' &&
+      row.bidAvailable === false &&
+      !activity &&
+      (rwcState === 'PENDING' || rwcState === 'MISSING' || rwcState === 'EXPIRED');
     return (
       <div className="flex w-full min-w-0 max-w-[14rem] flex-col items-start gap-1">
         {activity ? (
           <>
             <StatusPill tone={activityStatusTone(activity)} className="max-w-full min-w-0">
               <span className="min-w-0 truncate">{activityLabel(activity)}</span>
+            </StatusPill>
+            <p className="w-full truncate text-[11px] leading-tight text-clox-mute">
+              {t('fleet.accountStatus', { status: statusLabel(row.status) })}
+            </p>
+          </>
+        ) : docsBlockAssign ? (
+          <>
+            <StatusPill
+              tone="warn"
+              className="max-w-full min-w-0"
+              title={t('fleet.notBidReadyHint')}
+            >
+              <span className="min-w-0 truncate">{t('fleet.notBidReadyStatus')}</span>
             </StatusPill>
             <p className="w-full truncate text-[11px] leading-tight text-clox-mute">
               {t('fleet.accountStatus', { status: statusLabel(row.status) })}

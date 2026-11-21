@@ -81,6 +81,8 @@
     "colGvm": "GVM / GCM",
     "colStatus": "ਸਥਿਤੀ",
     "accountStatus": "ਸੰਪਤੀ · {{status}}",
+    "notBidReadyStatus": "ਅਸਾਈਨ ਨਹੀਂ ਹੋ ਸਕਦਾ",
+    "notBidReadyHint": "ਬੋਲੀ ਤੋਂ ਪਹਿਲਾਂ ਹਰ ਲੋੜੀਂਦੀ ਯੂਨਿਟ ਦੇ RWC / COI ਲਈ CLOX Ops ਮਨਜ਼ੂਰੀ ਦੀ ਉਡੀਕ।",
     "colRwc": "RWC",
     "colReason": "ਅਸਮਰੱਥ / ਰਿਟਾਇਰ ਕਾਰਨ",
     "colActions": "ਕਾਰਵਾਈਆਂ",

@@ -81,6 +81,8 @@
     "colGvm": "GVM / GCM",
     "colStatus": "Status",
     "accountStatus": "Asset · {{status}}",
+    "notBidReadyStatus": "Not assignable",
+    "notBidReadyHint": "Waiting for CLOX Ops to approve RWC / COI on every required unit before this truck can bid.",
     "colRwc": "RWC / COI",
     "colReason": "Disable / retire reason",
     "colActions": "Actions",

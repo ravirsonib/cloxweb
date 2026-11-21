@@ -76,6 +76,8 @@
     "colGvm": "GVM / GCM",
     "colStatus": "स्थिति",
     "accountStatus": "संपत्ति · {{status}}",
+    "notBidReadyStatus": "असाइन नहीं हो सकता",
+    "notBidReadyHint": "बिडिंग से पहले हर आवश्यक यूनिट के RWC / COI की CLOX Ops मंज़ूरी का इंतज़ार।",
     "colRwc": "RWC",
     "colReason": "अक्षम / रिटायर कारण",
     "colActions": "कार्रवाई",

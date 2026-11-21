@@ -741,3 +741,20 @@ export function optionalDecimalFromInputSchema(max: number): z.ZodType<number | 
     z.number().min(0).max(max),
   ]);
 }
+
+/**
+ * Required positive decimal from `<input type="number" valueAsNumber>`.
+ * Maps empty/NaN to a clear required error instead of Zod’s “received NaN”.
+ */
+export function positiveNumberFromInputSchema(
+  max: number,
+  messages: { required: string; positive: string; max: string },
+): z.ZodType<number> {
+  return z.preprocess((v) => {
+    if (v === '' || v == null) return undefined;
+    if (typeof v === 'number' && Number.isNaN(v)) return undefined;
+    if (typeof v === 'string' && v.trim() === '') return undefined;
+    const n = typeof v === 'number' ? v : Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  }, z.number({ message: messages.required }).positive(messages.positive).max(max, messages.max));
+}

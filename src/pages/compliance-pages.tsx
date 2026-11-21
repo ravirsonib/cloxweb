@@ -682,12 +682,15 @@ export function ComplianceCasePage({ caseId }: { caseId: string }) {
                       <StatusPill tone="warn">{t('compliance.docsNewBadge')}</StatusPill>
                     ) : null}
                   </div>
-                  {d.vehicleRegistration || d.vehicleLabel ? (
+                  {d.vehicleRegistration || d.vehicleLabel || d.vehicleUnitRole ? (
                     <p className="mt-0.5 text-xs font-medium text-clox-ink">
                       {t('compliance.docsVehicle', {
                         rego: d.vehicleRegistration ?? t('dash'),
                         label: d.vehicleLabel ?? t('dash'),
                       })}
+                      {d.vehicleUnitRole
+                        ? ` · ${d.vehicleUnitLabel ?? d.vehicleUnitRole}`
+                        : ''}
                       {d.vehicleStatus ? ` · ${d.vehicleStatus}` : ''}
                     </p>
                   ) : null}

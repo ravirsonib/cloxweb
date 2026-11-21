@@ -60,6 +60,8 @@
     "pricingHourlyHint": "Time-based quote for a single pickup → dropoff.",
     "distanceKmLabel": "Distance (km)",
     "distanceKmHint": "Enter route distance. Suggested from pickup and drop when available.",
+    "distanceKmSuggesting": "Suggesting distance from pickup and drop…",
+    "distanceKmSuggestFailed": "Could not auto-suggest distance — enter the route km manually.",
     "estimateRangeHint": "Typical range for this load class vs next larger vehicle: {{min}} – {{max}} inc GST (guidance; final price is the accepted bid).",
     "estimateForClassHint": "Estimated {{amount}} inc GST for class {{class}} (final price is the accepted bid).",
     "distanceKmSuggested": "Suggested from pickup/drop: {{km}} km (you can edit).",

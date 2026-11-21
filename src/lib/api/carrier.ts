@@ -35,6 +35,7 @@ export type CarrierOnboarding = {
     label: string | null;
     registration: string | null;
     vehicleClass: string | null;
+    combinationConfig?: 'NONE' | 'SEMI' | 'BDOUBLE' | 'RT_DOUBLE' | 'RT_TRIPLE';
     tareKg: number | null;
     gvmKg: number | null;
     gcmKg: number | null;
@@ -46,6 +47,7 @@ export type CarrierOnboarding = {
     hasDg?: boolean;
     /** Latest DG_LICENCE document id for this vehicle (for View / Bid auto-attach). */
     dgDocumentId?: string | null;
+    compliance?: FleetVehicleUnitCompliance;
   }>;
   drivers: Array<{
     id: string;
@@ -121,6 +123,23 @@ export type FleetRwcCompliance = {
   documentStatus: string | null;
 };
 
+export type FleetVehicleUnitCompliance = {
+  combinationConfig: 'NONE' | 'SEMI' | 'BDOUBLE' | 'RT_DOUBLE' | 'RT_TRIPLE';
+  requiredRoles: Array<'POWERED' | 'TRAILER_1' | 'TRAILER_2' | 'TRAILER_3'>;
+  units: Array<{
+    id: string | null;
+    role: 'POWERED' | 'TRAILER_1' | 'TRAILER_2' | 'TRAILER_3';
+    label: string;
+    registration: string | null;
+    rwc: FleetRwcCompliance;
+  }>;
+  aggregate: {
+    state: 'OK' | 'EXPIRING' | 'EXPIRED' | 'PENDING' | 'MISSING';
+    label: string;
+  };
+  rwc: FleetRwcCompliance;
+};
+
 export type FleetCommittedJob = {
   id: string;
   title: string | null;
@@ -150,6 +169,7 @@ export type CarrierVehicleListItem = {
   label: string | null;
   registration: string | null;
   vehicleClass: string | null;
+  combinationConfig?: 'NONE' | 'SEMI' | 'BDOUBLE' | 'RT_DOUBLE' | 'RT_TRIPLE';
   tareKg: number | null;
   gvmKg: number | null;
   gcmKg: number | null;
@@ -171,7 +191,13 @@ export type CarrierVehicleListItem = {
   purchasePriceAud?: number | null;
   residualValueAud?: number | null;
   lifecycleMonths?: number | null;
-  compliance?: {
+  units?: Array<{
+    id: string;
+    role: 'POWERED' | 'TRAILER_1' | 'TRAILER_2' | 'TRAILER_3';
+    registration: string | null;
+    label: string | null;
+  }>;
+  compliance?: FleetVehicleUnitCompliance & {
     rwc: FleetRwcCompliance;
   };
 };

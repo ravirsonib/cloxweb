@@ -45,6 +45,13 @@ import {
 } from '@/lib/validation';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
+import {
+  defaultCombinationConfigForClass,
+  isArticulatedClass,
+  requiredUnitsForVehicle,
+  VEHICLE_UNIT_ROLE_LABELS,
+  type VehicleUnitRoleCode,
+} from '@/lib/vehicle-units';
 
 const STEPS = [
   'profile',
@@ -914,6 +921,7 @@ type VehicleForm = {
   label: string;
   registration: string;
   vehicleClass: string;
+  combinationConfig: 'NONE' | 'SEMI' | 'BDOUBLE' | 'RT_DOUBLE' | 'RT_TRIPLE';
   tareKg: number;
   gvmKg: number;
   gcmKg?: number;
@@ -931,12 +939,17 @@ function VehiclesStep({
   const { t } = useTranslation();
   const [rwcMsg, setRwcMsg] = useState<string | null>(null);
   const [rwcFile, setRwcFile] = useState<File | null>(null);
+  const [unitRwcFiles, setUnitRwcFiles] = useState<
+    Partial<Record<VehicleUnitRoleCode, File | null>>
+  >({});
+  const [unitRegs, setUnitRegs] = useState<Partial<Record<VehicleUnitRoleCode, string>>>({});
   const [rwcFormError, setRwcFormError] = useState<string | null>(null);
   const schema = z
     .object({
       label: z.string().trim().min(1, t('validation.vehicleLabelRequired')),
       registration: z.string().trim().min(1, t('validation.registrationRequired')),
       vehicleClass: z.string().min(1, t('validation.vehicleClassRequired')),
+      combinationConfig: z.enum(['NONE', 'SEMI', 'BDOUBLE', 'RT_DOUBLE', 'RT_TRIPLE']),
       tareKg: z
         .number({ message: t('validation.tareKgRequired') })
         .int()
@@ -977,12 +990,14 @@ function VehiclesStep({
       label: t('carrierOnboarding.primaryTruckLabel'),
       registration: '',
       vehicleClass: 'RIGID_1_2T',
+      combinationConfig: 'NONE',
       tareKg: suggestedTareKgForClass('RIGID_1_2T'),
       gvmKg: suggestedGvmKgForClass('RIGID_1_2T'),
       gcmKg: undefined,
     },
   });
   const watchedClass = form.watch('vehicleClass');
+  const watchedConfig = form.watch('combinationConfig');
   const setValue = form.setValue;
   useEffect(() => {
     if (!watchedClass) return;
@@ -994,14 +1009,33 @@ function VehiclesStep({
       suggestedTareKgForClass(watchedClass);
     setValue('gvmKg', gvm);
     setValue('tareKg', tare);
+    setValue('combinationConfig', defaultCombinationConfigForClass(watchedClass));
+    setUnitRegs({});
+    setUnitRwcFiles({});
   }, [watchedClass, setValue, vehicleClassesQuery.data]);
 
-  async function uploadRwcForVehicle(vehicleId: string, file: File) {
+  const formRequiredRoles = requiredUnitsForVehicle(
+    watchedClass,
+    watchedClass === 'ROAD_TRAIN'
+      ? watchedConfig === 'RT_TRIPLE'
+        ? 'RT_TRIPLE'
+        : 'RT_DOUBLE'
+      : defaultCombinationConfigForClass(watchedClass),
+  );
+  const formTrailerRoles = formRequiredRoles.filter((r) => r !== 'POWERED');
+
+  async function uploadRwcForVehicle(
+    vehicleId: string,
+    file: File,
+    opts?: { vehicleUnitId?: string; vehicleUnitRole?: VehicleUnitRoleCode },
+  ) {
     await uploadAndConfirmDocument({
       companyId: data.company.id,
       docType: 'RWC',
       file,
       vehicleId,
+      vehicleUnitId: opts?.vehicleUnitId,
+      vehicleUnitRole: opts?.vehicleUnitRole,
       filenameFallback: 'rwc',
     });
   }
@@ -1009,8 +1043,26 @@ function VehiclesStep({
   const mutation = useMutation({
     mutationFn: async (values: VehicleForm) => {
       const rwcUpload = rwcFile;
+      const unitFilesSnap = { ...unitRwcFiles };
+      const unitRegsSnap = { ...unitRegs };
       if (!rwcUpload) {
         throw new Error(t('fleet.rwcRequiredError'));
+      }
+      const config =
+        values.vehicleClass === 'ROAD_TRAIN'
+          ? values.combinationConfig === 'RT_TRIPLE'
+            ? 'RT_TRIPLE'
+            : 'RT_DOUBLE'
+          : defaultCombinationConfigForClass(values.vehicleClass);
+      const roles = requiredUnitsForVehicle(values.vehicleClass, config);
+      for (const role of roles) {
+        if (role === 'POWERED') continue;
+        if (!(unitRegsSnap[role] ?? '').trim()) {
+          throw new Error(t('fleet.unitRegoRequired', { unit: VEHICLE_UNIT_ROLE_LABELS[role] }));
+        }
+        if (!unitFilesSnap[role]) {
+          throw new Error(t('fleet.unitRwcRequired', { unit: VEHICLE_UNIT_ROLE_LABELS[role] }));
+        }
       }
       // Persist vehicle first so a later RWC/network failure does not look like
       // "add failed" after refresh (vehicle already exists).
@@ -1018,6 +1070,15 @@ function VehiclesStep({
         label: values.label,
         registration: values.registration,
         vehicleClass: values.vehicleClass,
+        combinationConfig: config,
+        units: roles.map((role) => ({
+          role,
+          registration:
+            role === 'POWERED'
+              ? values.registration.trim().toUpperCase()
+              : (unitRegsSnap[role] ?? '').trim().toUpperCase(),
+          label: VEHICLE_UNIT_ROLE_LABELS[role],
+        })),
         tareKg: values.tareKg,
         gvmKg: values.gvmKg,
         ...(values.gcmKg != null && !Number.isNaN(values.gcmKg)
@@ -1055,11 +1116,21 @@ function VehiclesStep({
         throw new Error(t('fleet.rwcRequiredError'));
       }
       const existing = onboarding.vehicles.find((v) => v.id === createdId);
-      if (existing?.hasRwc) {
-        return onboarding;
-      }
+      const unitsSnap = existing?.compliance?.units ?? [];
       try {
-        await uploadRwcForVehicle(createdId, rwcUpload);
+        for (const role of roles) {
+          const unit = unitsSnap.find((u) => u.role === role);
+          const already = unit?.rwc?.state && unit.rwc.state !== 'MISSING';
+          if (already || (role === 'POWERED' && existing?.hasRwc && roles.length === 1)) {
+            continue;
+          }
+          const file = role === 'POWERED' ? rwcUpload : unitFilesSnap[role];
+          if (!file) continue;
+          await uploadRwcForVehicle(createdId, file, {
+            vehicleUnitId: unit?.id ?? undefined,
+            vehicleUnitRole: role,
+          });
+        }
       } catch (err) {
         const detail = getErrorDetail(err);
         throw new Error(t('carrierOnboarding.vehicleSavedRwcFailed', { detail }));
@@ -1071,11 +1142,14 @@ function VehiclesStep({
         label: t('carrierOnboarding.primaryTruckLabel'),
         registration: '',
         vehicleClass: 'RIGID_1_2T',
+        combinationConfig: 'NONE',
         tareKg: suggestedTareKgForClass('RIGID_1_2T'),
         gvmKg: suggestedGvmKgForClass('RIGID_1_2T'),
         gcmKg: undefined,
       });
       setRwcFile(null);
+      setUnitRwcFiles({});
+      setUnitRegs({});
       setRwcFormError(null);
       setRwcMsg(t('carrierOnboarding.rwcUploaded'));
       await onSaved();
@@ -1093,7 +1167,12 @@ function VehiclesStep({
 
   const activeVehicles = data.vehicles.filter((v) => v.status === 'ACTIVE');
   const allActiveHaveRwc =
-    activeVehicles.length > 0 && activeVehicles.every((v) => Boolean(v.hasRwc));
+    activeVehicles.length > 0 &&
+    activeVehicles.every((v) => {
+      const aggregate = v.compliance?.aggregate?.state;
+      if (aggregate) return aggregate !== 'MISSING' && aggregate !== 'EXPIRED';
+      return Boolean(v.hasRwc);
+    });
 
   return (
     <div className="mt-8 space-y-4">
@@ -1108,40 +1187,92 @@ function VehiclesStep({
             <li key={v.id} className="rounded-xl border border-clox-border p-3">
               <p className="font-mono text-xs">
                 {v.registration} · {v.vehicleClass} · {v.label}
-                {v.hasRwc ? ` · ${t('carrierOnboarding.rwcOnFile')}` : ''}
+                {v.compliance?.aggregate?.label
+                  ? ` · ${v.compliance.aggregate.label}`
+                  : v.hasRwc
+                    ? ` · ${t('carrierOnboarding.rwcOnFile')}`
+                    : ''}
               </p>
-              {v.hasRwc && v.rwcDocumentId ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="mt-2"
-                  onClick={() => {
-                    void openDocumentContent(v.rwcDocumentId!).catch((err) =>
-                      setRwcFormError(getErrorDetail(err)),
-                    );
-                  }}
-                >
-                  {t('fleet.rwcView')}
-                </Button>
-              ) : null}
-              {!v.hasRwc ? (
-                <FileInput
-                  className="mt-2 mb-0"
-                  label={`${t('carrierOnboarding.rwc')} (${t('carrierOnboarding.rwcPerVehicle')})`}
-                  accept=".pdf,image/jpeg,image/png,image/webp"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (!f) return;
-                    setRwcFormError(null);
-                    void uploadRwcForVehicle(v.id, f)
-                      .then(async () => {
-                        setRwcMsg(t('carrierOnboarding.rwcUploaded'));
-                        await onSaved();
-                      })
-                      .catch((err) => setRwcFormError(getErrorDetail(err)));
-                  }}
-                />
-              ) : null}
+              {(v.compliance?.units?.length ?? 0) > 1 ? (
+                <ul className="mt-2 space-y-2">
+                  {v.compliance!.units.map((u) => (
+                    <li key={u.role} className="text-xs text-clox-mute">
+                      <span className="font-medium text-clox-ink">
+                        {u.label} · {u.registration ?? t('dash')} · {u.rwc.state}
+                      </span>
+                      {u.rwc.documentId ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="ml-2"
+                          onClick={() => {
+                            void openDocumentContent(u.rwc.documentId!).catch((err) =>
+                              setRwcFormError(getErrorDetail(err)),
+                            );
+                          }}
+                        >
+                          {t('fleet.rwcView')}
+                        </Button>
+                      ) : (
+                        <FileInput
+                          className="mt-1 mb-0"
+                          label={t('fleet.unitRwcLabel', { unit: u.label })}
+                          accept=".pdf,image/jpeg,image/png,image/webp"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (!f) return;
+                            setRwcFormError(null);
+                            void uploadRwcForVehicle(v.id, f, {
+                              vehicleUnitId: u.id ?? undefined,
+                              vehicleUnitRole: u.role,
+                            })
+                              .then(async () => {
+                                setRwcMsg(t('carrierOnboarding.rwcUploaded'));
+                                await onSaved();
+                              })
+                              .catch((err) => setRwcFormError(getErrorDetail(err)));
+                          }}
+                        />
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <>
+                  {v.hasRwc && v.rwcDocumentId ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="mt-2"
+                      onClick={() => {
+                        void openDocumentContent(v.rwcDocumentId!).catch((err) =>
+                          setRwcFormError(getErrorDetail(err)),
+                        );
+                      }}
+                    >
+                      {t('fleet.rwcView')}
+                    </Button>
+                  ) : null}
+                  {!v.hasRwc ? (
+                    <FileInput
+                      className="mt-2 mb-0"
+                      label={`${t('carrierOnboarding.rwc')} (${t('carrierOnboarding.rwcPerVehicle')})`}
+                      accept=".pdf,image/jpeg,image/png,image/webp"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+                        setRwcFormError(null);
+                        void uploadRwcForVehicle(v.id, f)
+                          .then(async () => {
+                            setRwcMsg(t('carrierOnboarding.rwcUploaded'));
+                            await onSaved();
+                          })
+                          .catch((err) => setRwcFormError(getErrorDetail(err)));
+                      }}
+                    />
+                  ) : null}
+                </>
+              )}
             </li>
           ))}
         </ul>
@@ -1192,6 +1323,17 @@ function VehiclesStep({
             </option>
           ))}
         </Select>
+        {watchedClass === 'ROAD_TRAIN' ? (
+          <Select
+            label={t('fleet.roadTrainConfigLabel')}
+            hint={t('fleet.roadTrainConfigHint')}
+            value={form.watch('combinationConfig')}
+            {...form.register('combinationConfig')}
+          >
+            <option value="RT_DOUBLE">{t('fleet.roadTrainDouble')}</option>
+            <option value="RT_TRIPLE">{t('fleet.roadTrainTriple')}</option>
+          </Select>
+        ) : null}
         <Field
           type="number"
           label={t('fleet.gvmKgLabel')}
@@ -1215,21 +1357,57 @@ function VehiclesStep({
           error={form.formState.errors.gcmKg?.message}
           {...form.register('gcmKg', { valueAsNumber: true })}
         />
-        <FileInput
-          label={
-            <>
-              {t('fleet.rwcLabel')}{' '}
-              <span className="text-[var(--status-danger)]">*</span>
-            </>
-          }
-          hint={t('fleet.rwcHint')}
-          accept=".pdf,image/jpeg,image/png,image/webp"
-          fileName={rwcFile?.name ?? null}
-          onChange={(e) => {
-            setRwcFile(e.target.files?.[0] ?? null);
-            setRwcFormError(null);
-          }}
-        />
+        <div className="space-y-3 rounded-clox-sm border border-clox-border-soft p-3">
+          <p className="text-xs font-semibold text-clox-ink">{t('fleet.rwcLabel')}</p>
+          <p className="text-[11px] text-clox-mute">{t('fleet.rwcHint')}</p>
+          {isArticulatedClass(watchedClass) ? (
+            <p className="text-[11px] text-clox-mute">{t('fleet.multiUnitHint')}</p>
+          ) : null}
+          <FileInput
+            label={
+              <>
+                {formTrailerRoles.length > 0
+                  ? t('fleet.unitRwcLabel', { unit: VEHICLE_UNIT_ROLE_LABELS.POWERED })
+                  : t('fleet.rwcLabel')}{' '}
+                <span className="text-[var(--status-danger)]">*</span>
+              </>
+            }
+            accept=".pdf,image/jpeg,image/png,image/webp"
+            fileName={rwcFile?.name ?? null}
+            onChange={(e) => {
+              setRwcFile(e.target.files?.[0] ?? null);
+              setRwcFormError(null);
+            }}
+          />
+          {formTrailerRoles.map((role) => (
+            <div key={role} className="space-y-2 border-t border-clox-border-soft pt-3">
+              <Field
+                label={t('fleet.unitRegoLabel', { unit: VEHICLE_UNIT_ROLE_LABELS[role] })}
+                required
+                value={unitRegs[role] ?? ''}
+                onChange={(e) => {
+                  setUnitRegs((prev) => ({ ...prev, [role]: e.target.value }));
+                  setRwcFormError(null);
+                }}
+              />
+              <FileInput
+                label={
+                  <>
+                    {t('fleet.unitRwcLabel', { unit: VEHICLE_UNIT_ROLE_LABELS[role] })}{' '}
+                    <span className="text-[var(--status-danger)]">*</span>
+                  </>
+                }
+                accept=".pdf,image/jpeg,image/png,image/webp"
+                fileName={unitRwcFiles[role]?.name ?? null}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  setUnitRwcFiles((prev) => ({ ...prev, [role]: file }));
+                  setRwcFormError(null);
+                }}
+              />
+            </div>
+          ))}
+        </div>
         {rwcFormError || mutation.isError ? (
           <Notice tone="error" className="mb-0">
             {rwcFormError ?? getErrorDetail(mutation.error)}

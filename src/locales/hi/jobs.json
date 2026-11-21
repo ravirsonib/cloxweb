@@ -60,6 +60,8 @@
     "pricingHourlyHint": "एक पिकअप → ड्रॉपऑफ़ के लिए समय-आधारित कोट।",
     "distanceKmLabel": "दूरी (km)",
     "distanceKmHint": "रूट दूरी दर्ज करें। उपलब्ध होने पर पिकअप/ड्रॉप से सुझाव।",
+    "distanceKmSuggesting": "पिकअप और ड्रॉप से दूरी सुझाई जा रही है…",
+    "distanceKmSuggestFailed": "दूरी स्वतः सुझाई नहीं जा सकी — रूट km स्वयं दर्ज करें।",
     "estimateRangeHint": "इस लोड वर्ग बनाम अगले बड़े वाहन की सामान्य सीमा: {{min}} – {{max}} inc GST (मार्गदर्शन; अंतिम मूल्य स्वीकृत बिड है)।",
     "estimateForClassHint": "वर्ग {{class}} के लिए अनुमान {{amount}} inc GST (अंतिम मूल्य स्वीकृत बिड है)।",
     "distanceKmSuggested": "पिकअप/ड्रॉप से सुझाव: {{km}} km (आप संपादित कर सकते हैं)।",

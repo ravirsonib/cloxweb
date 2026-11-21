@@ -112,6 +112,7 @@ import {
   normalizeLoadTypesSelection,
   optionalPhoneSchema,
   parentsMissingRequiredSubtype,
+  positiveNumberFromInputSchema,
   requiredPhoneSchema,
   subtypeParentCode,
 } from '@/lib/validation';
@@ -607,6 +608,17 @@ export function formatFacilityLabel(val?: string | null): string {
   return val;
 }
 
+/** Form / API default when a stop weight is missing or NaN from empty number inputs. */
+const DEFAULT_STOP_WEIGHT_KG = 800;
+
+function positiveWeightKg(...candidates: unknown[]): number {
+  for (const candidate of candidates) {
+    const n = typeof candidate === 'number' ? candidate : Number(candidate);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return DEFAULT_STOP_WEIGHT_KG;
+}
+
 function buildStopsFromForm(
   values: Pick<
     JobCreateForm,
@@ -625,8 +637,10 @@ function buildStopsFromForm(
     | 'extraDropoffs'
     | 'receiverName'
     | 'receiverEmail'
-  >,
+  > &
+    Partial<Pick<JobCreateForm, 'deadWeightKg'>>,
 ) {
+  const fallbackWeightKg = positiveWeightKg(values.deadWeightKg, DEFAULT_STOP_WEIGHT_KG);
   const pickupState = values.pickupState?.trim() || 'VIC';
   const pickupDefaults = getStateStopDefaults(pickupState);
   const pickupPostcode = values.pickupPostcode?.trim() || pickupDefaults.pickupPostcode;
@@ -659,7 +673,7 @@ function buildStopsFromForm(
       postcode: pickupPostcode,
       lat: pickupCoords.lat,
       lng: pickupCoords.lng,
-      weightKg: Number(values.pickupWeightKg) || 0,
+      weightKg: positiveWeightKg(values.pickupWeightKg, fallbackWeightKg),
     },
   ];
 
@@ -680,7 +694,7 @@ function buildStopsFromForm(
         postcode: pPostcode,
         lat: Number((pCoords.lat - jitter).toFixed(5)),
         lng: Number((pCoords.lng - jitter).toFixed(5)),
-        weightKg: Number(p.weightKg) || 0,
+        weightKg: positiveWeightKg(p.weightKg, values.pickupWeightKg, fallbackWeightKg),
       });
     });
   }
@@ -693,7 +707,7 @@ function buildStopsFromForm(
     postcode: dropoffPostcode,
     lat: dropoffCoords.lat,
     lng: dropoffCoords.lng,
-    weightKg: Number(values.dropoffWeightKg) || 0,
+    weightKg: positiveWeightKg(values.dropoffWeightKg, values.pickupWeightKg, fallbackWeightKg),
     receiverName: values.receiverName?.trim() || undefined,
     receiverEmail: values.receiverEmail?.trim() || undefined,
   });
@@ -715,7 +729,12 @@ function buildStopsFromForm(
         postcode: dPostcode,
         lat: Number((dCoords.lat + jitter).toFixed(5)),
         lng: Number((dCoords.lng + jitter).toFixed(5)),
-        weightKg: Number(d.weightKg) || 0,
+        weightKg: positiveWeightKg(
+          d.weightKg,
+          values.dropoffWeightKg,
+          values.pickupWeightKg,
+          fallbackWeightKg,
+        ),
         receiverName:
           d.receiverName?.trim() || values.receiverName?.trim() || undefined,
         receiverEmail:
@@ -1221,10 +1240,14 @@ function JobDraftForm({
   const schema = z
     .object({
       pricingModel: z.enum(['PER_KM', 'HOURLY']),
-      distanceKm: z
-        .number()
-        .optional()
-        .transform((v) => (typeof v === 'number' && Number.isNaN(v) ? undefined : v)),
+      // Empty number inputs become NaN via valueAsNumber — map to undefined before z.number().
+      distanceKm: z.preprocess((v) => {
+        if (v === '' || v == null) return undefined;
+        if (typeof v === 'number' && Number.isNaN(v)) return undefined;
+        if (typeof v === 'string' && v.trim() === '') return undefined;
+        const n = typeof v === 'number' ? v : Number(v);
+        return Number.isFinite(n) ? n : undefined;
+      }, z.number().positive().optional()),
       pickupAt: z
         .string()
         .trim()
@@ -1247,20 +1270,22 @@ function JobDraftForm({
         .string()
         .trim()
         .regex(/^\d{4}$/, t('validation.postcodeInvalid', { defaultValue: 'Enter a 4-digit postcode' })),
-      pickupWeightKg: z
-        .number({ message: t('validation.weightPositive') })
-        .positive(t('validation.weightPositive'))
-        .max(MAX_JOB_DEAD_WEIGHT_KG, t('validation.weightMax', { max: MAX_JOB_DEAD_WEIGHT_KG })),
+      pickupWeightKg: positiveNumberFromInputSchema(MAX_JOB_DEAD_WEIGHT_KG, {
+        required: t('validation.weightPositive'),
+        positive: t('validation.weightPositive'),
+        max: t('validation.weightMax', { max: MAX_JOB_DEAD_WEIGHT_KG }),
+      }),
       extraPickups: z.array(
         z.object({
           addressLine: z.string().trim(),
           suburb: z.string().trim(),
           state: z.string().trim(),
           postcode: z.string().trim(),
-          weightKg: z
-            .number({ message: t('validation.weightPositive') })
-            .positive(t('validation.weightPositive'))
-            .max(MAX_JOB_DEAD_WEIGHT_KG, t('validation.weightMax', { max: MAX_JOB_DEAD_WEIGHT_KG })),
+          weightKg: positiveNumberFromInputSchema(MAX_JOB_DEAD_WEIGHT_KG, {
+            required: t('validation.weightPositive'),
+            positive: t('validation.weightPositive'),
+            max: t('validation.weightMax', { max: MAX_JOB_DEAD_WEIGHT_KG }),
+          }),
         }),
       ),
       dropoffAddressLine: z
@@ -1276,43 +1301,46 @@ function JobDraftForm({
         .string()
         .trim()
         .regex(/^\d{4}$/, t('validation.postcodeInvalid', { defaultValue: 'Enter a 4-digit postcode' })),
-      dropoffWeightKg: z
-        .number({ message: t('validation.weightPositive') })
-        .positive(t('validation.weightPositive'))
-        .max(MAX_JOB_DEAD_WEIGHT_KG, t('validation.weightMax', { max: MAX_JOB_DEAD_WEIGHT_KG })),
+      dropoffWeightKg: positiveNumberFromInputSchema(MAX_JOB_DEAD_WEIGHT_KG, {
+        required: t('validation.weightPositive'),
+        positive: t('validation.weightPositive'),
+        max: t('validation.weightMax', { max: MAX_JOB_DEAD_WEIGHT_KG }),
+      }),
       extraDropoffs: z.array(
         z.object({
           addressLine: z.string().trim(),
           suburb: z.string().trim(),
           state: z.string().trim(),
           postcode: z.string().trim(),
-          weightKg: z
-            .number({ message: t('validation.weightPositive') })
-            .positive(t('validation.weightPositive'))
-            .max(MAX_JOB_DEAD_WEIGHT_KG, t('validation.weightMax', { max: MAX_JOB_DEAD_WEIGHT_KG })),
+          weightKg: positiveNumberFromInputSchema(MAX_JOB_DEAD_WEIGHT_KG, {
+            required: t('validation.weightPositive'),
+            positive: t('validation.weightPositive'),
+            max: t('validation.weightMax', { max: MAX_JOB_DEAD_WEIGHT_KG }),
+          }),
           receiverName: z.string().trim().optional(),
           receiverEmail: z.string().trim().optional(),
         }),
       ),
-      deadWeightKg: z
-        .number({ message: t('validation.weightPositive') })
-        .positive(t('validation.weightPositive'))
-        .max(
-          MAX_JOB_DEAD_WEIGHT_KG,
-          t('validation.weightMax', { max: MAX_JOB_DEAD_WEIGHT_KG }),
-        ),
-      lengthCm: z
-        .number({ message: t('validation.dimensionPositive') })
-        .positive(t('validation.dimensionPositive'))
-        .max(MAX_JOB_LENGTH_CM, t('validation.lengthMax', { max: MAX_JOB_LENGTH_CM })),
-      widthCm: z
-        .number({ message: t('validation.dimensionPositive') })
-        .positive(t('validation.dimensionPositive'))
-        .max(MAX_JOB_WIDTH_CM, t('validation.widthMax', { max: MAX_JOB_WIDTH_CM })),
-      heightCm: z
-        .number({ message: t('validation.dimensionPositive') })
-        .positive(t('validation.dimensionPositive'))
-        .max(MAX_JOB_HEIGHT_CM, t('validation.heightMax', { max: MAX_JOB_HEIGHT_CM })),
+      deadWeightKg: positiveNumberFromInputSchema(MAX_JOB_DEAD_WEIGHT_KG, {
+        required: t('validation.weightPositive'),
+        positive: t('validation.weightPositive'),
+        max: t('validation.weightMax', { max: MAX_JOB_DEAD_WEIGHT_KG }),
+      }),
+      lengthCm: positiveNumberFromInputSchema(MAX_JOB_LENGTH_CM, {
+        required: t('validation.dimensionPositive'),
+        positive: t('validation.dimensionPositive'),
+        max: t('validation.lengthMax', { max: MAX_JOB_LENGTH_CM }),
+      }),
+      widthCm: positiveNumberFromInputSchema(MAX_JOB_WIDTH_CM, {
+        required: t('validation.dimensionPositive'),
+        positive: t('validation.dimensionPositive'),
+        max: t('validation.widthMax', { max: MAX_JOB_WIDTH_CM }),
+      }),
+      heightCm: positiveNumberFromInputSchema(MAX_JOB_HEIGHT_CM, {
+        required: t('validation.dimensionPositive'),
+        positive: t('validation.dimensionPositive'),
+        max: t('validation.heightMax', { max: MAX_JOB_HEIGHT_CM }),
+      }),
       loadDg: z.boolean(),
       loadTypes: z.array(z.string()).min(1).max(2).default(['GENERAL']),
       loadTypeSubtypes: z.array(z.string()).default([]),
@@ -1529,15 +1557,15 @@ function JobDraftForm({
       pickupSuburb: initialStopDefaults.pickupSuburb,
       pickupState: senderDefaultState,
       pickupPostcode: initialStopDefaults.pickupPostcode,
-      pickupWeightKg: 800,
+      pickupWeightKg: DEFAULT_STOP_WEIGHT_KG,
       extraPickups: [],
       dropoffAddressLine: initialStopDefaults.dropoffAddressLine,
       dropoffSuburb: initialStopDefaults.dropoffSuburb,
       dropoffState: senderDefaultState,
       dropoffPostcode: initialStopDefaults.dropoffPostcode,
-      dropoffWeightKg: 800,
+      dropoffWeightKg: DEFAULT_STOP_WEIGHT_KG,
       extraDropoffs: [],
-      deadWeightKg: 800,
+      deadWeightKg: DEFAULT_STOP_WEIGHT_KG,
       lengthCm: 120,
       widthCm: 80,
       heightCm: 80,
@@ -1575,6 +1603,10 @@ function JobDraftForm({
 
   const lastSuggestedKm = useRef<number | null>(null);
   const [suggestedKm, setSuggestedKm] = useState<number | null>(null);
+  const [routeSuggestStatus, setRouteSuggestStatus] = useState<
+    'idle' | 'loading' | 'ok' | 'error'
+  >('idle');
+  const routeSuggestPromise = useRef<Promise<JobRouteEstimate | null> | null>(null);
   const [routeEstimate, setRouteEstimate] = useState<JobRouteEstimate | null>(null);
   const hydratedEdit = useRef(false);
 
@@ -1830,6 +1862,7 @@ function JobDraftForm({
     if (role !== AppRole.SENDER) return;
     if (isEdit && !hydratedEdit.current) return;
     let cancelled = false;
+    setRouteSuggestStatus('loading');
     const stops = buildStopsFromForm({
       pricingModel,
       pickupAddressLine,
@@ -1844,18 +1877,20 @@ function JobDraftForm({
       dropoffPostcode,
       dropoffWeightKg,
       extraDropoffs: extraDropoffs ?? [],
+      deadWeightKg,
       receiverName: receiverName.trim() || 'Receiver',
       receiverEmail: receiverEmail.trim() || 'receiver@example.com',
     });
-    void previewJobRoute({
+    const request = previewJobRoute({
       pricingModel,
       stops,
       vehicleClass: minVehicleClass || undefined,
     })
       .then((route) => {
-        if (cancelled) return;
+        if (cancelled) return null;
         setRouteEstimate(route);
         setSuggestedKm(route.distanceKm);
+        setRouteSuggestStatus('ok');
         const current = form.getValues('distanceKm');
         const last = lastSuggestedKm.current;
         const isEmpty = current == null || !Number.isFinite(current) || current <= 0;
@@ -1864,14 +1899,18 @@ function JobDraftForm({
           form.setValue('distanceKm', route.distanceKm, { shouldValidate: true });
         }
         lastSuggestedKm.current = route.distanceKm;
+        return route;
       })
       .catch(() => {
-        /* keep manual entry if suggest fails */
+        if (cancelled) return null;
+        setRouteSuggestStatus('error');
+        return null;
       });
+    routeSuggestPromise.current = request;
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- suggest from pricing + stop addresses
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- suggest from pricing + stop geography
   }, [
     pricingModel,
     pickupState,
@@ -1932,6 +1971,7 @@ function JobDraftForm({
         dropoffPostcode,
         dropoffWeightKg,
         extraDropoffs: extraDropoffs ?? [],
+        deadWeightKg,
         receiverName,
         receiverEmail,
       }),
@@ -1949,6 +1989,7 @@ function JobDraftForm({
       dropoffPostcode,
       dropoffWeightKg,
       extraDropoffs,
+      deadWeightKg,
       receiverName,
       receiverEmail,
     ],
@@ -2109,12 +2150,33 @@ function JobDraftForm({
 
   const stepIndex = DRAFT_WIZARD_STEPS.indexOf(step);
 
+  /** Empty number inputs become NaN via valueAsNumber; restore form defaults so wizard steps stay submittable. */
+  const repairNaNCargoNumbers = () => {
+    const defaults = form.formState.defaultValues;
+    const repairs: Array<[keyof JobCreateForm, number]> = [
+      ['pickupWeightKg', Number(defaults?.pickupWeightKg) || DEFAULT_STOP_WEIGHT_KG],
+      ['dropoffWeightKg', Number(defaults?.dropoffWeightKg) || DEFAULT_STOP_WEIGHT_KG],
+      ['deadWeightKg', Number(defaults?.deadWeightKg) || DEFAULT_STOP_WEIGHT_KG],
+      ['lengthCm', Number(defaults?.lengthCm) || 120],
+      ['widthCm', Number(defaults?.widthCm) || 80],
+      ['heightCm', Number(defaults?.heightCm) || 80],
+    ];
+    for (const [key, fallback] of repairs) {
+      const current = form.getValues(key);
+      const n = typeof current === 'number' ? current : Number(current);
+      if (!Number.isFinite(n) || n <= 0) {
+        form.setValue(key, fallback, { shouldValidate: false, shouldDirty: false });
+      }
+    }
+  };
+
   const goToStep = async (next: DraftWizardStep) => {
     const targetIdx = DRAFT_WIZARD_STEPS.indexOf(next);
     if (targetIdx < 0 || targetIdx === stepIndex) return;
     if (targetIdx > stepIndex) {
       for (let i = stepIndex; i < targetIdx; i++) {
         const stepId = DRAFT_WIZARD_STEPS[i]!;
+        if (stepId === 'load') repairNaNCargoNumbers();
         const ok = await form.trigger(DRAFT_STEP_FIELDS[stepId]);
         if (!ok) {
           setStep(stepId);
@@ -2132,6 +2194,18 @@ function JobDraftForm({
 
   const goNext = async () => {
     if (step === 'confirm') return;
+    // Per-km: wait for in-flight route suggest so Distance is filled before validation.
+    if (step === 'route' && pricingModel === 'PER_KM') {
+      const current = form.getValues('distanceKm');
+      const needsSuggest = current == null || !Number.isFinite(current) || current <= 0;
+      if (needsSuggest && routeSuggestPromise.current) {
+        const route = await routeSuggestPromise.current;
+        if (route?.distanceKm != null && route.distanceKm > 0) {
+          form.setValue('distanceKm', route.distanceKm, { shouldValidate: true });
+        }
+      }
+    }
+    if (step === 'load') repairNaNCargoNumbers();
     await goToStep(DRAFT_WIZARD_STEPS[stepIndex + 1]!);
   };
 
@@ -2205,7 +2279,17 @@ function JobDraftForm({
             void goNext();
             return;
           }
-          void form.handleSubmit((values) => save.mutate(values as JobCreateForm))();
+          repairNaNCargoNumbers();
+          void form.handleSubmit(
+            (values) => save.mutate(values as JobCreateForm),
+            (errors) => {
+              const errorKeys = Object.keys(errors) as (keyof JobCreateForm)[];
+              const stepWithError = DRAFT_WIZARD_STEPS.find((stepId) =>
+                DRAFT_STEP_FIELDS[stepId].some((field) => errorKeys.includes(field)),
+              );
+              if (stepWithError) setStep(stepWithError);
+            },
+          )();
         }}
         noValidate
       >
@@ -2392,7 +2476,7 @@ function JobDraftForm({
                         suburb: '',
                         state: pickupState || senderDefaultState,
                         postcode: '',
-                        weightKg: Number(pickupWeightKg) || 800,
+                        weightKg: positiveWeightKg(pickupWeightKg, DEFAULT_STOP_WEIGHT_KG),
                       })
                     }
                   >
@@ -2539,7 +2623,7 @@ function JobDraftForm({
                         suburb: '',
                         state: dropoffState || senderDefaultState,
                         postcode: '',
-                        weightKg: Number(dropoffWeightKg) || 800,
+                        weightKg: positiveWeightKg(dropoffWeightKg, DEFAULT_STOP_WEIGHT_KG),
                         receiverName: '',
                         receiverEmail: '',
                       })
@@ -2562,9 +2646,18 @@ function JobDraftForm({
                 label={t('jobs.distanceKmLabel')}
                 required
                 hint={
-                  suggestedKm != null
-                    ? t('jobs.distanceKmSuggested', { km: suggestedKm })
-                    : t('jobs.distanceKmHint')
+                  routeSuggestStatus === 'loading'
+                    ? t('jobs.distanceKmSuggesting', {
+                        defaultValue: 'Suggesting distance from pickup and drop…',
+                      })
+                    : suggestedKm != null
+                      ? t('jobs.distanceKmSuggested', { km: suggestedKm })
+                      : routeSuggestStatus === 'error'
+                        ? t('jobs.distanceKmSuggestFailed', {
+                            defaultValue:
+                              'Could not auto-suggest distance — enter the route km manually.',
+                          })
+                        : t('jobs.distanceKmHint')
                 }
                 error={form.formState.errors.distanceKm?.message}
                 {...form.register('distanceKm', { valueAsNumber: true })}

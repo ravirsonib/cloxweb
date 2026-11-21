@@ -35,6 +35,9 @@ export type ComplianceCaseDocument = {
   originalFilename: string | null;
   createdAt: string;
   vehicleId?: string | null;
+  vehicleUnitId?: string | null;
+  vehicleUnitRole?: string | null;
+  vehicleUnitLabel?: string | null;
   vehicleRegistration?: string | null;
   vehicleLabel?: string | null;
   vehicleStatus?: string | null;
@@ -146,6 +149,8 @@ export function createUploadIntent(payload: {
   sizeBytes: number;
   expiresAt?: string;
   vehicleId?: string;
+  vehicleUnitId?: string;
+  vehicleUnitRole?: 'POWERED' | 'TRAILER_1' | 'TRAILER_2' | 'TRAILER_3';
   driverId?: string;
 }) {
   if (payload.sizeBytes > MAX_UPLOAD_BYTES) {
@@ -271,6 +276,8 @@ export async function uploadAndConfirmDocument(input: {
   docType: string;
   file: File;
   vehicleId?: string;
+  vehicleUnitId?: string;
+  vehicleUnitRole?: 'POWERED' | 'TRAILER_1' | 'TRAILER_2' | 'TRAILER_3';
   driverId?: string;
   expiresAt?: string;
   /** Fallback name stem when the File has no usable name */
@@ -288,6 +295,8 @@ export async function uploadAndConfirmDocument(input: {
     mimeType: prepared.mimeType,
     sizeBytes: prepared.file.size,
     vehicleId: input.vehicleId,
+    vehicleUnitId: input.vehicleUnitId,
+    vehicleUnitRole: input.vehicleUnitRole,
     driverId: input.driverId,
     expiresAt: input.expiresAt,
   });

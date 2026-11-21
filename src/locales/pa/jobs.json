@@ -60,6 +60,8 @@
     "pricingHourlyHint": "ਇੱਕ ਪਿਕਅੱਪ → ਡ੍ਰੌਪਆਫ਼ ਲਈ ਸਮਾਂ-ਆਧਾਰਿਤ ਕੋਟ।",
     "distanceKmLabel": "ਦੂਰੀ (km)",
     "distanceKmHint": "ਰੂਟ ਦੂਰੀ ਦਰਜ ਕਰੋ। ਉਪਲਬਧ ਹੋਣ 'ਤੇ ਪਿਕਅੱਪ/ਡ੍ਰੌਪ ਤੋਂ ਸੁਝਾਅ।",
+    "distanceKmSuggesting": "ਪਿਕਅੱਪ ਅਤੇ ਡ੍ਰੌਪ ਤੋਂ ਦੂਰੀ ਸੁਝਾਈ ਜਾ ਰਹੀ ਹੈ…",
+    "distanceKmSuggestFailed": "ਦੂਰੀ ਆਪਣੇ ਆਪ ਸੁਝਾਈ ਨਹੀਂ ਜਾ ਸਕੀ — ਰੂਟ km ਖੁਦ ਦਰਜ ਕਰੋ।",
     "estimateRangeHint": "ਇਸ ਲੋਡ ਕਲਾਸ ਬਨਾਮ ਅਗਲੀ ਵੱਡੀ ਵਾਹਨ ਲਈ ਆਮ ਰੇਂਜ: {{min}} – {{max}} inc GST (ਮਾਰਗਦਰਸ਼ਨ; ਅੰਤਿਮ ਕੀਮਤ ਸਵੀਕਾਰ ਬਿਡ ਹੈ)।",
     "estimateForClassHint": "ਕਲਾਸ {{class}} ਲਈ ਅਨੁਮਾਨ {{amount}} inc GST (ਅੰਤਿਮ ਕੀਮਤ ਸਵੀਕਾਰ ਬਿਡ ਹੈ)।",
     "distanceKmSuggested": "ਪਿਕਅੱਪ/ਡ੍ਰੌਪ ਤੋਂ ਸੁਝਾਅ: {{km}} km (ਤੁਸੀਂ ਸੋਧ ਸਕਦੇ ਹੋ)।",

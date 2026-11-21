@@ -67,6 +67,8 @@ export type CarrierOnboarding = {
     profileComplete: boolean;
     connectReady: boolean;
     fleetReady: boolean;
+    /** At least one ACTIVE driver — invites/pending alone do not count. */
+    driversReady: boolean;
     capabilitiesSet: boolean;
     opsApproved: boolean;
     canBid: boolean;

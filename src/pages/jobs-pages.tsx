@@ -4291,15 +4291,15 @@ export function JobDetailPage() {
     if (proposalSort === 'reliability') {
       return list.sort(
         (a, b) =>
-          (b.carrierCompany?.reliabilityScore ?? 100) -
-          (a.carrierCompany?.reliabilityScore ?? 100),
+          (b.reliabilityScore ?? b.carrierCompany?.reliabilityScore ?? 100) -
+          (a.reliabilityScore ?? a.carrierCompany?.reliabilityScore ?? 100),
       );
     }
     return list.sort((a, b) => {
       if (a.status === 'SUBMITTED' && b.status !== 'SUBMITTED') return -1;
       if (a.status !== 'SUBMITTED' && b.status === 'SUBMITTED') return 1;
-      const aRel = a.carrierCompany?.reliabilityScore ?? 100;
-      const bRel = b.carrierCompany?.reliabilityScore ?? 100;
+      const aRel = a.reliabilityScore ?? a.carrierCompany?.reliabilityScore ?? 100;
+      const bRel = b.reliabilityScore ?? b.carrierCompany?.reliabilityScore ?? 100;
       if (Math.abs(aRel - bRel) >= 10) return bRel - aRel;
       return a.amountIncGstCents - b.amountIncGstCents;
     });
@@ -4847,12 +4847,21 @@ export function JobDetailPage() {
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0 space-y-1">
+                        {(() => {
+                          const masked = p.carrierCompanyIdMasked === true || !p.carrierCompany;
+                          const reliability =
+                            p.reliabilityScore ?? p.carrierCompany?.reliabilityScore ?? null;
+                          return (
+                            <>
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="font-semibold text-clox-ink">
-                            {p.carrierCompany?.tradingName ||
-                              p.carrierCompany?.legalName ||
-                              p.carrierLabel}
-                            {p.carrierCompany?.tradingName &&
+                            {masked
+                              ? p.carrierLabel
+                              : p.carrierCompany?.tradingName ||
+                                p.carrierCompany?.legalName ||
+                                p.carrierLabel}
+                            {!masked &&
+                            p.carrierCompany?.tradingName &&
                             p.carrierCompany.legalName &&
                             p.carrierCompany.tradingName !== p.carrierCompany.legalName ? (
                               <span className="ml-1.5 text-xs font-normal text-clox-mute">
@@ -4860,15 +4869,15 @@ export function JobDetailPage() {
                               </span>
                             ) : null}
                           </p>
-                          {typeof p.carrierCompany?.reliabilityScore === 'number' ? (
+                          {typeof reliability === 'number' ? (
                             <span
                               className={cn(
                                 'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold',
-                                p.carrierCompany.reliabilityScore >= 90
+                                reliability >= 90
                                   ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
-                                  : p.carrierCompany.reliabilityScore >= 75
+                                  : reliability >= 75
                                     ? 'border border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300'
-                                    : p.carrierCompany.reliabilityScore >= 60
+                                    : reliability >= 60
                                       ? 'border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
                                       : 'border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300',
                               )}
@@ -4879,10 +4888,10 @@ export function JobDetailPage() {
                             >
                               <ShieldCheck className="h-3 w-3 shrink-0" />
                               <span>
-                                {p.carrierCompany.reliabilityScore}%{' '}
+                                {reliability}%{' '}
                                 {t('companies.reliabilityShort', { defaultValue: 'Reliability' })}
                               </span>
-                              {p.carrierCompany.reliabilityScore >= 90 ? (
+                              {reliability >= 90 ? (
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                                   ★ {t('companies.topRated', { defaultValue: 'Top Rated' })}
                                 </span>
@@ -4890,9 +4899,16 @@ export function JobDetailPage() {
                             </span>
                           ) : null}
                         </div>
-                        {(p.carrierCompany?.email ||
-                          p.carrierCompany?.phone ||
-                          p.carrierCompany?.abn) ? (
+                        {masked ? (
+                          <p className="text-xs text-clox-faint">
+                            {t('jobs.view.carrierMaskedHint', {
+                              defaultValue:
+                                'Carrier and driver details are shared on the completion invoice after delivery.',
+                            })}
+                          </p>
+                        ) : (p.carrierCompany?.email ||
+                            p.carrierCompany?.phone ||
+                            p.carrierCompany?.abn) ? (
                           <p className="text-xs text-clox-mute">
                             {[
                               p.carrierCompany?.email,
@@ -4911,7 +4927,7 @@ export function JobDetailPage() {
                             ? ` · ${t('jobs.view.etaMinutes', { minutes: p.etaMinutes })}`
                             : ''}
                           {p.vehicleClass ? ` · ${p.vehicleClass}` : ''}
-                          {p.vehicleRegistration || p.vehicleLabel
+                          {!masked && (p.vehicleRegistration || p.vehicleLabel)
                             ? ` (${[p.vehicleLabel, p.vehicleRegistration]
                                 .filter(
                                   (val, i, arr) => Boolean(val) && arr.indexOf(val) === i,
@@ -4919,7 +4935,7 @@ export function JobDetailPage() {
                                 .join(' · ')})`
                             : ''}
                         </p>
-                        {(p.driver?.name || p.driver?.email) ? (
+                        {!masked && (p.driver?.name || p.driver?.email) ? (
                           <p className="text-xs text-clox-faint">
                             {[
                               p.driver.name,
@@ -4932,7 +4948,14 @@ export function JobDetailPage() {
                               .join(' · ')}
                           </p>
                         ) : null}
-                        {p.dgDocumentId ? (
+                        {masked && p.dgVerified ? (
+                          <p className="mt-1 text-xs text-clox-mute">
+                            {t('jobs.view.dgVerifiedMasked', {
+                              defaultValue: 'Dangerous Goods documents verified for this offer.',
+                            })}
+                          </p>
+                        ) : null}
+                        {!masked && p.dgDocumentId ? (
                           <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-clox-border bg-clox-surface p-2 text-xs">
                             <div className="flex items-center gap-1.5 min-w-0 flex-1">
                               <FileText className="h-3.5 w-3.5 shrink-0 text-clox-orange" />
@@ -4961,6 +4984,9 @@ export function JobDetailPage() {
                             </Button>
                           </div>
                         ) : null}
+                            </>
+                          );
+                        })()}
                       </div>
                       <StatusPill
                         tone={

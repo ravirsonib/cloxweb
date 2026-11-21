@@ -60,6 +60,7 @@
     "noteRejectRequired": "ਰੱਦ ਕਰਨ ਦਾ ਕਾਰਨ ਦੱਸਦਾ ਨੋਟ ਸ਼ਾਮਲ ਕਰੋ।",
     "noteInfoRequired": "ਦੱਸੋ ਕਿ Ops ਨੂੰ ਹੁਣ ਕਿਹੜੀ ਜਾਣਕਾਰੀ ਚਾਹੀਦੀ ਹੈ।",
     "grossAudLabel": "ਕੁੱਲ ਬੋਲੀ (AUD)",
+    "carrierPayoutAudLabel": "ਤੁਹਾਡੀ ਪੇਆਉਟ (AUD)",
     "etaMinutesLabel": "ETA (ਮਿੰਟ)",
     "pricingModelLabel": "ਕੀਮਤ ਮਾਡਲ",
     "hourlyPatternLabel": "ਪ੍ਰਤੀ ਘੰਟਾ ਪੈਟਰਨ",

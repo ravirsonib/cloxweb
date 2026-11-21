@@ -31,6 +31,13 @@ export type CompanyProfileResponse = {
     invoiceState: string | null;
     invoicePostcode: string | null;
     gstRegistered: boolean;
+    /** When the invite attribution was recorded (ISO), if any. */
+    referredAt: string | null;
+    /** Partner / Ops who onboarded this company — read-only; never email. */
+    onboardedBy: {
+      name: string | null;
+      role: string;
+    } | null;
   };
   fieldTiers: {
     selfServe: string[];

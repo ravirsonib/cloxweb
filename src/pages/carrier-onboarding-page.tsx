@@ -321,7 +321,7 @@ export function CarrierOnboardingPage() {
               {
                 id: 'drivers',
                 label: t('carrierOnboarding.readyDrivers'),
-                done: data.drivers.length >= 1,
+                done: data.goNoGo.driversReady,
                 pendingHint: t('carrierOnboarding.readyDriversPending'),
               },
               {
@@ -358,7 +358,7 @@ export function CarrierOnboardingPage() {
               >
                 {t('carrierOnboarding.addTruckCta')}
               </Link>
-            ) : data.drivers.length < 1 ? (
+            ) : !data.goNoGo.driversReady ? (
               <Link
                 to="/carrier/drivers"
                 className="clox-btn clox-btn-cta inline-flex items-center text-sm"

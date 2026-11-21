@@ -208,6 +208,8 @@
       "pickup": "पिकअप",
       "etaMinutes": "ETA {{minutes}} min",
       "bidAmount": "{{amount}} inc GST",
+      "carrierMaskedHint": "कैरियर और ड्राइवर विवरण डिलीवरी के बाद पूरा होने वाले इनवॉइस पर साझा होते हैं।",
+      "dgVerifiedMasked": "इस ऑफ़र के लिए खतरनाक माल दस्तावेज़ सत्यापित हैं।",
       "jobId": "जॉब ID"
     },
     "acceptAndCharge": "स्वीकार करें और चार्ज करें",
@@ -377,7 +379,9 @@
   "market": {
     "title": "जॉब बोर्ड",
     "loading": "जॉब्स लोड हो रहे हैं…",
-    "netPayoutHintDefault": "प्लेटफ़ॉर्म शुल्क के बाद नेट भुगतान (70%)",
+    "netPayoutHintDefault": "राशि आपकी पेआउट (inc GST) दिखाती है।",
+    "yourBidPayout": "आपकी पेआउट {{amount}} inc GST",
+    "payoutFieldHint": "इस जॉब के लिए आपको मिलने वाली राशि दर्ज करें (inc GST)।",
     "dgSuffix": "· DG",
     "fatigueSuffix": "· थकान +{{minutes}}m",
     "netApprox": "· net ~{{amount}}",
@@ -402,7 +406,7 @@
     },
     "priorityRescue": "प्राथमिकता बचाव",
     "rescueDiscount": "{{percent}}% कैरियर छूट",
-    "minBidHint": "न्यूनतम bid ≈ {{amount}} (inc GST)",
+    "minBidHint": "न्यूनतम पेआउट ≈ {{amount}} (inc GST)",
     "placeBid": "Bid लगाएँ",
     "vehicleDriverLine": "वाहन: {{registration}} · ड्राइवर: {{email}}",
     "minClassLine": "जॉब न्यूनतम वाहन क्लास: {{minClass}}",

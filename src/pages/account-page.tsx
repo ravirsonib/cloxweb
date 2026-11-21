@@ -251,11 +251,44 @@ function CompanyProfileSection({
     (kind === 'sender' &&
       (data.company.status === 'ACTIVE' || data.company.status === 'PENDING_PAYMENT'));
 
+  const onboardedByLabel = (() => {
+    const onboardedBy = data.company.onboardedBy;
+    if (!onboardedBy) return t('account.onboardedByOrganic');
+    const roleKey = `account.onboardedByRole.${onboardedBy.role}`;
+    const roleLabel = t(roleKey, {
+      defaultValue: t('account.onboardedByRole.OTHER'),
+    });
+    const name = onboardedBy.name?.trim() || t('account.onboardedByNameFallback');
+    return t('account.onboardedByValue', { name, role: roleLabel });
+  })();
+
+  const onboardedAtLabel = data.company.referredAt
+    ? new Date(data.company.referredAt).toLocaleDateString()
+    : null;
+
   if (!postApproval) {
     return (
-      <Notice tone="info" className="mt-8">
-        {t('account.profileNotReady')}
-      </Notice>
+      <div className="mt-10 space-y-4">
+        <section className="clox-card p-5">
+          <h3 className="font-display text-base font-semibold text-clox-ink">
+            {t('account.onboardedByTitle')}
+          </h3>
+          <p className="mt-1 text-xs text-clox-mute">{t('account.onboardedByHint')}</p>
+          <dl className="mt-4 space-y-2 text-sm">
+            <div>
+              <dt className="text-xs text-clox-mute">{t('account.onboardedByLabel')}</dt>
+              <dd className="mt-0.5 font-medium text-clox-ink">{onboardedByLabel}</dd>
+            </div>
+            {onboardedAtLabel ? (
+              <div>
+                <dt className="text-xs text-clox-mute">{t('account.onboardedAtLabel')}</dt>
+                <dd className="mt-0.5 text-clox-ink">{onboardedAtLabel}</dd>
+              </div>
+            ) : null}
+          </dl>
+        </section>
+        <Notice tone="info">{t('account.profileNotReady')}</Notice>
+      </div>
     );
   }
 
@@ -267,6 +300,25 @@ function CompanyProfileSection({
         </h2>
         <p className="mt-1 text-sm text-clox-mute">{t('account.profileSubtitle')}</p>
       </div>
+
+      <section className="clox-card p-5">
+        <h3 className="font-display text-base font-semibold text-clox-ink">
+          {t('account.onboardedByTitle')}
+        </h3>
+        <p className="mt-1 text-xs text-clox-mute">{t('account.onboardedByHint')}</p>
+        <dl className="mt-4 space-y-2 text-sm">
+          <div>
+            <dt className="text-xs text-clox-mute">{t('account.onboardedByLabel')}</dt>
+            <dd className="mt-0.5 font-medium text-clox-ink">{onboardedByLabel}</dd>
+          </div>
+          {onboardedAtLabel ? (
+            <div>
+              <dt className="text-xs text-clox-mute">{t('account.onboardedAtLabel')}</dt>
+              <dd className="mt-0.5 text-clox-ink">{onboardedAtLabel}</dd>
+            </div>
+          ) : null}
+        </dl>
+      </section>
 
       {pending ? (
         <Notice

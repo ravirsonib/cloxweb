@@ -60,6 +60,7 @@
     "noteRejectRequired": "अस्वीकृति का कारण नोट में लिखें।",
     "noteInfoRequired": "Ops को अभी क्या जानकारी चाहिए, लिखें।",
     "grossAudLabel": "सकल बोली (AUD)",
+    "carrierPayoutAudLabel": "आपकी पेआउट (AUD)",
     "etaMinutesLabel": "ETA (मिनट)",
     "pricingModelLabel": "मूल्य मॉडल",
     "hourlyPatternLabel": "प्रति घंटा पैटर्न",

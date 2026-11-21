@@ -208,6 +208,8 @@
       "pickup": "ਪਿਕਅੱਪ",
       "etaMinutes": "ETA {{minutes}} min",
       "bidAmount": "{{amount}} inc GST",
+      "carrierMaskedHint": "ਕੈਰੀਅਰ ਅਤੇ ਡਰਾਈਵਰ ਵੇਰਵੇ ਡਿਲੀਵਰੀ ਤੋਂ ਬਾਅਦ ਪੂਰਨਤਾ ਇਨਵੌਇਸ ਉੱਤੇ ਸਾਂਝੇ ਹੁੰਦੇ ਹਨ।",
+      "dgVerifiedMasked": "ਇਸ ਆਫਰ ਲਈ ਖ਼ਤਰਨਾਕ ਮਾਲ ਦਸਤਾਵੇਜ਼ ਤਸਦੀਕ ਹਨ।",
       "jobId": "ਜੌਬ ID"
     },
     "acceptAndCharge": "ਸਵੀਕਾਰ ਕਰੋ ਅਤੇ ਚਾਰਜ ਕਰੋ",
@@ -377,7 +379,9 @@
   "market": {
     "title": "ਜੌਬ ਬੋਰਡ",
     "loading": "ਜੌਬਸ ਲੋਡ ਹੋ ਰਹੀਆਂ ਹਨ…",
-    "netPayoutHintDefault": "ਪਲੇਟਫਾਰਮ ਫੀਸ ਤੋਂ ਬਾਅਦ ਨੈੱਟ ਭੁਗਤਾਨ (ਕੈਰੀਅਰ ਨੂੰ 70%)",
+    "netPayoutHintDefault": "ਰਕਮ ਤੁਹਾਡੀ ਪੇਆਉਟ (inc GST) ਦਿਖਾਉਂਦੀ ਹੈ।",
+    "yourBidPayout": "ਤੁਹਾਡੀ ਪੇਆਉਟ {{amount}} inc GST",
+    "payoutFieldHint": "ਇਸ ਜੌਬ ਲਈ ਤੁਹਾਨੂੰ ਮਿਲਣ ਵਾਲੀ ਰਕਮ ਦਰਜ ਕਰੋ (inc GST)।",
     "dgSuffix": "· DG",
     "fatigueSuffix": "· ਥਕਾਵਟ +{{minutes}}m",
     "netApprox": "· net ~{{amount}}",
@@ -402,7 +406,7 @@
     },
     "priorityRescue": "ਪ੍ਰਾਥਮਿਕਤਾ ਬਚਾਅ",
     "rescueDiscount": "{{percent}}% ਕੈਰੀਅਰ ਛੋਟ",
-    "minBidHint": "ਘੱਟੋ-ਘੱਟ ਬੋਲੀ ≈ {{amount}} (inc GST)",
+    "minBidHint": "ਘੱਟੋ-ਘੱਟ ਪੇਆਉਟ ≈ {{amount}} (inc GST)",
     "placeBid": "ਬੋਲੀ ਲਗਾਓ",
     "vehicleDriverLine": "ਵਾਹਨ: {{registration}} · ਡਰਾਈਵਰ: {{email}}",
     "minClassLine": "ਜੌਬ ਘੱਟੋ-ਘੱਟ ਵਾਹਨ ਕਲਾਸ: {{minClass}}",

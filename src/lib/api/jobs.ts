@@ -75,6 +75,8 @@ export type JobSummary = {
     carrierLabel: string;
     carrierCompanyId?: string;
     carrierCompanyIdMasked?: boolean;
+    /** Present when identity is masked (pre-completion). */
+    reliabilityScore?: number | null;
     carrierCompany?: {
       id: string;
       legalName: string;
@@ -96,7 +98,9 @@ export type JobSummary = {
     } | null;
     dgDocumentId?: string | null;
     dgDocumentFilename?: string | null;
-    netToCarrierCents: number;
+    dgVerified?: boolean;
+    /** Omitted on sender job detail (split math hidden). */
+    netToCarrierCents?: number;
   }>;
   payment?: {
     id: string;
@@ -258,7 +262,10 @@ export type MarketBoardJob = {
   billableHours: number | null;
   marketplacePriority?: boolean;
   rescueDiscountPercent?: number | null;
+  /** Gross settlement floor (internal). Prefer minBidNetToCarrierCents in carrier UI. */
   minBidIncGstCents?: number | null;
+  /** Carrier-facing minimum payout (net inc GST). */
+  minBidNetToCarrierCents?: number | null;
   siteManeuverability?: string | null;
   siteFacility?: string | null;
   pickupAt: string | null;

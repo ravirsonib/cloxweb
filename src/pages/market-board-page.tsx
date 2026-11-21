@@ -44,7 +44,7 @@ import {
 } from '@/components/ui';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
 import { cn } from '@/lib/cn';
-import { formatDollars, formatDollarsAmount } from '@/lib/currency';
+import { formatDollars } from '@/lib/currency';
 import {
   carrierDriverSelectLabel,
   carrierVehicleSelectLabel,
@@ -213,10 +213,14 @@ export function MarketBoardPage() {
     [activeDrivers],
   );
 
-  const minBidIncGstCents = selectedJob?.minBidIncGstCents ?? null;
+  /** Carrier bids in take-home (net). Prefer server fee-aware min — no client re-math. */
+  const minBidNetCents =
+    selectedJob?.minBidNetToCarrierCents != null && selectedJob.minBidNetToCarrierCents > 0
+      ? selectedJob.minBidNetToCarrierCents
+      : null;
   const minBidAud =
-    minBidIncGstCents != null && minBidIncGstCents > 0
-      ? Math.round(minBidIncGstCents) / 100
+    minBidNetCents != null && minBidNetCents > 0
+      ? Math.round(minBidNetCents) / 100
       : null;
 
   const schema = z
@@ -232,8 +236,8 @@ export function MarketBoardPage() {
           code: z.ZodIssueCode.custom,
           path: ['amountAud'],
           message: t('market.bidBelowFloor', {
-            defaultValue: 'Bid cannot be below the minimum {{amount}} inc GST',
-            amount: formatDollars(minBidIncGstCents ?? 0),
+            defaultValue: 'Your payout cannot be below the minimum {{amount}} inc GST',
+            amount: formatDollars(minBidNetCents ?? 0),
           }),
         });
       }
@@ -351,10 +355,13 @@ export function MarketBoardPage() {
           (!selectedJob.requiresDg || Boolean(v.hasDg && v.dgDocumentId)),
       ) ?? null;
     const nextVehicleId = eligibleVehicle?.id ?? '';
-    const grossCents =
-      selectedJob.minBidIncGstCents ?? selectedJob.estimateIncGstCents ?? null;
+    const netCents =
+      selectedJob.minBidNetToCarrierCents ??
+      selectedJob.estimateNetToCarrierCents ??
+      selectedJob.displayNetToCarrierCents ??
+      null;
     const nextAmount =
-      grossCents != null && grossCents > 0 ? Math.round(grossCents) / 100 : 150;
+      netCents != null && netCents > 0 ? Math.round(netCents) / 100 : 150;
     const routeMins = selectedJob.routeDurationMinutes;
     const fatigue = selectedJob.routeFatigueBreakMinutes ?? 0;
     const nextEta =
@@ -371,7 +378,14 @@ export function MarketBoardPage() {
         ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 50);
     return () => window.clearTimeout(timer);
-  }, [selectedJob, selectableVehicles, form, dynamicRanks, dynamicMaxChargeable]);
+  }, [
+    selectedJob,
+    selectableVehicles,
+    form,
+    dynamicRanks,
+    dynamicMaxChargeable,
+    board.data?.carrierPercent,
+  ]);
 
   // Suggest a driver that matches the selected vehicle (licence + schedule + availability).
   useEffect(() => {
@@ -450,11 +464,15 @@ export function MarketBoardPage() {
       if (!driverGate.ok) {
         throw new Error(driverGate.reason || t('market.errorDriverBusy'));
       }
+      const payoutCents = Math.round(Number(values.amountAud) * 100);
+      if (!Number.isFinite(payoutCents) || payoutCents <= 0) {
+        throw new Error(t('validation.bidAmountPositive'));
+      }
       return submitBid({
         jobId,
         vehicleId: values.vehicleId,
         driverId: values.driverId,
-        amountIncGstCents: Math.round(values.amountAud * 100),
+        amountIncGstCents: payoutCents,
         etaMinutes: values.etaMinutes,
         dgDocumentId: selectedJob?.requiresDg ? (vehicle?.dgDocumentId ?? null) : null,
       });
@@ -483,14 +501,27 @@ export function MarketBoardPage() {
       const nested =
         body?.message && typeof body.message === 'object' ? body.message : null;
       const code = body?.code || nested?.code;
-      if (code === 'PRICE_BELOW_FLOOR') {
-        const floorInc = body?.floorIncGstCents ?? nested?.floorIncGstCents;
+      if (code === 'PRICE_BELOW_FLOOR' || code === 'BID_BELOW_MIN_BASE') {
+        const bodyObj = body as {
+          floorNetIncGstCents?: number;
+          minNetIncGstCents?: number;
+          floorIncGstCents?: number;
+          message?: string | { floorNetIncGstCents?: number; minNetIncGstCents?: number };
+        } | null;
+        const nestedObj =
+          bodyObj?.message && typeof bodyObj.message === 'object' ? bodyObj.message : null;
+        const floorNet =
+          bodyObj?.floorNetIncGstCents ??
+          nestedObj?.floorNetIncGstCents ??
+          bodyObj?.minNetIncGstCents ??
+          nestedObj?.minNetIncGstCents ??
+          minBidNetCents;
         toast.error(
-          floorInc != null
+          floorNet != null
             ? t('market.bidBelowFloorServer', {
                 defaultValue:
-                  'Server rejected this bid — minimum is {{amount}} inc GST. Adjust and resubmit.',
-                amount: formatDollars(floorInc),
+                  'Server rejected this bid — your payout minimum is {{amount}} inc GST. Adjust and resubmit.',
+                amount: formatDollars(floorNet),
               })
             : getErrorDetail(err),
         );
@@ -709,7 +740,7 @@ export function MarketBoardPage() {
                         {j.alreadyBid && j.myNetToCarrierCents != null
                           ? ` ${t('market.yourBidNetApprox', {
                               amount: formatDollars(j.myNetToCarrierCents),
-                              defaultValue: '· your bid net ~{{amount}}',
+                              defaultValue: '· your payout ~{{amount}}',
                             })}`
                           : j.displayNetToCarrierCents != null
                             ? ` ${t('market.netApprox', {
@@ -723,8 +754,10 @@ export function MarketBoardPage() {
                         {j.rescueDiscountPercent != null && j.rescueDiscountPercent > 0
                           ? ` · ${t('market.rescueDiscount', { percent: j.rescueDiscountPercent })}`
                           : ''}
-                        {j.minBidIncGstCents != null
-                          ? ` · ${t('market.minBidHint', { amount: formatDollars(j.minBidIncGstCents) })}`
+                        {j.minBidNetToCarrierCents != null
+                          ? ` · ${t('market.minBidHint', {
+                              amount: formatDollars(j.minBidNetToCarrierCents),
+                            })}`
                           : ''}
                       </p>
                       {(j.siteManeuverability || j.siteFacility) && (
@@ -818,22 +851,17 @@ export function MarketBoardPage() {
                   'You have an active bid on this job. Your assigned vehicle and driver are reserved pending sender award.',
               })}
             </Notice>
-            {selectedJob.myBidIncGstCents != null ? (
+            {selectedJob.myNetToCarrierCents != null ||
+            selectedJob.myBidIncGstCents != null ? (
               <div className="rounded-clox-sm border border-clox-border bg-clox-surface-alt/40 p-3 text-sm">
                 <p className="font-medium text-clox-ink">
-                  {t('market.yourBidGross', {
-                    amount: formatDollars(selectedJob.myBidIncGstCents),
-                    defaultValue: 'Your bid {{amount}} inc GST',
+                  {t('market.yourBidPayout', {
+                    defaultValue: 'Your payout {{amount}} inc GST',
+                    amount: formatDollars(
+                      selectedJob.myNetToCarrierCents ?? selectedJob.myBidIncGstCents ?? 0,
+                    ),
                   })}
                 </p>
-                {selectedJob.myNetToCarrierCents != null ? (
-                  <p className="mt-1 text-xs text-clox-mute">
-                    {t('market.yourNetApprox', {
-                      amount: formatDollars(selectedJob.myNetToCarrierCents),
-                      percent: board.data?.carrierPercent ?? 70,
-                    })}
-                  </p>
-                ) : null}
               </div>
             ) : null}
             <div className="border-t border-clox-border pt-3">
@@ -1121,12 +1149,12 @@ export function MarketBoardPage() {
             </Notice>
           ) : null}
 
-          {minBidIncGstCents != null && minBidIncGstCents > 0 ? (
+          {minBidNetCents != null && minBidNetCents > 0 ? (
             <JobRateFloorPanel
               className="mb-3"
               fallback={{
                 exGstCents: null,
-                incGstCents: minBidIncGstCents,
+                incGstCents: minBidNetCents,
               }}
               estimateIncGstCents={
                 Number.isFinite(amountWatch) ? Math.round(Number(amountWatch) * 100) : null
@@ -1137,14 +1165,18 @@ export function MarketBoardPage() {
             type="number"
             step="0.01"
             min={minBidAud ?? undefined}
-            label={t('validation.grossAudLabel')}
+            label={t('validation.carrierPayoutAudLabel', {
+              defaultValue: 'Your payout (AUD)',
+            })}
             hint={
               minBidAud != null
                 ? t('market.minBidFieldHint', {
-                    defaultValue: 'Minimum bid {{amount}} inc GST (hard floor)',
-                    amount: formatDollars(minBidIncGstCents ?? 0),
+                    defaultValue: 'Minimum payout {{amount}} inc GST',
+                    amount: formatDollars(minBidNetCents ?? 0),
                   })
-                : undefined
+                : t('market.payoutFieldHint', {
+                    defaultValue: 'Enter what you want to receive for this job (inc GST).',
+                  })
             }
             required
             error={form.formState.errors.amountAud?.message}
@@ -1157,14 +1189,6 @@ export function MarketBoardPage() {
             error={form.formState.errors.etaMinutes?.message}
             {...form.register('etaMinutes', { valueAsNumber: true })}
           />
-          <p className="mb-4 text-xs text-clox-mute">
-            {t('market.yourNetApprox', {
-              amount: formatDollarsAmount(
-                ((Number(amountWatch) || 0) * (board.data?.carrierPercent ?? 70)) / 100,
-              ),
-              percent: board.data?.carrierPercent ?? 70,
-            })}
-          </p>
           <Button
             type="submit"
             variant="cta"

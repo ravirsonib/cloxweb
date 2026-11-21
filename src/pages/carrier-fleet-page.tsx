@@ -85,6 +85,7 @@ import {
   defaultCombinationConfigForClass,
   isArticulatedClass,
   requiredUnitsForVehicle,
+  unitRwcNeedsUpload,
   VEHICLE_UNIT_ROLE_LABELS,
   type CombinationConfigCode,
   type VehicleUnitRoleCode,
@@ -715,7 +716,50 @@ export function CarrierFleetPage() {
       if (!editingVehicle) {
         throw new Error(t('loading'));
       }
-      return updateCarrierVehicle(editingVehicle.id, toVehiclePayload(values, unitRegs));
+      if (!companyId) {
+        throw new Error(getErrorDetail(companyQuery.error) || t('loading'));
+      }
+
+      const rwcUpload = rwcFile;
+      const unitFilesSnap = { ...unitRwcFiles };
+      const unitRegsSnap = { ...unitRegs };
+      const payload = toVehiclePayload(values, unitRegsSnap);
+      const roles = payload.units.map((u) => u.role as VehicleUnitRoleCode);
+      const existingUnits = editingVehicle.compliance?.units ?? [];
+
+      for (const role of roles) {
+        const existing = existingUnits.find((u) => u.role === role);
+        const state =
+          existing?.rwc?.state ??
+          (role === 'POWERED' ? editingVehicle.compliance?.rwc?.state : null) ??
+          null;
+        const file = role === 'POWERED' ? rwcUpload : unitFilesSnap[role];
+        if (role !== 'POWERED' && !(unitRegsSnap[role] ?? '').trim()) {
+          throw new Error(
+            t('fleet.unitRegoRequired', { unit: VEHICLE_UNIT_ROLE_LABELS[role] }),
+          );
+        }
+        if (unitRwcNeedsUpload(state) && !file) {
+          throw new Error(
+            role === 'POWERED'
+              ? t('fleet.rwcRequiredOnEditError')
+              : t('fleet.unitRwcRequired', { unit: VEHICLE_UNIT_ROLE_LABELS[role] }),
+          );
+        }
+      }
+
+      const updated = await updateCarrierVehicle(editingVehicle.id, payload);
+      const unitsSnap = updated.compliance?.units ?? existingUnits;
+      for (const role of roles) {
+        const file = role === 'POWERED' ? rwcUpload : unitFilesSnap[role];
+        if (!file) continue;
+        const unit = unitsSnap.find((u) => u.role === role);
+        await uploadVehicleRwc(companyId, editingVehicle.id, file, {
+          vehicleUnitId: unit?.id ?? undefined,
+          vehicleUnitRole: role,
+        });
+      }
+      return updated;
     },
     onSuccess: async () => {
       resetVehicleFormPanel();
@@ -1262,7 +1306,7 @@ export function CarrierFleetPage() {
           (row.compliance?.units?.length ?? 0) > 1 ? (
             <div className="flex flex-wrap gap-1">
               {row.compliance!.units
-                .filter((u) => !u.rwc.state || u.rwc.state === 'MISSING' || u.rwc.state === 'EXPIRED')
+                .filter((u) => unitRwcNeedsUpload(u.rwc.state))
                 .map((u) => (
                   <IconFileButton
                     key={u.role}
@@ -1919,6 +1963,35 @@ export function CarrierFleetPage() {
               onSubmit={form.handleSubmit((values) => {
                 if (busy) return;
                 if (isEditing) {
+                  const existingUnits = editingVehicle?.compliance?.units ?? [];
+                  for (const role of formRequiredRoles) {
+                    const existing = existingUnits.find((u) => u.role === role);
+                    const state =
+                      existing?.rwc?.state ??
+                      (role === 'POWERED'
+                        ? editingVehicle?.compliance?.rwc?.state
+                        : null) ??
+                      null;
+                    const file = role === 'POWERED' ? rwcFile : unitRwcFiles[role];
+                    if (role !== 'POWERED' && !(unitRegs[role] ?? '').trim()) {
+                      setRwcFormError(
+                        t('fleet.unitRegoRequired', {
+                          unit: VEHICLE_UNIT_ROLE_LABELS[role],
+                        }),
+                      );
+                      return;
+                    }
+                    if (unitRwcNeedsUpload(state) && !file) {
+                      setRwcFormError(
+                        role === 'POWERED'
+                          ? t('fleet.rwcRequiredOnEditError')
+                          : t('fleet.unitRwcRequired', {
+                              unit: VEHICLE_UNIT_ROLE_LABELS[role],
+                            }),
+                      );
+                      return;
+                    }
+                  }
                   setRwcFormError(null);
                   updateMutation.mutate(values);
                   return;
@@ -2032,62 +2105,117 @@ export function CarrierFleetPage() {
                     disabled={capacityLocked}
                     {...form.register('gcmKg', { valueAsNumber: true })}
                   />
-                  {!isEditing ? (
-                    <>
-                      <div className="sm:col-span-2 space-y-3 rounded-clox-sm border border-clox-border-soft p-3">
-                        <div>
-                          <p className="text-xs font-semibold text-clox-ink">{t('fleet.rwcLabel')}</p>
-                          <p className="mt-0.5 text-[11px] text-clox-mute">{t('fleet.rwcHint')}</p>
-                          {isArticulatedClass(watchedClass) ? (
-                            <p className="mt-1 text-[11px] text-clox-mute">
-                              {t('fleet.multiUnitHint')}
+                  <div className="sm:col-span-2 space-y-3 rounded-clox-sm border border-clox-border-soft p-3">
+                    <div>
+                      <p className="text-xs font-semibold text-clox-ink">{t('fleet.rwcLabel')}</p>
+                      <p className="mt-0.5 text-[11px] text-clox-mute">
+                        {isEditing ? t('fleet.editRwcHint') : t('fleet.rwcHint')}
+                      </p>
+                      {isArticulatedClass(watchedClass) ? (
+                        <p className="mt-1 text-[11px] text-clox-mute">
+                          {t('fleet.multiUnitHint')}
+                        </p>
+                      ) : null}
+                    </div>
+                    {(() => {
+                      const poweredState =
+                        editingVehicle?.compliance?.units?.find((u) => u.role === 'POWERED')?.rwc
+                          ?.state ??
+                        editingVehicle?.compliance?.rwc?.state ??
+                        null;
+                      const poweredNeeds = !isEditing || unitRwcNeedsUpload(poweredState);
+                      return (
+                        <div className="space-y-1">
+                          {isEditing && poweredState ? (
+                            <p className="text-[11px] text-clox-mute">
+                              {poweredNeeds
+                                ? t('fleet.unitRwcNeedsUpload', {
+                                    unit: VEHICLE_UNIT_ROLE_LABELS.POWERED,
+                                    state: poweredState,
+                                  })
+                                : t('fleet.unitRwcOkOptional', {
+                                    unit: VEHICLE_UNIT_ROLE_LABELS.POWERED,
+                                    state: poweredState,
+                                  })}
                             </p>
                           ) : null}
+                          <FileInput
+                            className="mb-0"
+                            label={
+                              formTrailerRoles.length > 0
+                                ? t('fleet.unitRwcLabel', {
+                                    unit: VEHICLE_UNIT_ROLE_LABELS.POWERED,
+                                  })
+                                : t('fleet.rwcLabel')
+                            }
+                            hint={
+                              isEditing && !poweredNeeds
+                                ? t('fleet.unitRwcReplaceHint')
+                                : undefined
+                            }
+                            accept=".pdf,image/jpeg,image/png,image/webp"
+                            fileName={rwcFile?.name ?? null}
+                            onChange={(event) => {
+                              setRwcFile(event.target.files?.[0] ?? null);
+                              setRwcFormError(null);
+                            }}
+                          />
                         </div>
-                        <FileInput
-                          className="mb-0"
-                          label={
-                            formTrailerRoles.length > 0
-                              ? t('fleet.unitRwcLabel', {
-                                  unit: VEHICLE_UNIT_ROLE_LABELS.POWERED,
-                                })
-                              : t('fleet.rwcLabel')
-                          }
-                          accept=".pdf,image/jpeg,image/png,image/webp"
-                          fileName={rwcFile?.name ?? null}
-                          onChange={(event) => {
-                            setRwcFile(event.target.files?.[0] ?? null);
-                            setRwcFormError(null);
-                          }}
-                        />
-                        {formTrailerRoles.map((role) => (
-                          <div key={role} className="space-y-2 border-t border-clox-border-soft pt-3">
-                            <Field
-                              label={t('fleet.unitRegoLabel', {
-                                unit: VEHICLE_UNIT_ROLE_LABELS[role],
-                              })}
-                              value={unitRegs[role] ?? ''}
-                              onChange={(e) => {
-                                setUnitRegs((prev) => ({ ...prev, [role]: e.target.value }));
-                                setRwcFormError(null);
-                              }}
-                            />
-                            <FileInput
-                              className="mb-0"
-                              label={t('fleet.unitRwcLabel', {
-                                unit: VEHICLE_UNIT_ROLE_LABELS[role],
-                              })}
-                              accept=".pdf,image/jpeg,image/png,image/webp"
-                              fileName={unitRwcFiles[role]?.name ?? null}
-                              onChange={(event) => {
-                                const file = event.target.files?.[0] ?? null;
-                                setUnitRwcFiles((prev) => ({ ...prev, [role]: file }));
-                                setRwcFormError(null);
-                              }}
-                            />
-                          </div>
-                        ))}
-                      </div>
+                      );
+                    })()}
+                    {formTrailerRoles.map((role) => {
+                      const existing = editingVehicle?.compliance?.units?.find(
+                        (u) => u.role === role,
+                      );
+                      const state = existing?.rwc?.state ?? null;
+                      const needs = !isEditing || unitRwcNeedsUpload(state);
+                      return (
+                        <div key={role} className="space-y-2 border-t border-clox-border-soft pt-3">
+                          <Field
+                            label={t('fleet.unitRegoLabel', {
+                              unit: VEHICLE_UNIT_ROLE_LABELS[role],
+                            })}
+                            value={unitRegs[role] ?? ''}
+                            onChange={(e) => {
+                              setUnitRegs((prev) => ({ ...prev, [role]: e.target.value }));
+                              setRwcFormError(null);
+                            }}
+                          />
+                          {isEditing && state ? (
+                            <p className="text-[11px] text-clox-mute">
+                              {needs
+                                ? t('fleet.unitRwcNeedsUpload', {
+                                    unit: VEHICLE_UNIT_ROLE_LABELS[role],
+                                    state,
+                                  })
+                                : t('fleet.unitRwcOkOptional', {
+                                    unit: VEHICLE_UNIT_ROLE_LABELS[role],
+                                    state,
+                                  })}
+                            </p>
+                          ) : null}
+                          <FileInput
+                            className="mb-0"
+                            label={t('fleet.unitRwcLabel', {
+                              unit: VEHICLE_UNIT_ROLE_LABELS[role],
+                            })}
+                            hint={
+                              isEditing && !needs ? t('fleet.unitRwcReplaceHint') : undefined
+                            }
+                            accept=".pdf,image/jpeg,image/png,image/webp"
+                            fileName={unitRwcFiles[role]?.name ?? null}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0] ?? null;
+                              setUnitRwcFiles((prev) => ({ ...prev, [role]: file }));
+                              setRwcFormError(null);
+                            }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {!isEditing ? (
+                    <>
                       <div className="sm:col-span-2">
                         <ChoiceCheck
                           checked={hasDgForm}

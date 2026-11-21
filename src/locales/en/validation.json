@@ -60,6 +60,7 @@
     "noteRejectRequired": "Add a note explaining the rejection.",
     "noteInfoRequired": "Say what information Ops still needs.",
     "grossAudLabel": "Gross bid (AUD)",
+    "carrierPayoutAudLabel": "Your payout (AUD)",
     "etaMinutesLabel": "ETA (minutes)",
     "pricingModelLabel": "Pricing model",
     "hourlyPatternLabel": "Hourly pattern",

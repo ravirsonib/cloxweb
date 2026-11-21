@@ -60,3 +60,11 @@ export function isArticulatedClass(vehicleClass: string | null | undefined): boo
   const cls = (vehicleClass ?? '').trim().toUpperCase();
   return cls === 'SEMI' || cls === 'CONTAINER' || cls === 'BDOUBLE' || cls === 'ROAD_TRAIN';
 }
+
+/**
+ * Unit RWC/COI still needs a (re)upload from the carrier.
+ * Includes PENDING (e.g. stuck UPLOAD_PENDING) — not only MISSING/EXPIRED.
+ */
+export function unitRwcNeedsUpload(state: string | null | undefined): boolean {
+  return !state || state === 'MISSING' || state === 'EXPIRED' || state === 'PENDING';
+}

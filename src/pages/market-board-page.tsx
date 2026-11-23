@@ -16,12 +16,12 @@ import {
   listCarrierVehicles,
   listTripExceptions,
   openDocumentContent,
+  previewBidMinimum,
   submitBid,
   suggestFleetAssetsForJob,
   withdrawProposalByJobId,
   type MarketBoardJob,
 } from '@/lib/api';
-import { JobRateFloorPanel } from '@/components/job-rate-floor-panel';
 import {
   formatManeuverabilityLabel,
   formatFacilityLabel,
@@ -213,44 +213,55 @@ export function MarketBoardPage() {
     [activeDrivers],
   );
 
-  /** Carrier bids in take-home (net). Prefer server fee-aware min — no client re-math. */
-  const minBidNetCents =
-    selectedJob?.minBidNetToCarrierCents != null && selectedJob.minBidNetToCarrierCents > 0
-      ? selectedJob.minBidNetToCarrierCents
-      : null;
-  const minBidAud =
-    minBidNetCents != null && minBidNetCents > 0
-      ? Math.round(minBidNetCents) / 100
-      : null;
-
-  const schema = z
-    .object({
-      amountAud: z.number().positive(t('validation.bidAmountPositive')),
-      etaMinutes: z.number().int().min(1, t('validation.etaPositive')),
-      vehicleId: z.string().uuid(t('market.errorSelectVehicle')),
-      driverId: z.string().uuid(t('market.errorSelectDriver')),
-    })
-    .superRefine((values, ctx) => {
-      if (minBidAud != null && values.amountAud + 1e-9 < minBidAud) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['amountAud'],
-          message: t('market.bidBelowFloor', {
-            defaultValue: 'Your payout cannot be below the minimum {{amount}} inc GST',
-            amount: formatDollars(minBidNetCents ?? 0),
-          }),
-        });
-      }
-    });
-
   const form = useForm<BidForm>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(
+      z.object({
+        amountAud: z.number().positive(t('validation.bidAmountPositive')),
+        etaMinutes: z.number().int().min(1, t('validation.etaPositive')),
+        vehicleId: z.string().uuid(t('market.errorSelectVehicle')),
+        driverId: z.string().uuid(t('market.errorSelectDriver')),
+      }),
+    ),
     defaultValues: { amountAud: 150, etaMinutes: 90, vehicleId: '', driverId: '' },
   });
 
   const amountWatch = form.watch('amountAud');
   const vehicleIdWatch = form.watch('vehicleId');
   const driverIdWatch = form.watch('driverId');
+
+  /** Vehicle-aware min (same formula as submit). Falls back to board min for job min class. */
+  const bidMinQuery = useQuery({
+    queryKey: ['matching', 'bid-minimum', jobId, vehicleIdWatch || null],
+    queryFn: () => previewBidMinimum(jobId!, vehicleIdWatch),
+    enabled:
+      role === AppRole.TRANSPORT_COMPANY &&
+      Boolean(jobId) &&
+      Boolean(vehicleIdWatch) &&
+      Boolean(selectedJob) &&
+      !selectedJob?.alreadyBid,
+    staleTime: 10_000,
+  });
+
+  const minBidNetCents =
+    bidMinQuery.data?.minBidNetToCarrierCents != null &&
+    bidMinQuery.data.minBidNetToCarrierCents > 0
+      ? bidMinQuery.data.minBidNetToCarrierCents
+      : selectedJob?.minBidNetToCarrierCents != null &&
+          selectedJob.minBidNetToCarrierCents > 0
+        ? selectedJob.minBidNetToCarrierCents
+        : null;
+  const minBidAud =
+    minBidNetCents != null && minBidNetCents > 0
+      ? Math.round(minBidNetCents) / 100
+      : null;
+
+  useEffect(() => {
+    if (minBidAud == null) return;
+    const current = form.getValues('amountAud');
+    if (!Number.isFinite(current) || current + 1e-9 < minBidAud) {
+      form.setValue('amountAud', minBidAud, { shouldValidate: true });
+    }
+  }, [minBidAud, form]);
 
   const minLicences = vehicleClassesMeta.data?.minLicences;
 
@@ -372,12 +383,6 @@ export function MarketBoardPage() {
     form.setValue('etaMinutes', nextEta);
     form.setValue('vehicleId', nextVehicleId);
     form.setValue('driverId', '');
-    const timer = window.setTimeout(() => {
-      document
-        .getElementById('market-bid-form')
-        ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }, 50);
-    return () => window.clearTimeout(timer);
   }, [
     selectedJob,
     selectableVehicles,
@@ -467,6 +472,14 @@ export function MarketBoardPage() {
       const payoutCents = Math.round(Number(values.amountAud) * 100);
       if (!Number.isFinite(payoutCents) || payoutCents <= 0) {
         throw new Error(t('validation.bidAmountPositive'));
+      }
+      if (minBidNetCents != null && payoutCents + 1e-9 < minBidNetCents) {
+        throw new Error(
+          t('market.bidBelowFloor', {
+            defaultValue: 'Your payout cannot be below the minimum {{amount}} inc GST',
+            amount: formatDollars(minBidNetCents),
+          }),
+        );
       }
       return submitBid({
         jobId,
@@ -677,6 +690,7 @@ export function MarketBoardPage() {
                   const tone = MARKET_TONE[bucket];
                   const selected = jobId === j.id;
                   return (
+                    <div className="space-y-3">
                     <div
                       role="button"
                       tabIndex={0}
@@ -822,76 +836,17 @@ export function MarketBoardPage() {
                         </div>
                       ) : null}
                     </div>
-                  );
-                }}
-              />
-              <PaginationBar page={page} totalPages={totalPages} onPageChange={setPage} />
-            </>
-          )}
-        </>
-      )}
-
-      {jobId && selectedJob ? (
-        selectedJob.alreadyBid ? (
-          <div className="clox-card mt-8 max-w-md p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="font-display font-semibold text-clox-ink">
-                {t('market.bidStatusTitle', { defaultValue: 'Submitted Bid' })}
-              </h2>
-              <StatusPill tone="ok">
-                {t('market.bidSubmittedPill', { defaultValue: 'SUBMITTED' })}
-              </StatusPill>
-            </div>
-            <p className="text-sm font-medium text-clox-ink">
-              {selectedJob.title ?? selectedJob.id.slice(0, 8)}
-            </p>
-            <Notice tone="info">
-              {t('market.alreadyBidNotice', {
-                defaultValue:
-                  'You have an active bid on this job. Your assigned vehicle and driver are reserved pending sender award.',
-              })}
-            </Notice>
-            {selectedJob.myNetToCarrierCents != null ||
-            selectedJob.myBidIncGstCents != null ? (
-              <div className="rounded-clox-sm border border-clox-border bg-clox-surface-alt/40 p-3 text-sm">
-                <p className="font-medium text-clox-ink">
-                  {t('market.yourBidPayout', {
-                    defaultValue: 'Your payout {{amount}} inc GST',
-                    amount: formatDollars(
-                      selectedJob.myNetToCarrierCents ?? selectedJob.myBidIncGstCents ?? 0,
-                    ),
-                  })}
-                </p>
-              </div>
-            ) : null}
-            <div className="border-t border-clox-border pt-3">
-              <p className="mb-2 text-xs text-clox-mute">
-                {t('market.withdrawExplanation', {
-                  defaultValue:
-                    'Need to assign this vehicle or driver to another job? You can withdraw your bid at any time before the sender accepts.',
-                })}
-              </p>
-              <Button
-                type="button"
-                variant="secondary"
-                size="block"
-                className="text-clox-error border-clox-error/40 hover:bg-clox-error/5"
-                disabled={withdraw.isPending}
-                onClick={() => handleWithdrawBid(selectedJob.id)}
-              >
-                {withdraw.isPending && withdraw.variables === selectedJob.id
-                  ? t('loading')
-                  : t('market.withdrawBid', { defaultValue: 'Withdraw bid' })}
-              </Button>
-            </div>
-          </div>
-        ) : (
-        <form
-          id="market-bid-form"
-          className="clox-card mt-8 max-w-md scroll-mt-24 p-4"
-          onSubmit={form.handleSubmit((values) => bid.mutate(values))}
-          noValidate
-        >
+                    {selected && !j.alreadyBid && selectedJob ? (
+                      <div
+                        className="clox-card max-w-md scroll-mt-24 p-4"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <form
+                          id="market-bid-form"
+                          onSubmit={form.handleSubmit((values) => bid.mutate(values))}
+                          noValidate
+                        >
           <h2 className="font-display font-semibold text-clox-ink">{t('market.placeBid')}</h2>
           <p className="mb-1 mt-1 text-sm font-medium text-clox-ink">
             {selectedJob.title ?? selectedJob.id.slice(0, 8)}
@@ -1161,18 +1116,22 @@ export function MarketBoardPage() {
           ) : null}
 
           {minBidNetCents != null && minBidNetCents > 0 ? (
-            <JobRateFloorPanel
-              className="mb-3"
-              fallback={{
-                exGstCents: null,
-                incGstCents: minBidNetCents,
-                versionId: selectedJob?.rateFloorVersionId ?? null,
-                versionLabel: selectedJob?.rateFloorVersionLabel ?? null,
-              }}
-              estimateIncGstCents={
-                Number.isFinite(amountWatch) ? Math.round(Number(amountWatch) * 100) : null
-              }
-            />
+            <Notice tone="info" className="mb-3">
+              <p className="text-sm font-medium text-clox-ink">
+                {t('market.minPayoutNotice', {
+                  defaultValue:
+                    'Minimum payout: {{amount}} inc GST — bids cannot go below this for the selected vehicle.',
+                  amount: formatDollars(minBidNetCents),
+                })}
+              </p>
+              {bidMinQuery.isFetching ? (
+                <p className="mt-1 text-xs text-clox-mute">
+                  {t('market.minPayoutUpdating', {
+                    defaultValue: 'Updating minimum for selected vehicle…',
+                  })}
+                </p>
+              ) : null}
+            </Notice>
           ) : null}
           <Field
             type="number"
@@ -1220,9 +1179,19 @@ export function MarketBoardPage() {
           >
             {bid.isPending ? t('submitting') : t('market.submitProposal')}
           </Button>
-        </form>
-        )
-      ) : null}
+                        </form>
+                      </div>
+                    ) : null}
+                    </div>
+                  );
+                }}
+              />
+              <PaginationBar page={page} totalPages={totalPages} onPageChange={setPage} />
+            </>
+          )}
+        </>
+      )}
+
     </div>
   );
 }

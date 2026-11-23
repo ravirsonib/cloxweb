@@ -65,6 +65,13 @@ export function JobRateFloorPanel({
     estimateIncGstCents != null &&
     estimateIncGstCents > 0 &&
     estimateIncGstCents < inc;
+  const estimateAbove =
+    estimateIncGstCents != null &&
+    estimateIncGstCents > 0 &&
+    estimateIncGstCents > inc;
+  /** Avoid "ex · inc" looking duplicated when GST was 0 or snapshot matched. */
+  const exDistinct =
+    ex != null && ex > 0 && Math.abs(ex - inc) >= 1;
 
   const diesel =
     floor?.breakdown && typeof floor.breakdown.dieselCplUsed === 'number'
@@ -81,16 +88,16 @@ export function JobRateFloorPanel({
     <div className={cn('space-y-2', className)}>
       <Notice tone={below ? 'warn' : 'info'}>
         <p className="text-sm font-medium text-clox-ink">
-          {ex != null && ex > 0
+          {exDistinct
             ? t('jobs.hardFloorHint', {
                 defaultValue:
-                  'Minimum price (hard floor): {{ex}} ex GST · {{inc}} inc GST — jobs and bids cannot go below this.',
-                ex: formatDollars(ex),
+                  'Absolute minimum (hard floor): {{ex}} ex GST · {{inc}} inc GST — publish and bids cannot go below this.',
+                ex: formatDollars(ex!),
                 inc: formatDollars(inc),
               })
             : t('jobs.hardFloorHintIncOnly', {
                 defaultValue:
-                  'Minimum bid (hard floor): {{inc}} inc GST — bids cannot go below this.',
+                  'Absolute minimum (hard floor): {{inc}} inc GST — publish and bids cannot go below this.',
                 inc: formatDollars(inc),
               })}
         </p>
@@ -99,6 +106,15 @@ export function JobRateFloorPanel({
             {t('jobs.floorBelowEstimate', {
               defaultValue:
                 'Current estimate ({{est}}) is below the floor. Publish and bids are blocked until the estimate meets the minimum.',
+              est: formatDollars(estimateIncGstCents ?? 0),
+            })}
+          </p>
+        ) : null}
+        {estimateAbove ? (
+          <p className="mt-1 text-xs text-clox-mute">
+            {t('jobs.floorVsEstimateHint', {
+              defaultValue:
+                'Market estimate {{est}} is above this floor. The estimate is guidance for typical pricing; the hard floor is only the absolute minimum.',
               est: formatDollars(estimateIncGstCents ?? 0),
             })}
           </p>

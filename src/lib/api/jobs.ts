@@ -490,6 +490,28 @@ export function getMarketBoard() {
   return http.get<MarketBoard>('/matching/board').then((r) => r.data);
 }
 
+export type BidMinimumPreview = {
+  jobId: string;
+  vehicleId: string;
+  vehicleClass: string;
+  minBidIncGstCents: number;
+  minBidNetToCarrierCents: number;
+  rateFloorIncGstCents: number | null;
+  rateFloorVersionId: string | null;
+  carrierPercent: number;
+  feePercent: number;
+  feeMode: string;
+};
+
+/** Same floors as bid submit for the selected vehicle class. */
+export function previewBidMinimum(jobId: string, vehicleId: string) {
+  return http
+    .get<BidMinimumPreview>(`/matching/jobs/${jobId}/bid-minimum`, {
+      params: { vehicleId },
+    })
+    .then((r) => r.data);
+}
+
 export function submitBid(payload: {
   jobId: string;
   vehicleId: string;

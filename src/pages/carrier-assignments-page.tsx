@@ -456,16 +456,10 @@ export function CarrierAssignmentsPage() {
                           {a.paidAndConfirmed
                             ? ` · ${t('assignments.paidAndConfirmed')}`
                             : ` · ${t('assignments.awaitingPayment')}`}
-                          {' · '}
-                          {t('assignments.fareGross', {
-                            amount: formatDollars(a.amountIncGstCents),
-                            defaultValue: '{{amount}} gross',
-                          })}
                           {a.netToCarrierCents != null
                             ? ` · ${t('assignments.fareNet', {
                                 amount: formatDollars(a.netToCarrierCents),
-                                percent: a.carrierPercent ?? 70,
-                                defaultValue: 'net ~{{amount}} ({{percent}}%)',
+                                defaultValue: 'Your payout {{amount}}',
                               })}`
                             : null}
                           {a.tripBlockedUntilPaid

@@ -50,6 +50,7 @@ import {
   hasAllTripSafetyCheckItems,
   type TripSafetyCheckItemId,
 } from '@/lib/trip-safety-checklist';
+import { arriveAtDropoffViaGeofence } from '@/lib/trip-arrive-dropoff';
 import { AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 import { ExternalLink } from 'lucide-react';
@@ -553,49 +554,47 @@ export function DriverTripDetailPage() {
   });
 
   /**
-   * Option A — “I’ve arrived”: send location samples and let geofence set AT_DROPOFF.
-   * Prefer device GPS when already near the stop; otherwise use stop coordinates
-   * (cab / GPS denied) so arrival stays location-backed, not a status flip.
+   * “I’ve arrived”: close unfinished earlier stops (pickup etc.), then ping drop-off
+   * so geofence can set AT_DROPOFF. Prefer device GPS when near; else drop pin.
    */
   const arriveAtDropoff = useMutation({
     mutationFn: async () => {
-      const stops = tripQuery.data?.job?.stops ?? [];
-      const progress = tripQuery.data?.stopsProgress ?? [];
-      const dropoffs = stops.filter(
-        (s) => String(s.stopType).toUpperCase() === 'DROPOFF',
-      );
-      const target =
-        dropoffs.find((s) => {
-          const p = s.id
-            ? progress.find((sp) => sp.jobStopId === s.id)
-            : progress.find((sp) => sp.stop?.sequence === s.sequence);
-          return !p?.enteredAt && !p?.exitedAt;
-        }) ??
-        dropoffs.find((s) => s.lat != null && s.lng != null) ??
-        dropoffs[0];
-      if (!target || target.lat == null || target.lng == null) {
-        throw new Error(t('trips.arriveAtDropoffNoCoords'));
-      }
-      const stopPoint = { lat: Number(target.lat), lng: Number(target.lng) };
       const device = await readDevicePosition();
-      const nearEnough =
-        device != null && distanceMeters(device, stopPoint) <= 500;
-      // Slight offset keeps sample clearly inside the stop radius.
-      const point = nearEnough && device
-        ? device
-        : { lat: stopPoint.lat + 0.00005, lng: stopPoint.lng + 0.00005 };
-      // antiBounceSamples default is 2 — dual inside ping in one tap.
-      await tripLocation(tripId, point.lat, point.lng);
-      return tripLocation(tripId, point.lat, point.lng);
+      try {
+        return await arriveAtDropoffViaGeofence(tripId, device, distanceMeters);
+      } catch (err) {
+        const code = err instanceof Error ? err.message : String(err);
+        if (code === 'NO_DROPOFF') {
+          throw new Error(t('trips.arriveAtDropoffNoDropHint'));
+        }
+        if (code === 'DROPOFF_NO_COORDS') {
+          throw new Error(t('trips.arriveAtDropoffNoCoords'));
+        }
+        if (code.startsWith('PRIOR_STOP_NO_COORDS:')) {
+          const place = code.slice('PRIOR_STOP_NO_COORDS:'.length);
+          throw new Error(
+            t('trips.arriveAtDropoffPriorNoCoords', {
+              defaultValue:
+                'Earlier stop {{place}} has no map coordinates, so drop-off arrival is blocked. Ask Ops to fix stop coordinates.',
+              place,
+            }),
+          );
+        }
+        if (code.startsWith('ARRIVAL_NOT_DROPOFF:')) {
+          const stopType = code.slice('ARRIVAL_NOT_DROPOFF:'.length);
+          throw new Error(
+            t('trips.arriveAtDropoffStillBlocked', {
+              defaultValue:
+                'Still recorded on {{stopType}}, not At drop-off. Tap I’ve arrived again (earlier stops are closed first), or use Update GPS / I’ve left on the earlier stop.',
+              stopType,
+            }),
+          );
+        }
+        throw err;
+      }
     },
-    onSuccess: async (result) => {
-      const geofence = (result as { geofence?: { entered?: boolean; stopType?: string } })
-        ?.geofence;
-      setMsg(
-        geofence?.entered && String(geofence.stopType ?? '').toUpperCase() === 'DROPOFF'
-          ? t('trips.msgLocationAtDropoff')
-          : t('trips.msgLocationPingArriving'),
-      );
+    onSuccess: async () => {
+      setMsg(t('trips.msgLocationAtDropoff'));
       await refresh();
     },
     onError: (e) => setMsg(getErrorDetail(e) || t('trips.arriveAtDropoffFailed')),

@@ -8,11 +8,13 @@ import { z } from 'zod';
 import {
   addCarrierVehicle,
   confirmCarrierConnect,
+  createCarrierConnectManageLink,
   getCarrierOnboarding,
   getErrorDetail,
   getRegionsMeta,
   getVehicleClassesMeta,
   inviteCarrierDriver,
+  openCarrierConnectManageLink,
   openDocumentContent,
   resendCarrierDriverInvite,
   setupCarrierConnect,
@@ -745,6 +747,13 @@ function ConnectStep({
     },
   });
 
+  const manageBank = useMutation({
+    mutationFn: () => createCarrierConnectManageLink('/carrier/onboarding'),
+    onSuccess: (link) => {
+      openCarrierConnectManageLink(link);
+    },
+  });
+
   const setup = useMutation({
     mutationFn: () => setupCarrierConnect(),
     onSuccess: (data) => {
@@ -841,8 +850,10 @@ function ConnectStep({
         <Notice tone="info">{t('carrierOnboarding.connectMockHint')}</Notice>
       )}
 
-      {(setup.isError || confirm.isError) && (
-        <Notice tone="error">{getErrorDetail(setup.error ?? confirm.error)}</Notice>
+      {(setup.isError || confirm.isError || manageBank.isError) && (
+        <Notice tone="error">
+          {getErrorDetail(setup.error ?? confirm.error ?? manageBank.error)}
+        </Notice>
       )}
 
       {(isConnectReturn || sessionPending) && confirm.isPending ? (
@@ -888,6 +899,18 @@ function ConnectStep({
               : canConfirm
                 ? t('carrierOnboarding.createConnectAccountAgain')
                 : t('carrierOnboarding.createConnectAccount')}
+          </Button>
+        ) : !mock ? (
+          <Button
+            variant="secondary"
+            disabled={manageBank.isPending || confirm.isPending}
+            onClick={() => manageBank.mutate()}
+          >
+            {manageBank.isPending
+              ? t('account.payoutAccountOpening', { defaultValue: 'Opening Stripe…' })
+              : t('account.payoutAccountManageCta', {
+                  defaultValue: 'Manage / change bank account on Stripe',
+                })}
           </Button>
         ) : null}
         <Button

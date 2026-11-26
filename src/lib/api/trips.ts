@@ -104,10 +104,26 @@ export type SenderTrack = {
   startedAt?: string;
   latest?: { lat: number; lng: number; recordedAt: string } | null;
   locations?: Array<{ lat: number; lng: number; recordedAt: string }>;
+  route?: {
+    encodedPolyline: string;
+    distanceKm: number;
+    durationMinutes: number;
+    source: 'valhalla';
+  } | null;
+  etaMinutes?: number | null;
+  distanceKmRemaining?: number | null;
+  nextStopId?: string | null;
   job?: {
     id: string;
     title: string | null;
-    stops: Array<{ suburb: string | null; stopType: string; sequence?: number }>;
+    stops: Array<{
+      id?: string;
+      suburb: string | null;
+      stopType: string;
+      sequence?: number;
+      lat?: number | null;
+      lng?: number | null;
+    }>;
   };
   stopsProgress?: Array<{
     id: string;

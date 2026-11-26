@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { EmptyBlock, LoadingBlock } from '@/components/status-blocks';
+import { ServiceHealthPanel } from '@/components/service-health-panel';
 import {
   Button,
   DataCardList,
@@ -17,7 +18,8 @@ import { formatAuditAction, formatAuditMetadata } from '@/lib/audit-format';
 import { getErrorDetail, listAudit } from '@/lib/api';
 import type { AuditListItem } from '@/lib/api/admin';
 import { formatDateTime, formatLeadType } from '@/lib/leads';
-import { AuditAction } from '@/shared/types';
+import { AdminRole, AuditAction } from '@/shared/types';
+import { useAuthStore } from '@/stores/auth-store';
 
 const ACTION_OPTIONS = Object.values(AuditAction);
 const PAGE_SIZE = 20;
@@ -74,8 +76,14 @@ function AuditLeadCell({ item }: { item: AuditListItem }) {
 
 export function AuditPage() {
   const { t } = useTranslation('common');
+  const role = useAuthStore((s) => s.role);
+  const canViewServiceHealth = role === AdminRole.SUPER_ADMIN;
   const [searchParams, setSearchParams] = useSearchParams();
   const [leadIdDraft, setLeadIdDraft] = useState(searchParams.get('leadId') || '');
+
+  const rawTab = searchParams.get('tab');
+  const activeTab: 'trail' | 'health' =
+    canViewServiceHealth && rawTab === 'health' ? 'health' : 'trail';
 
   const page = Number(searchParams.get('page') || '1') || 1;
   const action = searchParams.get('action') || '';
@@ -94,11 +102,19 @@ export function AuditPage() {
   const auditQuery = useQuery({
     queryKey: ['admin', 'audit', query],
     queryFn: ({ signal }) => listAudit(query, { signal }),
+    enabled: activeTab === 'trail',
   });
 
   const items: AuditListItem[] = auditQuery.data?.items ?? [];
   const totalPages = auditQuery.data?.totalPages ?? 1;
   const total = auditQuery.data?.total ?? 0;
+
+  function setTab(tab: 'trail' | 'health') {
+    const next = new URLSearchParams(searchParams);
+    if (tab === 'health') next.set('tab', 'health');
+    else next.delete('tab');
+    setSearchParams(next);
+  }
 
   function updateFilter(key: string, value: string) {
     const next = new URLSearchParams(searchParams);
@@ -115,11 +131,55 @@ export function AuditPage() {
           {t('admin.auditTitle')}
         </h1>
         <p className="mt-1 text-sm text-clox-mute sm:mt-2">
-          {t('admin.auditSubtitle', { count: total })}
+          {activeTab === 'health'
+            ? t('admin.serviceHealthSubtitle', {
+                defaultValue:
+                  'Live status, delivery metrics, and recent failures for connected third-party services.',
+              })
+            : t('admin.auditSubtitle', { count: total })}
         </p>
       </div>
 
-      <div className="mt-4 grid gap-2 sm:mt-6 sm:grid-cols-[1fr_1fr_auto] sm:items-end sm:gap-3">
+      {canViewServiceHealth ? (
+        <div
+          role="tablist"
+          aria-label="Audit and service health views"
+          className="mt-4 flex gap-2 border-b border-clox-border"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'trail'}
+            onClick={() => setTab('trail')}
+            className={`border-b-2 px-3 py-2 text-sm font-semibold transition ${
+              activeTab === 'trail'
+                ? 'border-clox-orange text-clox-ink'
+                : 'border-transparent text-clox-mute hover:text-clox-ink'
+            }`}
+          >
+            {t('admin.auditTabTrail', { defaultValue: 'Audit Trail' })}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'health'}
+            onClick={() => setTab('health')}
+            className={`border-b-2 px-3 py-2 text-sm font-semibold transition ${
+              activeTab === 'health'
+                ? 'border-clox-orange text-clox-ink'
+                : 'border-transparent text-clox-mute hover:text-clox-ink'
+            }`}
+          >
+            {t('admin.auditTabServiceHealth', { defaultValue: 'Service Health & Logs' })}
+          </button>
+        </div>
+      ) : null}
+
+      {activeTab === 'health' ? (
+        <ServiceHealthPanel />
+      ) : (
+        <>
+          <div className="mt-4 grid gap-2 sm:mt-6 sm:grid-cols-[1fr_1fr_auto] sm:items-end sm:gap-3">
         <Select
           className="mb-0"
           label={t('admin.colAction')}
@@ -277,6 +337,8 @@ export function AuditPage() {
           onPageChange={(p) => updateFilter('page', String(p))}
         />
       ) : null}
+        </>
+      )}
     </div>
   );
 }

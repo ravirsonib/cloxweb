@@ -19,7 +19,7 @@ export const ActionGroup = forwardRef<HTMLDivElement, ActionGroupProps>(
       <div
         ref={ref}
         className={cn(
-          'inline-flex items-center gap-1.5',
+          'relative inline-flex items-center gap-1.5',
           wrap ? 'flex-wrap' : 'shrink-0',
           align === 'end' && 'justify-end',
           align === 'start' && 'justify-start',

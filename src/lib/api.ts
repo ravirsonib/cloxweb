@@ -152,6 +152,11 @@ export {
   updateCarrierProfile,
   setupCarrierConnect,
   confirmCarrierConnect,
+  getCarrierConnectStatus,
+  createCarrierConnectManageLink,
+  openCarrierConnectManageLink,
+  type CarrierConnectStatus,
+  type CarrierConnectManageLink,
   listCarrierVehicles,
   listCarrierDrivers,
   addCarrierVehicle,
@@ -405,3 +410,9 @@ export {
   previewTranslation,
   type TranslationPreviewResult,
 } from '@/lib/api/translations';
+export {
+  getGeolocationRoute,
+  getGeolocationStatus,
+  type GeolocationRouteResponse,
+  type GeolocationStatusResponse,
+} from '@/lib/api/geolocation';

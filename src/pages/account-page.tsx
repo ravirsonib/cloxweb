@@ -4,13 +4,16 @@ import { useTranslation } from 'react-i18next';
 import { IdentitySummary } from '@/components/identity-summary';
 import {
   confirmSenderPayment,
+  createCarrierConnectManageLink,
   getCarrierCompanyProfile,
+  getCarrierConnectStatus,
   getErrorDetail,
   getIdentityMe,
   getRegionsMeta,
   getSenderCompanyProfile,
   getSenderPaymentMethod,
   listSessions,
+  openCarrierConnectManageLink,
   requestCarrierCompanyProfileChange,
   requestSenderCompanyProfileChange,
   revokeSession,
@@ -884,6 +887,170 @@ function SenderPaymentMethodSection() {
   );
 }
 
+function CarrierPayoutAccountSection() {
+  const { t } = useTranslation('common');
+  const qc = useQueryClient();
+  const toast = useToast();
+
+  const statusQuery = useQuery({
+    queryKey: ['carrier', 'connect-status'],
+    queryFn: () => getCarrierConnectStatus(),
+  });
+
+  const openManage = useMutation({
+    mutationFn: () => createCarrierConnectManageLink('/account'),
+    onSuccess: (link) => {
+      const opened = openCarrierConnectManageLink(link);
+      if (!opened) {
+        toast.info(
+          t('account.payoutAccountMockOpened', {
+            defaultValue:
+              'Practice Stripe mode: in live mode this opens your Stripe Express Dashboard to update your bank account.',
+          }),
+        );
+        void qc.invalidateQueries({ queryKey: ['carrier', 'connect-status'] });
+      }
+    },
+    onError: (err) => toast.error(getErrorDetail(err)),
+  });
+
+  const data = statusQuery.data;
+  const pillTone: StatusPillTone = data?.payoutsEnabled
+    ? 'ok'
+    : data?.connected
+      ? 'warn'
+      : 'neutral';
+  const pillLabel = data?.payoutsEnabled
+    ? t('account.payoutAccountActive', { defaultValue: 'Payouts active' })
+    : data?.connected
+      ? t('account.payoutAccountActionRequired', { defaultValue: 'Action required' })
+      : t('account.payoutAccountNotConnected', { defaultValue: 'Not set up' });
+
+  const ctaLabel = openManage.isPending
+    ? t('account.payoutAccountOpening', { defaultValue: 'Opening Stripe…' })
+    : data?.payoutsEnabled
+      ? t('account.payoutAccountManageCta', {
+          defaultValue: 'Manage / change bank account on Stripe',
+        })
+      : data?.connected
+        ? t('account.payoutAccountRepairCta', {
+            defaultValue: 'Update bank & verification on Stripe',
+          })
+        : t('account.payoutAccountSetupCta', { defaultValue: 'Set up payout bank account' });
+
+  return (
+    <section className="clox-card mt-6 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-display text-lg font-semibold text-clox-ink">
+          {t('account.payoutAccountTitle', { defaultValue: 'Payout bank account' })}
+        </h2>
+        {data ? <StatusPill tone={pillTone}>{pillLabel}</StatusPill> : null}
+      </div>
+      <p className="mt-1 text-sm text-clox-mute">
+        {t('account.payoutAccountSubtitle', {
+          defaultValue:
+            'View or change the Australian bank account where CLOX sends your freight payouts via Stripe Connect.',
+        })}
+      </p>
+
+      {statusQuery.isLoading ? (
+        <div className="mt-4">
+          <LoadingBlock
+            label={t('account.payoutAccountLoading', {
+              defaultValue: 'Loading payout bank details…',
+            })}
+          />
+        </div>
+      ) : null}
+
+      {statusQuery.isError ? (
+        <Notice tone="error" className="mt-4">
+          {getErrorDetail(statusQuery.error)}
+        </Notice>
+      ) : null}
+
+      {!statusQuery.isLoading && !statusQuery.isError && data ? (
+        <div className="mt-4 space-y-4">
+          {data.connected ? (
+            <div className="rounded-clox-md border border-clox-border bg-clox-surface-alt/50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-clox-mute">
+                {t('account.payoutAccountOnFile', { defaultValue: 'Current payout bank account' })}
+              </p>
+              <p className="mt-1 font-medium text-clox-ink">
+                {data.bankAccount?.last4
+                  ? `${data.bankAccount.bankName || t('account.payoutAccountBankFallback', { defaultValue: 'Bank account' })} •••• ${data.bankAccount.last4}`
+                  : t('account.payoutAccountBankFallback', {
+                      defaultValue: 'Verified bank account on Stripe',
+                    })}
+              </p>
+              {data.bankAccount?.routingNumber ? (
+                <p className="mt-0.5 text-xs text-clox-mute">
+                  {t('account.payoutAccountBsb', {
+                    bsb: data.bankAccount.routingNumber,
+                    defaultValue: `BSB ${data.bankAccount.routingNumber}`,
+                  })}
+                </p>
+              ) : null}
+              {data.mock ? (
+                <p className="mt-1 text-xs text-clox-faint">
+                  {t('account.payoutAccountMock', {
+                    defaultValue:
+                      'Practice Stripe mode — real bank changes happen on Stripe in live mode.',
+                  })}
+                </p>
+              ) : null}
+              <p className="mt-2 text-xs text-clox-mute">
+                {t('account.payoutAccountManageHint', {
+                  defaultValue:
+                    'Bank details are managed securely on Stripe. Updating your bank account keeps your existing payout history and scheduled transfers intact.',
+                })}
+              </p>
+            </div>
+          ) : (
+            <Notice tone="info">
+              {t('account.payoutAccountNone', {
+                defaultValue:
+                  'No payout bank account connected yet. Set up Stripe Connect to receive freight payouts.',
+              })}
+            </Notice>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant={data.payoutsEnabled ? 'secondary' : 'cta'}
+              disabled={openManage.isPending}
+              onClick={() => openManage.mutate()}
+            >
+              {ctaLabel}
+            </Button>
+            {data.connected ? (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={statusQuery.isFetching}
+                onClick={() => {
+                  void statusQuery.refetch().then((res) => {
+                    if (!res.isError) {
+                      toast.success(
+                        t('account.payoutAccountRefreshed', {
+                          defaultValue: 'Payout account status refreshed.',
+                        }),
+                      );
+                    }
+                  });
+                }}
+              >
+                {t('account.payoutAccountRefresh', { defaultValue: 'Refresh status' })}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function AccountPage() {
   const { t } = useTranslation('common');
   const role = useAuthStore((s) => s.role);
@@ -942,6 +1109,7 @@ export function AccountPage() {
       ) : null}
 
       {role === AppRole.SENDER ? <SenderPaymentMethodSection /> : null}
+      {role === AppRole.TRANSPORT_COMPANY ? <CarrierPayoutAccountSection /> : null}
 
       <h2 className="mt-10 font-display text-lg font-semibold text-clox-ink">
         {t('account.activeSessions')}

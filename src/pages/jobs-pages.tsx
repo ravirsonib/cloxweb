@@ -43,6 +43,7 @@ import {
   type JobSummary,
 } from '@/lib/api';
 import { JobRateFloorPanel } from '@/components/job-rate-floor-panel';
+import { RouteMap, type MapStopPin } from '@/features/maps';
 import { ScaPaymentConfirm } from '@/components/stripe/ScaPaymentConfirm';
 import { useRateFloorPreview } from '@/lib/use-rate-floor-preview';
 import {
@@ -1608,6 +1609,7 @@ function JobDraftForm({
   >('idle');
   const routeSuggestPromise = useRef<Promise<JobRouteEstimate | null> | null>(null);
   const [routeEstimate, setRouteEstimate] = useState<JobRouteEstimate | null>(null);
+  const [routePreviewStops, setRoutePreviewStops] = useState<MapStopPin[]>([]);
   const hydratedEdit = useRef(false);
 
   useEffect(() => {
@@ -1889,6 +1891,21 @@ function JobDraftForm({
       .then((route) => {
         if (cancelled) return null;
         setRouteEstimate(route);
+        setRoutePreviewStops(
+          stops
+            .filter(
+              (s): s is typeof s & { lat: number; lng: number } =>
+                typeof s.lat === 'number' && typeof s.lng === 'number',
+            )
+            .map((s) => ({
+              sequence: s.sequence,
+              stopType: s.stopType,
+              suburb: s.suburb ?? null,
+              label: s.addressLine ?? null,
+              lat: s.lat,
+              lng: s.lng,
+            })),
+        );
         setSuggestedKm(route.distanceKm);
         setRouteSuggestStatus('ok');
         const current = form.getValues('distanceKm');
@@ -3183,6 +3200,25 @@ function JobDraftForm({
                   </p>
                 ) : null}
               </>
+            ) : null}
+
+            {routeEstimate?.encodedPolyline ? (
+              <div className="mb-4">
+                <div className="mb-1.5 flex items-center justify-between text-xs text-clox-mute">
+                  <span className="font-medium text-clox-ink">
+                    {t('jobs.routePreviewMapTitle', { defaultValue: 'Road route preview' })}
+                  </span>
+                  <span className="font-mono">
+                    {routeEstimate.distanceKm} km · {routeEstimate.durationMinutes} min
+                  </span>
+                </div>
+                <RouteMap
+                  encodedPolyline={routeEstimate.encodedPolyline}
+                  stops={routePreviewStops}
+                  className="h-64 sm:h-72"
+                  ariaLabel={t('jobs.routePreviewMapTitle', { defaultValue: 'Road route preview' })}
+                />
+              </div>
             ) : null}
 
             {/* Vehicle Recommendation & Selection Grid */}

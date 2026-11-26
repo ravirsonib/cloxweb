@@ -280,6 +280,7 @@ export function DriverTripDetailPage() {
   const [localPhotoPreviews, setLocalPhotoPreviews] = useState<string[]>([]);
   const [remoteSignatureUrl, setRemoteSignatureUrl] = useState<string | null>(null);
   const [remotePhotoUrls, setRemotePhotoUrls] = useState<string[]>([]);
+  const activeBlobUrlsRef = useRef<string[]>([]);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
 
@@ -321,15 +322,26 @@ export function DriverTripDetailPage() {
   useEffect(() => {
     setLocalSignaturePreview(null);
     setLocalPhotoPreviews([]);
-  }, [previewStopId]);
+    setRemoteSignatureUrl(null);
+    setRemotePhotoUrls([]);
+    for (const url of activeBlobUrlsRef.current) URL.revokeObjectURL(url);
+    activeBlobUrlsRef.current = [];
+  }, [tripId, previewStopId]);
 
   useEffect(() => {
     setSafetyChecked({});
   }, [tripId]);
 
   useEffect(() => {
+    return () => {
+      for (const url of activeBlobUrlsRef.current) URL.revokeObjectURL(url);
+      activeBlobUrlsRef.current = [];
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
-    const objectUrls: string[] = [];
+    const nextBlobUrls: string[] = [];
 
     async function loadPreviews() {
       if (!tripId || !previewStopId) {
@@ -338,43 +350,53 @@ export function DriverTripDetailPage() {
         return;
       }
 
-      // Prefer local optimistic previews while remote blobs load.
-      setRemoteSignatureUrl(null);
-      setRemotePhotoUrls([]);
-
+      let nextSignatureUrl: string | null = null;
       if (previewHasSignature) {
         try {
           const blob = await fetchTripPodArtifactBlob(tripId, previewStopId, 'signature');
           if (cancelled) return;
           const url = URL.createObjectURL(blob);
-          objectUrls.push(url);
-          setRemoteSignatureUrl(url);
+          nextBlobUrls.push(url);
+          nextSignatureUrl = url;
         } catch {
           // Keep local signature preview if remote fetch fails.
         }
       }
 
-      if (previewPhotoCount < 1) return;
-
-      const urls: string[] = [];
+      const nextPhotoUrls: string[] = [];
       for (let i = 0; i < previewPhotoCount; i += 1) {
         try {
           const blob = await fetchTripPodArtifactBlob(tripId, previewStopId, 'photo', i);
           if (cancelled) return;
           const url = URL.createObjectURL(blob);
-          objectUrls.push(url);
-          urls.push(url);
+          nextBlobUrls.push(url);
+          nextPhotoUrls.push(url);
         } catch {
           // Skip missing individual photos; keep ones that loaded.
         }
       }
-      if (!cancelled && urls.length > 0) setRemotePhotoUrls(urls);
+
+      if (cancelled) {
+        for (const url of nextBlobUrls) URL.revokeObjectURL(url);
+        return;
+      }
+
+      const previousUrls = activeBlobUrlsRef.current;
+      activeBlobUrlsRef.current = nextBlobUrls;
+      setRemoteSignatureUrl(previewHasSignature ? nextSignatureUrl : null);
+      setRemotePhotoUrls(previewPhotoCount > 0 ? nextPhotoUrls : []);
+      for (const url of previousUrls) URL.revokeObjectURL(url);
     }
 
     void loadPreviews();
     return () => {
       cancelled = true;
-      for (const url of objectUrls) URL.revokeObjectURL(url);
+      // Only revoke URLs created by this run if they were not committed to activeBlobUrlsRef.
+      for (const url of nextBlobUrls) {
+        if (!activeBlobUrlsRef.current.includes(url)) {
+          URL.revokeObjectURL(url);
+        }
+      }
     };
   }, [tripId, previewStopId, previewHasSignature, previewPhotoCount]);
 
@@ -1495,46 +1517,6 @@ export function DriverTripDetailPage() {
                     >
                       {t('trips.podCaptureSignature')}
                     </Button>
-                    <label
-                      className={cn(
-                        'clox-btn clox-btn-secondary cursor-pointer px-3 py-1.5 text-[12.5px]',
-                        podCaptureLocked || podPhoto.isPending
-                          ? 'pointer-events-none opacity-60'
-                          : '',
-                      )}
-                    >
-                      {podPhoto.isPending ? t('trips.podPhotoUploading') : t('trips.podAddPhoto')}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        className="sr-only"
-                        disabled={
-                          podCaptureLocked || podPhoto.isPending || !activePodStopId
-                        }
-                        onChange={(e) => {
-                          const input = e.currentTarget;
-                          const file = input.files?.[0];
-                          input.value = '';
-                          if (!file || !activePodStopId) return;
-                          setPodStopId(activePodStopId);
-                          void (async () => {
-                            try {
-                              const photoDataUrl = await fileToCompressedJpegDataUrl(file);
-                              podPhoto.mutate({
-                                jobStopId: activePodStopId,
-                                photoDataUrl,
-                              });
-                            } catch (err) {
-                              setMsg(
-                                getErrorDetail(err) || t('trips.podPhotoCompressFailed'),
-                              );
-                            }
-                          })();
-                        }}
-                      />
-                    </label>
-                    <p className="basis-full text-xs text-clox-mute">{t('trips.podPhotoHint')}</p>
                   </div>
                 </>
               ) : (
@@ -1560,11 +1542,55 @@ export function DriverTripDetailPage() {
                 </div>
               ) : null}
 
+              {activePodStatus !== 'FINALIZED' ? (
+                <div className="space-y-2 border-t border-clox-border-soft pt-3">
+                  <FileInput
+                    className="mb-0"
+                    label={t('trips.podPhotosPreview')}
+                    hint={t('trips.podPhotoHint')}
+                    fileName={null}
+                    actionLabel={
+                      podPhoto.isPending
+                        ? t('trips.podPhotoUploading')
+                        : t('trips.podAddPhoto')
+                    }
+                    actionHint={t('trips.podPhotosCount', { count: activePhotoCount })}
+                    accept="image/*"
+                    capture="environment"
+                    disabled={
+                      podCaptureLocked || podPhoto.isPending || !activePodStopId
+                    }
+                    onChange={(e) => {
+                      const input = e.currentTarget;
+                      const file = input.files?.[0];
+                      input.value = '';
+                      if (!file || !activePodStopId) return;
+                      setPodStopId(activePodStopId);
+                      void (async () => {
+                        try {
+                          const photoDataUrl = await fileToCompressedJpegDataUrl(file);
+                          podPhoto.mutate({
+                            jobStopId: activePodStopId,
+                            photoDataUrl,
+                          });
+                        } catch (err) {
+                          setMsg(
+                            getErrorDetail(err) || t('trips.podPhotoCompressFailed'),
+                          );
+                        }
+                      })();
+                    }}
+                  />
+                </div>
+              ) : null}
+
               {photoPreviewUrls.length > 0 ? (
                 <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-clox-ink">
-                    {t('trips.podPhotosPreview')}
-                  </p>
+                  {activePodStatus === 'FINALIZED' ? (
+                    <p className="text-xs font-medium text-clox-ink">
+                      {t('trips.podPhotosPreview')}
+                    </p>
+                  ) : null}
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     {photoPreviewUrls.map((url, index) => (
                       <img

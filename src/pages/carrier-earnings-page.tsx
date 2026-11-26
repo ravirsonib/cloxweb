@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -10,6 +10,7 @@ import {
   Clock,
   DollarSign,
   Download,
+  Landmark,
   RefreshCw,
   Truck,
 } from 'lucide-react';
@@ -22,7 +23,13 @@ import {
   useToast,
   type ChartDataItem,
 } from '@/components/ui';
-import { exportCarrierFinanceCsv, getCarrierFinance, getErrorDetail } from '@/lib/api';
+import {
+  createCarrierConnectManageLink,
+  exportCarrierFinanceCsv,
+  getCarrierFinance,
+  getErrorDetail,
+  openCarrierConnectManageLink,
+} from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { CURRENCY_SYMBOL, formatDollars } from '@/lib/currency';
 import { formatDate } from '@/lib/datetime';
@@ -46,6 +53,23 @@ export function CarrierEarningsPage() {
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['carrier-finance', queryParams],
     queryFn: ({ signal }) => getCarrierFinance(queryParams, { signal }),
+  });
+
+  const openBankManage = useMutation({
+    mutationFn: () => createCarrierConnectManageLink('/carrier/earnings'),
+    onSuccess: (link) => {
+      const opened = openCarrierConnectManageLink(link);
+      if (!opened) {
+        toast.info(
+          t('account.payoutAccountMockOpened', {
+            defaultValue:
+              'Practice Stripe mode: in live mode this opens your Stripe Express Dashboard to update your bank account.',
+          }),
+        );
+        void refetch();
+      }
+    },
+    onError: (err) => toast.error(getErrorDetail(err)),
   });
 
   async function handleExportCsv() {
@@ -175,6 +199,25 @@ export function CarrierEarningsPage() {
             type="button"
             variant="secondary"
             size="sm"
+            onClick={() => openBankManage.mutate()}
+            disabled={openBankManage.isPending}
+            className="gap-1.5"
+            title={t('finance.carrier.manageBankTitle', {
+              defaultValue: 'View or change your payout bank account on Stripe',
+            })}
+          >
+            <Landmark className="h-3.5 w-3.5" />
+            <span>
+              {openBankManage.isPending
+                ? t('account.payoutAccountOpening', { defaultValue: 'Opening Stripe…' })
+                : t('finance.carrier.manageBank', { defaultValue: 'Manage Bank Account' })}
+            </span>
+          </Button>
+
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
             onClick={() => refetch()}
             disabled={isFetching}
             className="gap-1.5"
@@ -192,10 +235,27 @@ export function CarrierEarningsPage() {
           tone="warn"
           title={t('finance.carrier.payoutsHoldTitle', { defaultValue: 'Bank Payouts On Hold' })}
         >
-          {t('finance.carrier.payoutsHoldBody', {
-            defaultValue:
-              'Your Stripe Connect account requires bank account details or identity verification before earnings can be disbursed to your bank. Please update your account details.',
-          })}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>
+              {t('finance.carrier.payoutsHoldBody', {
+                defaultValue:
+                  'Your Stripe Connect account requires bank account details or identity verification before earnings can be disbursed to your bank. Please update your account details.',
+              })}
+            </span>
+            <Button
+              type="button"
+              variant="cta"
+              size="sm"
+              disabled={openBankManage.isPending}
+              onClick={() => openBankManage.mutate()}
+            >
+              {openBankManage.isPending
+                ? t('account.payoutAccountOpening', { defaultValue: 'Opening Stripe…' })
+                : t('account.payoutAccountRepairCta', {
+                    defaultValue: 'Update bank & verification on Stripe',
+                  })}
+            </Button>
+          </div>
         </Notice>
       ) : null}
 

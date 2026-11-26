@@ -269,6 +269,7 @@ export function IconFileButton({
       htmlFor={inputId}
       aria-label={label}
       className={cn(
+        'relative overflow-hidden',
         iconButtonVariants({ variant, size }),
         labeledIconClass(size, showLabel),
         disabled || loading ? 'pointer-events-none opacity-50' : 'cursor-pointer',

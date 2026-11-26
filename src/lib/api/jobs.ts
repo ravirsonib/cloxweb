@@ -449,6 +449,8 @@ export type JobRouteEstimate = {
   rateFloorIncGstCents?: number | null;
   rateFloorVersionId?: string | null;
   mock: boolean;
+  routeSource?: 'valhalla' | 'mock';
+  encodedPolyline?: string | null;
 };
 
 export type RateFloorPreview = {

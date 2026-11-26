@@ -2,6 +2,7 @@ import type { AuthTokens, OtpRequestInput, OtpVerifyInput } from '@/shared/types
 import { createHttpClient, toApiError } from '@/lib/http/client';
 import { http } from '@/lib/http';
 import type { IdentityMe } from '@/lib/api/identity.types';
+import { disableWebPush } from '@/lib/web-push';
 
 export type { IdentityMe } from '@/lib/api/identity.types';
 
@@ -40,7 +41,9 @@ export function refreshSession(refreshToken: string, options?: { signal?: AbortS
     .then((res) => res.data);
 }
 
-export function logout(payload?: { refreshToken?: string; allDevices?: boolean }) {
+export async function logout(payload?: { refreshToken?: string; allDevices?: boolean }) {
+  // Best-effort unregister browser push token before revoking session.
+  await disableWebPush().catch(() => {});
   // Default: this device only. allDevices:true would revoke every session and
   // looks like a random logout on phone/tablet when desktop signs out.
   return http

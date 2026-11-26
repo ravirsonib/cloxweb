@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bell, RefreshCw } from 'lucide-react';
+import { Bell, BellOff, BellRing, RefreshCw } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -20,6 +20,14 @@ import {
 } from '@/lib/api/notifications';
 import { formatDateTime } from '@/lib/leads';
 import { cn } from '@/lib/cn';
+import {
+  disableWebPush,
+  enableWebPush,
+  getWebPushPermission,
+  hasRegisteredWebPushToken,
+  isWebPushConfigured,
+  subscribeForegroundWebPush,
+} from '@/lib/web-push';
 import { AdminRole, AppRole } from '@/shared/types';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -33,16 +41,57 @@ const NOTIFICATION_ROLES = new Set<string>([
 ]);
 
 export function NotificationBell({ className }: { className?: string }) {
-  const { t } = useTranslation('common');
+  const { t, i18n } = useTranslation('common');
   const role = useAuthStore((s) => s.role);
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const webPushConfigured = isWebPushConfigured();
+  const [webPushActive, setWebPushActive] = useState(
+    () =>
+      webPushConfigured &&
+      getWebPushPermission() === 'granted' &&
+      hasRegisteredWebPushToken(),
+  );
+  const [webPushPermission, setWebPushPermission] = useState(() => getWebPushPermission());
+  const [webPushBusy, setWebPushBusy] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const [popoverStyle, setPopoverStyle] = useState<CSSProperties>({});
 
   const enabled = Boolean(role && NOTIFICATION_ROLES.has(role));
+
+  useEffect(() => {
+    if (!enabled || !webPushConfigured || !webPushActive) return;
+    return subscribeForegroundWebPush(() => {
+      void qc.invalidateQueries({ queryKey: ['notifications'] });
+    });
+  }, [enabled, webPushConfigured, webPushActive, qc]);
+
+  const handleEnableWebPush = async () => {
+    setWebPushBusy(true);
+    try {
+      const lang = i18n.language?.slice(0, 2);
+      const locale = lang === 'hi' || lang === 'pa' ? lang : 'en';
+      const result = await enableWebPush(locale);
+      setWebPushPermission(getWebPushPermission());
+      if (result.ok) {
+        setWebPushActive(true);
+      }
+    } finally {
+      setWebPushBusy(false);
+    }
+  };
+
+  const handleDisableWebPush = async () => {
+    setWebPushBusy(true);
+    try {
+      await disableWebPush();
+      setWebPushActive(false);
+    } finally {
+      setWebPushBusy(false);
+    }
+  };
 
   const unread = useQuery({
     queryKey: ['notifications', 'unread-count'],
@@ -269,6 +318,58 @@ export function NotificationBell({ className }: { className?: string }) {
                   </ul>
                 )}
               </div>
+
+              {webPushConfigured ? (
+                <div className="flex items-center justify-between gap-2 border-t border-clox-border bg-clox-surface-alt/40 px-4 py-2.5 text-xs">
+                  {webPushPermission === 'denied' ? (
+                    <span className="flex items-center gap-1.5 text-clox-faint">
+                      <BellOff className="h-3.5 w-3.5 shrink-0" />
+                      {t('notifications.browserBlocked', {
+                        defaultValue: 'Browser alerts blocked in site settings',
+                      })}
+                    </span>
+                  ) : webPushActive ? (
+                    <>
+                      <span className="flex items-center gap-1.5 font-medium text-clox-ink">
+                        <BellRing className="h-3.5 w-3.5 shrink-0 text-clox-orange" />
+                        {t('notifications.browserAlertsOn', {
+                          defaultValue: 'Browser alerts enabled',
+                        })}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={webPushBusy}
+                        onClick={() => void handleDisableWebPush()}
+                        className="font-semibold text-clox-mute hover:text-clox-ink hover:underline disabled:opacity-40 cursor-pointer"
+                      >
+                        {t('notifications.disableBrowserAlerts', {
+                          defaultValue: 'Disable',
+                        })}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-clox-mute">
+                        {t('notifications.browserAlertsPrompt', {
+                          defaultValue: 'Get desktop & mobile browser alerts',
+                        })}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={webPushBusy}
+                        onClick={() => void handleEnableWebPush()}
+                        className="shrink-0 rounded-clox-sm bg-clox-orange px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-clox-orange-deep disabled:opacity-40 cursor-pointer"
+                      >
+                        {webPushBusy
+                          ? t('loading')
+                          : t('notifications.enableBrowserAlerts', {
+                              defaultValue: 'Enable',
+                            })}
+                      </button>
+                    </>
+                  )}
+                </div>
+              ) : null}
             </div>,
             document.body,
           )

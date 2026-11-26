@@ -7,12 +7,13 @@ export function LoadingBlock({ label }: { label?: string }) {
   const text = label ?? t('loading');
   return (
     <div
-      className="clox-panel flex items-center gap-3 px-4 py-6 text-sm text-clox-mute"
+      className="clox-panel flex min-h-[200px] w-full flex-col items-center justify-center gap-3.5 px-6 py-10 text-center"
       role="status"
       aria-live="polite"
+      aria-busy="true"
     >
-      <CloxLoader size={36} label={text} />
-      {text}
+      <CloxLoader size={44} label={text} decorative className="shadow-clox-1" />
+      <p className="text-sm font-medium text-clox-mute">{text}</p>
     </div>
   );
 }

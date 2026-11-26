@@ -809,11 +809,12 @@
    * stay fully reachable and CTAs are never covered.
    */
   .cab-shell {
+    position: relative;
     display: flex;
     flex-direction: column;
     height: 100dvh;
     max-height: 100dvh;
-    overflow: hidden;
+    overflow: clip;
     background: var(--cab-bg);
     color: var(--cab-text);
   }
@@ -834,6 +835,7 @@
   }
 
   .cab-main {
+    position: relative;
     flex: 1 1 auto;
     min-height: 0; /* required for overflow scroll inside a flex child */
     overflow-x: hidden;

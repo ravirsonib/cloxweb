@@ -17,6 +17,10 @@ type FileInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & {
   required?: boolean;
   /** Controlled selected filename (optional; otherwise derived from last change). */
   fileName?: string | null;
+  /** Optional override for the empty-state primary dropzone CTA text. */
+  actionLabel?: ReactNode;
+  /** Optional override for the empty-state sub-hint inside the dropzone. */
+  actionHint?: ReactNode;
 };
 
 export const FileInput = forwardRef<HTMLInputElement, FileInputProps>(function FileInput(
@@ -26,6 +30,8 @@ export const FileInput = forwardRef<HTMLInputElement, FileInputProps>(function F
     error,
     required,
     fileName,
+    actionLabel,
+    actionHint,
     className,
     id,
     disabled,
@@ -81,12 +87,12 @@ export const FileInput = forwardRef<HTMLInputElement, FileInputProps>(function F
           <Upload className="h-5 w-5" strokeWidth={2} />
         </span>
         <span className="clox-file-drop-text">
-          {displayName ? displayName : t('fileInput.choose')}
+          {displayName ? displayName : (actionLabel ?? t('fileInput.choose'))}
         </span>
         {displayName ? (
           <span className="clox-file-drop-hint">{t('fileInput.replace')}</span>
         ) : (
-          <span className="clox-file-drop-hint">{t('fileInput.hint')}</span>
+          <span className="clox-file-drop-hint">{actionHint ?? t('fileInput.hint')}</span>
         )}
       </div>
       {error ? (

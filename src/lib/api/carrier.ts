@@ -103,6 +103,27 @@ export function updateCarrierProfile(payload: Record<string, unknown>) {
   return http.put<CarrierOnboarding>('/carrier/profile', payload).then((r) => r.data);
 }
 
+export type CarrierConnectStatus = {
+  connected: boolean;
+  accountId: string | null;
+  payoutsEnabled: boolean;
+  requirementsDue: boolean;
+  bankAccount: {
+    bankName: string | null;
+    last4: string | null;
+    routingNumber: string | null;
+    currency: string;
+  } | null;
+  mock: boolean;
+};
+
+export type CarrierConnectManageLink = {
+  accountId: string;
+  url: string;
+  kind: 'dashboard' | 'account_update' | 'account_onboarding';
+  mock: boolean;
+};
+
 export function setupCarrierConnect() {
   return http
     .post<{ accountId: string; url: string; mock: boolean }>('/carrier/connect/setup')
@@ -111,6 +132,39 @@ export function setupCarrierConnect() {
 
 export function confirmCarrierConnect() {
   return http.post<CarrierOnboarding>('/carrier/connect/confirm', {}).then((r) => r.data);
+}
+
+export function getCarrierConnectStatus() {
+  return http.get<CarrierConnectStatus>('/carrier/connect/status').then((r) => r.data);
+}
+
+export function createCarrierConnectManageLink(
+  returnPath?: '/account' | '/carrier/earnings' | '/carrier/onboarding',
+) {
+  return http
+    .post<CarrierConnectManageLink>('/carrier/connect/manage-link', {
+      ...(returnPath ? { returnPath } : {}),
+    })
+    .then((r) => r.data);
+}
+
+/**
+ * Shared navigation helper for Stripe Connect management links:
+ * - Mock mode: returns `false` so caller can show a practice-mode toast.
+ * - Express Dashboard (`dashboard`): opens in a new tab (falls back to same tab if blocked).
+ * - Account Update / Onboarding: navigates in the same tab so Stripe redirects back to `returnPath`.
+ */
+export function openCarrierConnectManageLink(link: CarrierConnectManageLink): boolean {
+  if (link.mock) return false;
+  if (link.kind === 'dashboard') {
+    const opened = window.open(link.url, '_blank', 'noopener,noreferrer');
+    if (!opened) {
+      window.location.assign(link.url);
+    }
+    return true;
+  }
+  window.location.assign(link.url);
+  return true;
 }
 
 export type FleetDisableReasonInput = {

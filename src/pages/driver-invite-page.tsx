@@ -4,9 +4,9 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { acceptDriverInvite, getErrorDetail, peekDriverInvite } from '@/lib/api';
 import { clearBrowserSession } from '@/lib/auth-session';
+import { AppBootScreen } from '@/components/app-boot-screen';
 import { BrandLogo } from '@/components/brand-logo';
 import { Button, Notice } from '@/components/ui';
-import { LoadingBlock } from '@/components/status-blocks';
 
 export function DriverInvitePage() {
   const { t } = useTranslation('common');
@@ -41,7 +41,7 @@ export function DriverInvitePage() {
     );
   }
 
-  if (peek.isLoading) return <LoadingBlock label={t('driverInvite.loading')} />;
+  if (peek.isLoading) return <AppBootScreen label={t('driverInvite.loading')} />;
 
   if (peek.isError) {
     return (

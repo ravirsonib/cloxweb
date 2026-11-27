@@ -7,6 +7,9 @@ export type TruckMarkerProps = {
   lng: number;
   heading?: number | null;
   paused?: boolean;
+  label?: string | null;
+  selected?: boolean;
+  onClick?: () => void;
 };
 
 function computeBearingDeg(
@@ -15,7 +18,8 @@ function computeBearingDeg(
 ): number | null {
   const dLat = to.lat - from.lat;
   const dLng = to.lng - from.lng;
-  if (Math.abs(dLat) < 1e-6 && Math.abs(dLng) < 1e-6) return null;
+  // Ignore tiny GPS jitter (< ~15m) so parked trucks don't spin randomly
+  if (Math.hypot(dLat, dLng) < 0.00015) return null;
   const lat1 = (from.lat * Math.PI) / 180;
   const lat2 = (to.lat * Math.PI) / 180;
   const lonDiff = ((to.lng - from.lng) * Math.PI) / 180;
@@ -25,49 +29,110 @@ function computeBearingDeg(
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
-function createTruckElement(paused: boolean): HTMLDivElement {
-  const el = document.createElement('div');
-  el.setAttribute('aria-label', paused ? 'Truck paused on break' : 'Live truck location');
-  el.style.width = '36px';
-  el.style.height = '36px';
-  el.style.display = 'flex';
-  el.style.alignItems = 'center';
-  el.style.justifyContent = 'center';
-  el.style.borderRadius = '9999px';
-  el.style.background = paused ? '#64748b' : '#ff6a00';
-  el.style.border = '3px solid #ffffff';
-  el.style.boxShadow = '0 4px 12px rgba(15, 23, 42, 0.35)';
-  el.style.transition = 'background-color 200ms ease';
-  el.innerHTML = `
+function isValidCoord(lat: number, lng: number): boolean {
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180 &&
+    !(lat === 0 && lng === 0)
+  );
+}
+
+function createTruckElement(
+  paused: boolean,
+  label?: string | null,
+  selected?: boolean,
+): HTMLDivElement {
+  const wrapper = document.createElement('div');
+  wrapper.style.display = 'flex';
+  wrapper.style.flexDirection = 'column';
+  wrapper.style.alignItems = 'center';
+  wrapper.style.cursor = 'pointer';
+  wrapper.setAttribute(
+    'aria-label',
+    label ? `${label} (${paused ? 'paused' : 'live'})` : paused ? 'Truck paused on break' : 'Live truck location',
+  );
+
+  const badge = document.createElement('div');
+  badge.dataset.truckIcon = 'true';
+  badge.style.width = selected ? '40px' : '36px';
+  badge.style.height = selected ? '40px' : '36px';
+  badge.style.display = 'flex';
+  badge.style.alignItems = 'center';
+  badge.style.justifyContent = 'center';
+  badge.style.borderRadius = '9999px';
+  badge.style.background = paused ? '#64748b' : '#ff6a00';
+  badge.style.border = selected ? '3px solid #0f172a' : '3px solid #ffffff';
+  badge.style.boxShadow = selected
+    ? '0 0 0 4px rgba(255, 106, 0, 0.35), 0 4px 12px rgba(15, 23, 42, 0.4)'
+    : '0 4px 12px rgba(15, 23, 42, 0.35)';
+  badge.style.transition = 'background-color 200ms ease, transform 200ms ease';
+  badge.innerHTML = `
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
       <polygon points="12 2 19 21 12 17 5 21 12 2" fill="#ffffff" />
     </svg>
   `;
-  return el;
+  wrapper.appendChild(badge);
+
+  if (label) {
+    const tag = document.createElement('span');
+    tag.dataset.truckLabel = 'true';
+    tag.textContent = label;
+    tag.style.marginTop = '3px';
+    tag.style.padding = '1px 6px';
+    tag.style.borderRadius = '6px';
+    tag.style.fontSize = '10px';
+    tag.style.fontWeight = '700';
+    tag.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+    tag.style.color = '#ffffff';
+    tag.style.background = selected ? '#0f172a' : 'rgba(15, 23, 42, 0.85)';
+    tag.style.whiteSpace = 'nowrap';
+    tag.style.boxShadow = '0 1px 4px rgba(0, 0, 0, 0.25)';
+    wrapper.appendChild(tag);
+  }
+
+  return wrapper;
 }
 
 const ANIMATION_MS = 750;
 
-export function TruckMarker({ map, lat, lng, heading, paused = false }: TruckMarkerProps) {
+export function TruckMarker({
+  map,
+  lat,
+  lng,
+  heading,
+  paused = false,
+  label,
+  selected = false,
+  onClick,
+}: TruckMarkerProps) {
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const elRef = useRef<HTMLDivElement | null>(null);
   const posRef = useRef<{ lat: number; lng: number } | null>(null);
   const rafRef = useRef<number | null>(null);
+  const onClickRef = useRef(onClick);
+  onClickRef.current = onClick;
 
   useEffect(() => {
-    if (!map) return;
+    if (!map || !isValidCoord(lat, lng)) return;
 
-    const el = createTruckElement(paused);
+    const el = createTruckElement(paused, label, selected);
+    el.style.zIndex = selected ? '10' : '1';
+    const handleClick = () => onClickRef.current?.();
+    el.addEventListener('click', handleClick);
     elRef.current = el;
     const marker = new maplibregl.Marker({
       element: el,
-      rotationAlignment: 'map',
+      rotationAlignment: label ? 'viewport' : 'map',
       pitchAlignment: 'map',
     })
       .setLngLat([lng, lat])
       .addTo(map);
 
-    if (typeof heading === 'number' && Number.isFinite(heading)) {
+    if (!label && typeof heading === 'number' && Number.isFinite(heading)) {
       marker.setRotation(heading);
     }
 
@@ -79,28 +144,43 @@ export function TruckMarker({ map, lat, lng, heading, paused = false }: TruckMar
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
+      el.removeEventListener('click', handleClick);
       marker.remove();
       markerRef.current = null;
       elRef.current = null;
       posRef.current = null;
     };
-    // Only recreate marker when map instance changes
+    // Only recreate marker when map instance or label presence changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map]);
+  }, [map, label]);
 
   useEffect(() => {
-    if (elRef.current) {
-      elRef.current.style.background = paused ? '#64748b' : '#ff6a00';
-      elRef.current.setAttribute(
-        'aria-label',
-        paused ? 'Truck paused on break' : 'Live truck location',
-      );
+    const wrapper = elRef.current;
+    if (!wrapper) return;
+    wrapper.style.zIndex = selected ? '10' : '1';
+    const badge = wrapper.querySelector<HTMLDivElement>('[data-truck-icon="true"]');
+    if (badge) {
+      badge.style.background = paused ? '#64748b' : '#ff6a00';
+      badge.style.width = selected ? '40px' : '36px';
+      badge.style.height = selected ? '40px' : '36px';
+      badge.style.border = selected ? '3px solid #0f172a' : '3px solid #ffffff';
+      badge.style.boxShadow = selected
+        ? '0 0 0 4px rgba(255, 106, 0, 0.35), 0 4px 12px rgba(15, 23, 42, 0.4)'
+        : '0 4px 12px rgba(15, 23, 42, 0.35)';
     }
-  }, [paused]);
+    const tag = wrapper.querySelector<HTMLSpanElement>('[data-truck-label="true"]');
+    if (tag) {
+      tag.style.background = selected ? '#0f172a' : 'rgba(15, 23, 42, 0.85)';
+    }
+    wrapper.setAttribute(
+      'aria-label',
+      label ? `${label} (${paused ? 'paused' : 'live'})` : paused ? 'Truck paused on break' : 'Live truck location',
+    );
+  }, [paused, selected, label]);
 
   useEffect(() => {
     const marker = markerRef.current;
-    if (!marker) return;
+    if (!marker || !isValidCoord(lat, lng)) return;
 
     const from = posRef.current ?? { lat, lng };
     const to = { lat, lng };
@@ -110,7 +190,14 @@ export function TruckMarker({ map, lat, lng, heading, paused = false }: TruckMar
         ? heading
         : computeBearingDeg(from, to);
     if (targetBearing != null) {
-      marker.setRotation(targetBearing);
+      if (label) {
+        const badge = elRef.current?.querySelector<HTMLDivElement>('[data-truck-icon="true"]');
+        if (badge) {
+          badge.style.transform = `rotate(${Math.round(targetBearing)}deg)`;
+        }
+      } else {
+        marker.setRotation(targetBearing);
+      }
     }
 
     if (rafRef.current != null) {

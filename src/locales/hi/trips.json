@@ -176,7 +176,9 @@
     "stopEntered": "प्रवेश {{time}}",
     "stopFreeWaitEnds": "मुफ़्त प्रतीक्षा समाप्त {{time}}",
     "stopOverage": "अतिरिक्त {{min}} मिनट",
-    "pendingSurchargesTitle": "लंबित अधिभार"
+    "pendingSurchargesTitle": "लंबित अधिभार",
+    "routeMapTitle": "ट्रिप रूट मैप",
+    "openInMaps": "अगले स्टॉप के लिए नेविगेट करें"
   },
   "tripStatuses": {
     "PENDING_GATES": "प्री-ट्रिप गेट्स",
@@ -267,6 +269,11 @@
     "latest": "अंतिम: {{lat}}, {{lng}} @ {{time}}",
     "noPingsYet": "अभी कोई स्थान ping नहीं।",
     "mapDeferredHint": "यात्रा live होने पर मैप दिखेगा।",
-    "trackAfterStart": "ट्रैकिंग यात्रा शुरू होने के बाद शुरू होती है।"
+    "trackAfterStart": "ट्रैकिंग यात्रा शुरू होने के बाद शुरू होती है।",
+    "liveConnected": "लाइव",
+    "pollingFallback": "हर 5 सेकंड में अपडेट",
+    "onBreakPausedHint": "ड्राइवर अभी आराम के ब्रेक पर हैं। ब्रेक समाप्त होने तक लाइव लोकेशन और ETA अपडेट रोके गए हैं।",
+    "etaSummary": "अनुमानित समय ~{{min}} मिनट",
+    "recentPings": "हालिया GPS पिंग ({{count}})"
   }
 }

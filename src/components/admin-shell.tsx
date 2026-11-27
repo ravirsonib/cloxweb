@@ -303,7 +303,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           <SidebarSubMenu
             label={t('nav.menuFleet', { defaultValue: 'Fleet Management' })}
             icon={Truck}
-            activePaths={['/carrier/fleet', '/carrier/fleet/analytics', '/carrier/drivers']}
+            activePaths={['/carrier/fleet', '/carrier/fleet/live', '/carrier/fleet/analytics', '/carrier/drivers']}
           >
             <SidebarSubLink
               to="/carrier/fleet"
@@ -312,6 +312,13 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
               onNavigate={onNavigate}
             >
               {t('nav.fleet')}
+            </SidebarSubLink>
+            <SidebarSubLink
+              to="/carrier/fleet/live"
+              icon={navIconForPath('/carrier/fleet/live')}
+              onNavigate={onNavigate}
+            >
+              {t('nav.fleetLiveMap', { defaultValue: 'Live Fleet Map' })}
             </SidebarSubLink>
             <SidebarSubLink to="/carrier/drivers" icon={navIconForPath('/carrier/drivers')} onNavigate={onNavigate}>
               {t('nav.drivers')}

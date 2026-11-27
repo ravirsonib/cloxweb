@@ -49,6 +49,15 @@ export type TripSummary = {
   } | null;
   vehicle: { label: string | null; registration: string | null; vehicleClass: string | null } | null;
   latestLocation: { lat: number; lng: number; recordedAt: string } | null;
+  route?: {
+    encodedPolyline: string;
+    distanceKm: number;
+    durationMinutes: number;
+    source: 'valhalla';
+  } | null;
+  etaMinutes?: number | null;
+  distanceKmRemaining?: number | null;
+  nextStopId?: string | null;
   stopsProgress?: Array<{
     id: string;
     jobStopId: string;
@@ -297,6 +306,52 @@ export async function fetchTripPodArtifactBlob(
 
 export function getSenderTrack(jobId: string) {
   return http.get<SenderTrack>(`/trips/jobs/${jobId}/track`).then((r) => r.data);
+}
+
+export type CarrierFleetLiveTrip = {
+  tripId: string;
+  jobId: string;
+  jobTitle: string | null;
+  tripStatus: string;
+  onBreak: boolean;
+  startedAt: string | null;
+  vehicle: {
+    id: string;
+    label: string | null;
+    registration: string | null;
+    vehicleClass: string | null;
+  } | null;
+  driver: {
+    id: string;
+    name: string | null;
+    email: string | null;
+  } | null;
+  latest: { lat: number; lng: number; recordedAt: string } | null;
+  nextStop: {
+    id: string;
+    sequence: number;
+    stopType: string;
+    suburb: string | null;
+    lat: number;
+    lng: number;
+  } | null;
+  stops: Array<{
+    id: string;
+    sequence: number;
+    stopType: string;
+    suburb: string | null;
+    lat: number | null;
+    lng: number | null;
+  }>;
+};
+
+export type CarrierFleetLiveResponse = {
+  companyId: string;
+  trips: CarrierFleetLiveTrip[];
+};
+
+export function getCarrierFleetLive() {
+  return http.get<CarrierFleetLiveResponse>('/trips/fleet/live').then((r) => r.data);
 }
 
 export function getTripPod(tripId: string) {

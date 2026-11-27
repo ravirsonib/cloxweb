@@ -19,6 +19,7 @@ import { AccountPage } from '@/pages/account-page';
 import { CarrierRegisterPage } from '@/pages/carrier-register-page';
 import { CarrierOnboardingPage } from '@/pages/carrier-onboarding-page';
 import { CarrierFleetPage } from '@/pages/carrier-fleet-page';
+import { CarrierFleetMapPage } from '@/pages/carrier-fleet-map-page';
 import { CarrierFleetAnalyticsPage } from '@/pages/carrier-fleet-analytics-page';
 import { CarrierDriversPage } from '@/pages/carrier-drivers-page';
 import { DriverInvitePage } from '@/pages/driver-invite-page';
@@ -321,6 +322,14 @@ export function AppRouter() {
           element={
             <RequireRoles roles={[AppRole.TRANSPORT_COMPANY]}>
               <CarrierFleetAnalyticsPage />
+            </RequireRoles>
+          }
+        />
+        <Route
+          path="/carrier/fleet/live"
+          element={
+            <RequireRoles roles={[AppRole.TRANSPORT_COMPANY]}>
+              <CarrierFleetMapPage />
             </RequireRoles>
           }
         />

@@ -1921,6 +1921,8 @@ function JobDraftForm({
       .catch(() => {
         if (cancelled) return null;
         setRouteSuggestStatus('error');
+        setRoutePreviewStops([]);
+        setRouteEstimate((prev) => (prev ? { ...prev, encodedPolyline: null } : null));
         return null;
       });
     routeSuggestPromise.current = request;

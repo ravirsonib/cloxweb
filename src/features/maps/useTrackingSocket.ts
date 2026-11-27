@@ -22,6 +22,13 @@ export type LiveJobEta = {
   timestamp: string;
 };
 
+export type LiveTripBreak = {
+  tripId: string;
+  jobId: string;
+  onBreak: boolean;
+  timestamp: string;
+};
+
 export type UseTrackingSocketOptions = {
   tripId?: string | null;
   jobId?: string | null;
@@ -33,7 +40,10 @@ export type UseTrackingSocketOptions = {
 export type TrackingSocketState = {
   connected: boolean;
   latestLocation: LiveVehicleLocation | null;
+  /** Latest location keyed by tripId (for multi-truck fleet views). */
+  locationsByTrip: Record<string, LiveVehicleLocation>;
   latestEta: LiveJobEta | null;
+  breakEvent: LiveTripBreak | null;
   error: string | null;
 };
 
@@ -59,8 +69,19 @@ export function useTrackingSocket(options: UseTrackingSocketOptions): TrackingSo
 
   const [connected, setConnected] = useState(false);
   const [latestLocation, setLatestLocation] = useState<LiveVehicleLocation | null>(null);
+  const [locationsByTrip, setLocationsByTrip] = useState<Record<string, LiveVehicleLocation>>({});
   const [latestEta, setLatestEta] = useState<LiveJobEta | null>(null);
+  const [breakEvent, setBreakEvent] = useState<LiveTripBreak | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Clear cached live state whenever the subscribed target changes (prevents cross-trip leakage)
+  useEffect(() => {
+    setLatestLocation(null);
+    setLocationsByTrip({});
+    setLatestEta(null);
+    setBreakEvent(null);
+    setError(null);
+  }, [tripId, jobId, fleetCompanyId]);
 
   useEffect(() => {
     const hasTarget = Boolean(tripId || jobId || fleetCompanyId);
@@ -112,12 +133,29 @@ export function useTrackingSocket(options: UseTrackingSocketOptions): TrackingSo
 
     socket.on('vehicle:location', (payload: LiveVehicleLocation) => {
       if (tripId && payload.tripId !== tripId) return;
+      if (
+        !Number.isFinite(payload.lat) ||
+        !Number.isFinite(payload.lng) ||
+        (payload.lat === 0 && payload.lng === 0)
+      ) {
+        return;
+      }
       setLatestLocation(payload);
+      setLocationsByTrip((prev) => ({ ...prev, [payload.tripId]: payload }));
     });
 
     socket.on('job:eta-update', (payload: LiveJobEta) => {
       if (jobId && payload.jobId !== jobId) return;
       setLatestEta(payload);
+    });
+
+    socket.on('trip:break', (payload: LiveTripBreak) => {
+      if (tripId && payload.tripId !== tripId) return;
+      if (jobId && payload.jobId !== jobId) return;
+      setBreakEvent(payload);
+      if (payload.onBreak) {
+        setLatestLocation(null);
+      }
     });
 
     return () => {
@@ -130,5 +168,5 @@ export function useTrackingSocket(options: UseTrackingSocketOptions): TrackingSo
     };
   }, [accessToken, enabled, tripId, jobId, fleetCompanyId]);
 
-  return { connected, latestLocation, latestEta, error };
+  return { connected, latestLocation, locationsByTrip, latestEta, breakEvent, error };
 }

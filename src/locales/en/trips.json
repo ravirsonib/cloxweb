@@ -176,7 +176,9 @@
     "stopEntered": "Entered {{time}}",
     "stopFreeWaitEnds": "Free wait ends {{time}}",
     "stopOverage": "Overage {{min}} min",
-    "pendingSurchargesTitle": "Pending surcharges"
+    "pendingSurchargesTitle": "Pending surcharges",
+    "routeMapTitle": "Trip Route Map",
+    "openInMaps": "Navigate to next stop"
   },
   "tripStatuses": {
     "PENDING_GATES": "Pre-trip gates",
@@ -267,6 +269,11 @@
     "latest": "Latest: {{lat}}, {{lng}} @ {{time}}",
     "noPingsYet": "No location pings yet.",
     "mapDeferredHint": "Map will appear once the trip is live.",
-    "trackAfterStart": "Tracking begins after trip start."
+    "trackAfterStart": "Tracking begins after trip start.",
+    "liveConnected": "Live",
+    "pollingFallback": "Updating every 5s",
+    "onBreakPausedHint": "Driver is currently on a rest break. Live location and ETA updates are paused until the break ends.",
+    "etaSummary": "ETA ~{{min}} min",
+    "recentPings": "Recent GPS pings ({{count}})"
   }
 }

@@ -176,7 +176,9 @@
     "stopEntered": "ਦਾਖ਼ਲ ਹੋਇਆ {{time}}",
     "stopFreeWaitEnds": "ਮੁਫ਼ਤ ਉਡੀਕ ਖਤਮ {{time}}",
     "stopOverage": "ਵਧੇਰੇ {{min}} ਮਿੰਟ",
-    "pendingSurchargesTitle": "ਬਕਾਇਆ ਸਰਚਾਰਜ"
+    "pendingSurchargesTitle": "ਬਕਾਇਆ ਸਰਚਾਰਜ",
+    "routeMapTitle": "ਟ੍ਰਿਪ ਰੂਟ ਮੈਪ",
+    "openInMaps": "ਅਗਲੇ ਸਟਾਪ ਲਈ ਨੈਵੀਗੇਟ ਕਰੋ"
   },
   "tripStatuses": {
     "PENDING_GATES": "ਪ੍ਰੀ-ਟ੍ਰਿਪ ਗੇਟਸ",
@@ -267,6 +269,11 @@
     "latest": "ਆਖਰੀ: {{lat}}, {{lng}} @ {{time}}",
     "noPingsYet": "ਹਾਲੇ ਕੋਈ ਲੋਕੇਸ਼ਨ ping ਨਹੀਂ।",
     "mapDeferredHint": "ਟ੍ਰਿਪ ਲਾਈਵ ਹੋਣ 'ਤੇ ਮੈਪ ਦਿਖੇਗਾ।",
-    "trackAfterStart": "ਟ੍ਰੈਕਿੰਗ ਟ੍ਰਿਪ ਸ਼ੁਰੂ ਹੋਣ ਤੋਂ ਬਾਅਦ ਸ਼ੁਰੂ ਹੁੰਦੀ ਹੈ।"
+    "trackAfterStart": "ਟ੍ਰੈਕਿੰਗ ਟ੍ਰਿਪ ਸ਼ੁਰੂ ਹੋਣ ਤੋਂ ਬਾਅਦ ਸ਼ੁਰੂ ਹੁੰਦੀ ਹੈ।",
+    "liveConnected": "ਲਾਈਵ",
+    "pollingFallback": "ਹਰ 5 ਸਕਿੰਟਾਂ ਵਿੱਚ ਅੱਪਡੇਟ",
+    "onBreakPausedHint": "ਡਰਾਈਵਰ ਇਸ ਵੇਲੇ ਆਰਾਮ ਬ੍ਰੇਕ 'ਤੇ ਹਨ। ਬ੍ਰੇਕ ਖਤਮ ਹੋਣ ਤੱਕ ਲਾਈਵ ਲੋਕੇਸ਼ਨ ਅਤੇ ETA ਅੱਪਡੇਟ ਰੁਕੇ ਹੋਏ ਹਨ।",
+    "etaSummary": "ਅੰਦਾਜ਼ਨ ਸਮਾਂ ~{{min}} ਮਿੰਟ",
+    "recentPings": "ਹਾਲੀਆ GPS ਪਿੰਗ ({{count}})"
   }
 }

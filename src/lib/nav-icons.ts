@@ -48,6 +48,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   '/partner-performance': Handshake,
   '/carrier/onboarding': ClipboardList,
   '/carrier/fleet': Truck,
+  '/carrier/fleet/live': MapPinned,
   '/carrier/fleet/analytics': BarChart3,
   '/carrier/drivers': UserCog,
   '/carrier/earnings': CircleDollarSign,

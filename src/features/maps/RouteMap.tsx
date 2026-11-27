@@ -21,13 +21,23 @@ export type MapTruckPosition = {
   lng: number;
   heading?: number | null;
   paused?: boolean;
+  label?: string | null;
+};
+
+export type MapTruckItem = MapTruckPosition & {
+  id: string;
+  selected?: boolean;
 };
 
 export type RouteMapProps = {
   /** Valhalla precision-6 encoded polyline. */
   encodedPolyline?: string | null;
   stops?: MapStopPin[];
+  /** Single truck (sender / driver track). */
   truck?: MapTruckPosition | null;
+  /** Multiple trucks (carrier fleet live map). */
+  trucks?: MapTruckItem[];
+  onSelectTruck?: (id: string) => void;
   /** Gently pan camera when truck moves near viewport edge. */
   followTruck?: boolean;
   className?: string;
@@ -59,6 +69,18 @@ const OSM_RASTER_STYLE: maplibregl.StyleSpecification = {
     },
   ],
 };
+
+function isValidCoord(lat: number, lng: number): boolean {
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180 &&
+    !(lat === 0 && lng === 0)
+  );
+}
 
 function createStopMarkerEl(stop: MapStopPin, index: number): HTMLDivElement {
   const isPickup = stop.stopType === 'PICKUP';
@@ -96,6 +118,8 @@ export function RouteMap({
   encodedPolyline,
   stops = [],
   truck = null,
+  trucks = [],
+  onSelectTruck,
   followTruck = false,
   className,
   ariaLabel = 'Route map',
@@ -104,60 +128,105 @@ export function RouteMap({
   const mapRef = useRef<maplibregl.Map | null>(null);
   const stopMarkersRef = useRef<maplibregl.Marker[]>([]);
   const hasFitInitialBoundsRef = useRef(false);
+  const lastFitPolylineRef = useRef<string | null | undefined>(undefined);
   const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null);
   const [styleReady, setStyleReady] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const [userPannedAway, setUserPannedAway] = useState(false);
 
   const routeCoordinates = useMemo<Array<[number, number]>>(() => {
     if (!encodedPolyline) return [];
     try {
       const decoded = polyline.decode(encodedPolyline, 6);
-      return decoded.map(([lat, lng]) => [lng, lat]);
+      return decoded
+        .filter(([lat, lng]) => isValidCoord(lat, lng))
+        .map(([lat, lng]) => [lng, lat]);
     } catch {
       return [];
     }
   }, [encodedPolyline]);
 
   const validStops = useMemo(
-    () =>
-      stops.filter(
-        (s) =>
-          typeof s.lat === 'number' &&
-          typeof s.lng === 'number' &&
-          Number.isFinite(s.lat) &&
-          Number.isFinite(s.lng),
-      ),
+    () => stops.filter((s) => isValidCoord(s.lat, s.lng)),
     [stops],
   );
 
-  // Initialize MapLibre once
+  const validTruck = useMemo(
+    () => (truck && isValidCoord(truck.lat, truck.lng) ? truck : null),
+    [truck],
+  );
+
+  const validTrucks = useMemo(
+    () => trucks.filter((item) => isValidCoord(item.lat, item.lng)),
+    [trucks],
+  );
+
+  // Initialize MapLibre once + ResizeObserver for responsive sidebar/orientation changes
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const initialCenter: [number, number] = truck
-      ? [truck.lng, truck.lat]
-      : validStops[0]
-        ? [validStops[0].lng, validStops[0].lat]
-        : [144.9631, -37.8136]; // Melbourne default
+    const initialCenter: [number, number] = validTruck
+      ? [validTruck.lng, validTruck.lat]
+      : validTrucks[0]
+        ? [validTrucks[0].lng, validTrucks[0].lat]
+        : validStops[0]
+          ? [validStops[0].lng, validStops[0].lat]
+          : [144.9631, -37.8136]; // Melbourne default
 
-    const map = new maplibregl.Map({
-      container,
-      style: OSM_RASTER_STYLE,
-      center: initialCenter,
-      zoom: 11,
-      attributionControl: { compact: true },
-    });
+    const isTouchDevice =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(pointer: coarse)').matches;
+
+    let map: maplibregl.Map;
+    try {
+      map = new maplibregl.Map({
+        container,
+        style: OSM_RASTER_STYLE,
+        center: initialCenter,
+        zoom: 11,
+        attributionControl: { compact: true },
+        cooperativeGestures: isTouchDevice,
+      });
+    } catch {
+      setMapError('Interactive map is unavailable on this browser (WebGL disabled).');
+      return;
+    }
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
 
     map.on('load', () => {
       setStyleReady(true);
+      setMapError(null);
     });
+
+    map.on('dragstart', () => {
+      setUserPannedAway(true);
+    });
+
+    const canvas = map.getCanvas();
+    const handleContextLost = (e: Event) => {
+      e.preventDefault();
+      setMapError('Map rendering paused (WebGL context lost).');
+    };
+    canvas.addEventListener('webglcontextlost', handleContextLost);
+
+    // Keep map tiles aligned when sidebar collapses/expands or screen rotates
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => {
+        map.resize();
+      });
+      ro.observe(container);
+    }
 
     mapRef.current = map;
     setMapInstance(map);
 
     return () => {
+      ro?.disconnect();
+      canvas.removeEventListener('webglcontextlost', handleContextLost);
       stopMarkersRef.current.forEach((m) => m.remove());
       stopMarkersRef.current = [];
       map.remove();
@@ -165,6 +234,7 @@ export function RouteMap({
       setMapInstance(null);
       setStyleReady(false);
       hasFitInitialBoundsRef.current = false;
+      lastFitPolylineRef.current = undefined;
     };
     // Mount map once per component lifecycle
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -175,13 +245,21 @@ export function RouteMap({
     const map = mapRef.current;
     if (!map || !styleReady) return;
 
-    const geojson: GeoJSON.Feature<GeoJSON.LineString> = {
-      type: 'Feature',
-      properties: {},
-      geometry: {
-        type: 'LineString',
-        coordinates: routeCoordinates,
-      },
+    const geojson: GeoJSON.FeatureCollection = {
+      type: 'FeatureCollection',
+      features:
+        routeCoordinates.length >= 2
+          ? [
+              {
+                type: 'Feature',
+                properties: {},
+                geometry: {
+                  type: 'LineString',
+                  coordinates: routeCoordinates,
+                },
+              },
+            ]
+          : [],
     };
 
     const existing = map.getSource(ROUTE_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
@@ -239,11 +317,14 @@ export function RouteMap({
     });
   }, [validStops, mapInstance]);
 
-  // Fit bounds when route or stops load/change (initial paint or non-following mode)
+  // Fit bounds on initial data paint, or when a new road route polyline arrives (not on every GPS ping)
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleReady) return;
-    if (followTruck && hasFitInitialBoundsRef.current) return;
+
+    const polylineChanged =
+      Boolean(encodedPolyline) && encodedPolyline !== lastFitPolylineRef.current;
+    if (hasFitInitialBoundsRef.current && !polylineChanged) return;
 
     const bounds = new maplibregl.LngLatBounds();
     let count = 0;
@@ -255,30 +336,38 @@ export function RouteMap({
       bounds.extend([s.lng, s.lat]);
       count += 1;
     }
-    if (truck) {
-      bounds.extend([truck.lng, truck.lat]);
+    if (validTruck) {
+      bounds.extend([validTruck.lng, validTruck.lat]);
+      count += 1;
+    }
+    for (const item of validTrucks) {
+      bounds.extend([item.lng, item.lat]);
       count += 1;
     }
 
     if (count >= 2) {
       map.fitBounds(bounds, { padding: 48, maxZoom: 15, duration: 500 });
       hasFitInitialBoundsRef.current = true;
+      lastFitPolylineRef.current = encodedPolyline;
     } else if (count === 1) {
-      const single: [number, number] = truck
-        ? [truck.lng, truck.lat]
-        : validStops[0]
-          ? [validStops[0].lng, validStops[0].lat]
-          : routeCoordinates[0];
+      const single: [number, number] = validTruck
+        ? [validTruck.lng, validTruck.lat]
+        : validTrucks[0]
+          ? [validTrucks[0].lng, validTrucks[0].lat]
+          : validStops[0]
+            ? [validStops[0].lng, validStops[0].lat]
+            : routeCoordinates[0];
       map.easeTo({ center: single, zoom: 13, duration: 400 });
       hasFitInitialBoundsRef.current = true;
+      lastFitPolylineRef.current = encodedPolyline;
     }
-  }, [routeCoordinates, validStops, truck, followTruck, styleReady]);
+  }, [encodedPolyline, routeCoordinates, validStops, validTruck, validTrucks, styleReady]);
 
-  // Loosely follow truck when followTruck is enabled
+  // Loosely follow truck when followTruck is enabled (unless user manually panned away)
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !styleReady || !followTruck || !truck || truck.paused) return;
-    if (!hasFitInitialBoundsRef.current) return;
+    if (!map || !styleReady || !followTruck || !validTruck || validTruck.paused) return;
+    if (!hasFitInitialBoundsRef.current || userPannedAway) return;
 
     const bounds = map.getBounds();
     const west = bounds.getWest();
@@ -289,35 +378,82 @@ export function RouteMap({
     const padLat = (north - south) * 0.2;
 
     const insideInnerBox =
-      truck.lng >= west + padLng &&
-      truck.lng <= east - padLng &&
-      truck.lat >= south + padLat &&
-      truck.lat <= north - padLat;
+      validTruck.lng >= west + padLng &&
+      validTruck.lng <= east - padLng &&
+      validTruck.lat >= south + padLat &&
+      validTruck.lat <= north - padLat;
 
     if (!insideInnerBox) {
-      map.easeTo({ center: [truck.lng, truck.lat], duration: 600 });
+      map.easeTo({ center: [validTruck.lng, validTruck.lat], duration: 600 });
     }
-  }, [truck, followTruck, styleReady]);
+  }, [validTruck, followTruck, userPannedAway, styleReady]);
+
+  const handleRecenter = () => {
+    const map = mapRef.current;
+    if (!map || !validTruck) return;
+    setUserPannedAway(false);
+    map.easeTo({ center: [validTruck.lng, validTruck.lat], zoom: Math.max(map.getZoom(), 13), duration: 500 });
+  };
+
+  if (mapError) {
+    return (
+      <div
+        role="region"
+        aria-label={ariaLabel}
+        className={cn(
+          'flex h-48 w-full items-center justify-center rounded-clox-lg border border-clox-border bg-clox-surface px-4 text-center text-xs text-clox-mute',
+          className,
+        )}
+      >
+        {mapError}
+      </div>
+    );
+  }
 
   return (
     <div
-      ref={containerRef}
       role="region"
       aria-label={ariaLabel}
       className={cn(
-        'relative h-72 w-full overflow-hidden rounded-clox-lg border border-clox-border bg-clox-surface sm:h-80',
+        'relative isolate z-0 h-72 w-full overflow-hidden rounded-clox-lg border border-clox-border bg-clox-surface sm:h-80',
         className,
       )}
     >
-      {truck && styleReady ? (
+      <div ref={containerRef} className="h-full w-full" />
+      {followTruck && userPannedAway && validTruck && !validTruck.paused ? (
+        <button
+          type="button"
+          onClick={handleRecenter}
+          className="absolute bottom-3 left-3 z-10 rounded-full border border-clox-border bg-white/95 px-3 py-1.5 text-xs font-semibold text-clox-ink shadow-md hover:bg-white"
+        >
+          Re-center on truck
+        </button>
+      ) : null}
+      {validTruck && styleReady ? (
         <TruckMarker
           map={mapInstance}
-          lat={truck.lat}
-          lng={truck.lng}
-          heading={truck.heading}
-          paused={truck.paused}
+          lat={validTruck.lat}
+          lng={validTruck.lng}
+          heading={validTruck.heading}
+          paused={validTruck.paused}
+          label={validTruck.label}
         />
       ) : null}
+      {styleReady
+        ? validTrucks.map((item) => (
+            <TruckMarker
+              key={item.id}
+              map={mapInstance}
+              lat={item.lat}
+              lng={item.lng}
+              heading={item.heading}
+              paused={item.paused}
+              label={item.label}
+              selected={item.selected}
+              onClick={onSelectTruck ? () => onSelectTruck(item.id) : undefined}
+            />
+          ))
+        : null}
     </div>
   );
 }

@@ -40,6 +40,7 @@ import {
   useConfirm,
 } from '@/components/ui';
 import { LoadingBlock } from '@/components/status-blocks';
+import { RouteMap, type MapStopPin } from '@/features/maps';
 import { cn } from '@/lib/cn';
 import { formatDollars } from '@/lib/currency';
 import { fileToCompressedJpegDataUrl } from '@/lib/image-data-url';
@@ -1008,6 +1009,76 @@ export function DriverTripDetailPage() {
           </li>
         ) : null}
       </ul>
+
+      {(() => {
+        const driverStops: MapStopPin[] = (tripData.job?.stops ?? [])
+          .filter(
+            (s): s is typeof s & { lat: number; lng: number } =>
+              typeof s.lat === 'number' && typeof s.lng === 'number',
+          )
+          .map((s) => ({
+            id: s.id,
+            sequence: s.sequence,
+            stopType: s.stopType,
+            suburb: s.suburb,
+            lat: s.lat,
+            lng: s.lng,
+            isNext: Boolean(tripData.nextStopId && s.id === tripData.nextStopId),
+          }));
+        const nextStopPin =
+          driverStops.find((s) => s.isNext) ?? driverStops[0] ?? null;
+        const hasMap =
+          Boolean(tripData.route?.encodedPolyline) ||
+          driverStops.length > 0 ||
+          Boolean(tripData.latestLocation);
+        if (!hasMap) return null;
+        return (
+          <div className="mt-5">
+            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-clox-mute">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-clox-ink">
+                  {t('trips.routeMapTitle', { defaultValue: 'Trip Route Map' })}
+                </span>
+                {tripData.etaMinutes != null ? (
+                  <span className="font-mono">
+                    ~{tripData.etaMinutes} min
+                    {tripData.distanceKmRemaining != null
+                      ? ` · ${tripData.distanceKmRemaining} km`
+                      : ''}
+                  </span>
+                ) : null}
+              </div>
+              {nextStopPin ? (
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${nextStopPin.lat},${nextStopPin.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-semibold text-clox-orange hover:underline"
+                >
+                  {t('trips.openInMaps', { defaultValue: 'Navigate to next stop' })}
+                  <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                </a>
+              ) : null}
+            </div>
+            <RouteMap
+              encodedPolyline={tripData.route?.encodedPolyline ?? null}
+              stops={driverStops}
+              truck={
+                tripData.latestLocation
+                  ? {
+                      lat: tripData.latestLocation.lat,
+                      lng: tripData.latestLocation.lng,
+                      paused: tripData.onBreak,
+                    }
+                  : null
+              }
+              followTruck={Boolean(tripData.startedAt && !tripData.onBreak)}
+              className="h-64 sm:h-80"
+              ariaLabel={t('trips.routeMapTitle', { defaultValue: 'Trip Route Map' })}
+            />
+          </div>
+        );
+      })()}
 
       {tripData.stopsProgress && tripData.stopsProgress.length > 0 ? (
         <div className="mt-6">

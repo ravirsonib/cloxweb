@@ -29,12 +29,18 @@ export function SenderTrackPage() {
     queryKey: ['trips', 'track', jobId],
     queryFn: () => getSenderTrack(jobId),
     enabled: role === AppRole.SENDER && Boolean(jobId),
-    // Prefer WS when connected (20s background sync for stops/POD/break); 5s poll fallback when disconnected
-    refetchInterval: wsConnected ? 20_000 : 5_000,
+    // Stop polling once trip is terminal; otherwise 20s sync when WS connected, 5s fallback when disconnected
+    refetchInterval: (query) => {
+      const status = query.state.data?.tripStatus;
+      if (status === 'COMPLETED' || status === 'CANCELLED') return false;
+      return wsConnected ? 20_000 : 5_000;
+    },
   });
 
   const data = track.data;
-  const isLiveTracking = Boolean(data?.visible && data?.tripId && !data?.onBreak);
+  const isTerminalTrip =
+    data?.tripStatus === 'COMPLETED' || data?.tripStatus === 'CANCELLED';
+  const isLiveTracking = Boolean(data?.visible && data?.tripId && !isTerminalTrip);
 
   const socket = useTrackingSocket({
     tripId: data?.tripId ?? null,
@@ -45,6 +51,13 @@ export function SenderTrackPage() {
   useEffect(() => {
     setWsConnected(socket.connected);
   }, [socket.connected]);
+
+  const effectiveOnBreak = useMemo(() => {
+    if (socket.breakEvent && socket.breakEvent.tripId === data?.tripId) {
+      return socket.breakEvent.onBreak;
+    }
+    return Boolean(data?.onBreak);
+  }, [socket.breakEvent, data?.tripId, data?.onBreak]);
 
   const downloadDoc = useMutation({
     mutationFn: async (kind: TripDocumentKind) => {
@@ -62,20 +75,20 @@ export function SenderTrackPage() {
   });
 
   const effectiveEtaMinutes = useMemo(() => {
-    if (!data?.visible || data.onBreak) return null;
+    if (!data?.visible || effectiveOnBreak) return null;
     if (socket.latestEta && typeof socket.latestEta.etaMinutes === 'number') {
       return socket.latestEta.etaMinutes;
     }
     return data.etaMinutes ?? null;
-  }, [data?.visible, data?.onBreak, data?.etaMinutes, socket.latestEta]);
+  }, [data?.visible, effectiveOnBreak, data?.etaMinutes, socket.latestEta]);
 
   const effectiveNextStopId = useMemo(() => {
-    if (!data?.visible || data.onBreak) return null;
+    if (!data?.visible || effectiveOnBreak) return null;
     return socket.latestEta?.nextStopId ?? data.nextStopId ?? null;
-  }, [data?.visible, data?.onBreak, data?.nextStopId, socket.latestEta]);
+  }, [data?.visible, effectiveOnBreak, data?.nextStopId, socket.latestEta]);
 
   const effectiveLatest = useMemo(() => {
-    if (!data?.visible || data.onBreak) return null;
+    if (!data?.visible || effectiveOnBreak) return null;
     const wsLoc = socket.latestLocation;
     const restLoc = data.latest;
     if (wsLoc) {
@@ -99,7 +112,7 @@ export function SenderTrackPage() {
       };
     }
     return null;
-  }, [data?.visible, data?.onBreak, data?.latest, socket.latestLocation]);
+  }, [data?.visible, effectiveOnBreak, data?.latest, socket.latestLocation]);
 
   const mapStops = useMemo<MapStopPin[]>(() => {
     const stops = data?.job?.stops ?? [];
@@ -120,14 +133,14 @@ export function SenderTrackPage() {
   }, [data?.job?.stops, effectiveNextStopId]);
 
   const mapTruck = useMemo<MapTruckPosition | null>(() => {
-    if (!effectiveLatest || data?.onBreak) return null;
+    if (!effectiveLatest || effectiveOnBreak) return null;
     return {
       lat: effectiveLatest.lat,
       lng: effectiveLatest.lng,
       heading: effectiveLatest.heading,
-      paused: Boolean(data?.onBreak),
+      paused: effectiveOnBreak,
     };
-  }, [effectiveLatest, data?.onBreak]);
+  }, [effectiveLatest, effectiveOnBreak]);
 
   if (role !== AppRole.SENDER) return <Navigate to="/" replace />;
   if (track.isLoading) return <LoadingBlock label={t('track.loading')} />;
@@ -148,11 +161,11 @@ export function SenderTrackPage() {
       </Link>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <h1 className="font-display text-2xl font-bold text-clox-ink">{t('track.title')}</h1>
-        {data?.visible ? (
+        {data?.visible && !isTerminalTrip ? (
           <div className="flex items-center gap-2 text-xs">
             <span
               className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-medium ${
-                data.onBreak
+                effectiveOnBreak
                   ? 'border-amber-300 bg-amber-50 text-amber-800'
                   : socket.connected
                     ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
@@ -161,14 +174,14 @@ export function SenderTrackPage() {
             >
               <span
                 className={`h-2 w-2 rounded-full ${
-                  data.onBreak
+                  effectiveOnBreak
                     ? 'bg-amber-500'
                     : socket.connected
                       ? 'bg-emerald-500'
                       : 'bg-slate-400'
                 }`}
               />
-              {data.onBreak
+              {effectiveOnBreak
                 ? t('track.driverOnBreak')
                 : socket.connected
                   ? t('track.liveConnected', { defaultValue: 'Live' })
@@ -192,7 +205,7 @@ export function SenderTrackPage() {
 
       {data?.visible ? (
         <div className="mt-4 space-y-3">
-          {data.onBreak ? (
+          {effectiveOnBreak ? (
             <Notice tone="warn">
               {t('track.onBreakPausedHint', {
                 defaultValue:
@@ -203,7 +216,7 @@ export function SenderTrackPage() {
 
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-clox-mute">
             <span>{t('track.statusLabel', { status: data.tripStatus })}</span>
-            {effectiveEtaMinutes != null && !data.onBreak ? (
+            {effectiveEtaMinutes != null && !effectiveOnBreak && !isTerminalTrip ? (
               <span className="font-semibold text-clox-ink">
                 {t('track.etaSummary', {
                   defaultValue: 'ETA ~{{min}} min',
@@ -218,16 +231,16 @@ export function SenderTrackPage() {
 
           {hasMapContent ? (
             <RouteMap
-              encodedPolyline={data.onBreak ? null : (data.route?.encodedPolyline ?? null)}
+              encodedPolyline={effectiveOnBreak ? null : (data.route?.encodedPolyline ?? null)}
               stops={mapStops}
               truck={mapTruck}
-              followTruck={!data.onBreak}
+              followTruck={!effectiveOnBreak && !isTerminalTrip}
               className="h-80 sm:h-96"
               ariaLabel={t('track.title')}
             />
           ) : null}
 
-          {!data.onBreak && effectiveLatest ? (
+          {!effectiveOnBreak && effectiveLatest ? (
             <Notice tone="success">
               {t('track.latest', {
                 lat: effectiveLatest.lat.toFixed(5),
@@ -235,7 +248,7 @@ export function SenderTrackPage() {
                 time: new Date(effectiveLatest.recordedAt).toLocaleTimeString(),
               })}
             </Notice>
-          ) : !data.onBreak ? (
+          ) : !effectiveOnBreak ? (
             <p className="text-sm text-clox-faint">{t('track.noPingsYet')}</p>
           ) : null}
         </div>

@@ -361,9 +361,12 @@ export {
   fetchTripStopDocumentBlob,
   downloadBlob,
   getSenderTrack,
+  getCarrierFleetLive,
   getTripPod,
   type TripSummary,
   type SenderTrack,
+  type CarrierFleetLiveTrip,
+  type CarrierFleetLiveResponse,
   type TripPodSummary,
 } from '@/lib/api/trips';
 export type {
